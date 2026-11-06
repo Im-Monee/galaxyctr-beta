@@ -57,8 +57,8 @@ needed. With Python 3.12:
 2. Put the three helper programs for your system in one folder:
    [nodtool](https://github.com/encounter/nod-rs/releases/tag/v2.0.0-alpha.12) (v2.0.0-alpha.12),
    [makerom](https://github.com/3DSGuy/Project_CTR/releases/tag/makerom-v0.19.0) (v0.19.0) and
-   [bannertool](https://github.com/diasurgical/bannertool/releases/tag/1.2.0) (1.2.0, on macOS
-   compile it from its source).
+   [bannertool](https://github.com/diasurgical/bannertool/releases/tag/1.2.0) (1.2.0). On macOS,
+   bannertool has no ready-made program, so compile it from its source.
 3. Get the port's program: `smg.elf` from the same release, or build it yourself
    ([BUILDING.md](BUILDING.md)) with `python tools/beta/build_builder.py --elf-only`.
 4. Pack the builder:

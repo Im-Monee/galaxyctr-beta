@@ -1,6 +1,6 @@
 # Contributing
 
-The most useful help is a good bug report. Post it in the **#bug-reports** channel of the
+To report a bug, post in the **#bug-reports** channel of the
 [Discord server](https://discord.gg/Fftp79uaJ7) (preferred), or open an [issue](../../../issues)
 on GitHub.
 
@@ -14,7 +14,7 @@ on GitHub.
 |---|---|---|
 | **Game log** | `sdmc:/smg/log.txt` | always |
 | **Crash file** | the newest `.dmp` file in `sdmc:/luma/dumps/arm11/` | after a crash (Luma3DS shows an exception screen and saves it) |
-| **Screenshots** | `sdmc:/luma/screenshots/` | strongly recommended, they show what went wrong |
+| **Screenshots** | `sdmc:/luma/screenshots/` | strongly recommended |
 | **Builder log** | `galaxyctr-builder-log.txt` in your user folder on the computer | only for problems with the builder |
 
 ## Taking a Screenshot

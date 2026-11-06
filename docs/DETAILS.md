@@ -1,8 +1,7 @@
 # GalaxyCTR: Design Details
 
-How the port is built, and why. Written for someone who has never seen the code. If a part of
-the code makes you ask "why is it done this way?", the answer should be here. If it is not,
-please report the gap.
+How the port is built, and why, for someone who has never seen the code. If a design question
+is not answered here, report it.
 
 **Contents**
 
@@ -48,8 +47,6 @@ on trusting its author:
 | **Every decomp change listed** | [`PENDING_DECOMP_CHANGES.md`](../platform/3ds/PENDING_DECOMP_CHANGES.md) records each 3DS-only change, with its reason. |
 | **Real hardware only** | Every build is tested on a real New 2DS XL. An emulator never decides that something works. One GPU hang never appeared in one. |
 | **Independent audits** | Private scripts compare every converted resource (materials, textures, models, particles, layouts) with the decomp's structures and Dolphin's GX rules, never with the port's own code. Each result is identical, minor difference, reduced on purpose, approximated, not supported or not checked. Nothing is rounded up. They are development tools, so they are not published. |
-
-Readable code is part of the same answer, see [Reading the Code](#9-reading-the-code).
 
 ---
 
@@ -115,7 +112,7 @@ and it was far too slow. Work that never changes (materials, vertex and texture 
 better done once on the PC than 30 times a second on the console.
 
 > [!NOTE]
-> **The cost.** A draw that was not moved to Citro3D is simply invisible, so a missing object
+> **The cost.** A draw that was not moved to Citro3D is invisible, so a missing object
 > is a bug to fix on its own. Effects the PICA cannot express are approximated, and
 > [`HARDWARE_LIMITS.md`](../platform/3ds/HARDWARE_LIMITS.md) lists them.
 
@@ -217,8 +214,7 @@ download the new one instead of running it.
    // ##############################################################################
    ```
 
-   Python files use `#`, the shader `;`, and C and C++ `//`, since in C a line starting with
-   `#` is a preprocessor directive.
+   Python files use `#`, the shader `;`, C and C++ `//`.
 2. **Comments explain intent** wherever a line's purpose is not obvious.
 3. **Cross-references** name the related file and section, so you know where to look next.
 4. **Commit messages** say what changed and why, in full sentences.
@@ -231,7 +227,7 @@ What each folder holds is in [BUILDING.md](BUILDING.md#the-repository).
 
 | Limit | On the original 3DS |
 |---|---|
-| Memory | the 96 MB mode does not fit, it is about 13 MB over even with reduced textures and no movies |
+| Memory | the 96 MB mode does not fit: about 13 MB over, even with reduced textures and no movies |
 | CPU | about 28-40% of game speed in tests at its clock |
 
 A low-memory mode exists in the code but has never run on a real original 3DS, so the beta is
