@@ -142,7 +142,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   longer return before invoking the native JUT texture bridge, and image-effect
   overlays submit through DirectDraw. Tile requests currently capture the native
   target as a whole because the host texture bridge owns the render-target crop.
-- **ODH JPEG capture uses native CPU readback** (`platform/3DS/host/gfx.c`,
+- **ODH JPEG capture uses native CPU readback** (`platform/3ds/host/gfx.c`,
   `src/Game/Screen/OdhConverter.cpp`): the requested 488x328 render-target region is
   read back and encoded by the existing ODH RGB565 encoder without GX copy commands.
 - **THP YUV video uses a native conversion path** (`src/Game/Screen/THPDraw.c`,
@@ -206,7 +206,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   GX fallback.
 - Native submit failures now propagate to the J3D packet path, so a rejected native draw is not
   reported as a successful native submission or silently counted as rendered.
-- **Native J3D packets no longer reject model LOD flags** (`platform/3DS/gx/native.cpp`):
+- **Native J3D packets no longer reject model LOD flags** (`platform/3ds/gx/native.cpp`):
   LOD selection is resolved by the active J3D packet before native submission, so models
   carrying `J3DMdlFlag_EnableLOD` use their converted shape/material tables instead of
   being discarded before the packet renderer runs.
@@ -231,21 +231,21 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   position and normal arrays are decoded according to their declared GX component type rather
   than being treated as signed 16-bit data. The associated GX display-list calls are excluded
   from the 3DS target.
-- **Native material conversion reports texture-unit overflow** (`tools/3DS/native/mat.py`):
+- **Native material conversion reports texture-unit overflow** (`tools/3ds/native/mat.py`):
   materials that require more than the three texture units exposed by the native packet format
   now fail conversion instead of silently binding an unassigned texture source. Existing
   `FLAG_INEXACT` records retain their previous approximation/statistics meaning and remain
   rejected by the runtime for compatibility with already-generated files. They still require
   native multi-pass decomposition before this coverage item can be considered complete.
-- **Native packets reject truncated materials** (`platform/3DS/gx/native.cpp`):
+- **Native packets reject truncated materials** (`platform/3ds/gx/native.cpp`):
   materials exceeding the six-stage/three-unit native limits are counted as material fallbacks
   and skipped before upload. Deliberate `FLAG_INEXACT` approximations remain renderable; this
   prevents valid approximated materials from disappearing while the native multipass
   representation is being implemented. The packet never re-enters the Wii GX path on 3DS.
-- **Native packets reject malformed shape tables** (`platform/3DS/gx/native.cpp`):
+- **Native packets reject malformed shape tables** (`platform/3ds/gx/native.cpp`):
   unknown shape modes and groups with more than ten matrix entries are counted as shape
   fallbacks instead of being silently clamped to the native palette size.
-- **Native model registration validates `.n3d` tables** (`platform/3DS/gx/native.cpp`):
+- **Native model registration validates `.n3d` tables** (`platform/3ds/gx/native.cpp`):
   header offsets, count arithmetic, shape modes/strides, group-table locations and material
   stage/unit limits are checked before allocating or retaining the registration block. Invalid
   files are rejected without partially initialized model state.
@@ -324,10 +324,10 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   physical lights for each colour/alpha channel, so a representable actor-light submission
   stays within that budget; `buildGpuTransform` remains the final guard for any future light
   source extension.
-- **The native converter preserves matrix-table overflow for validation** (`tools/3DS/native/n3d.py`):
+- **The native converter preserves matrix-table overflow for validation** (`tools/3ds/native/n3d.py`):
   SHP1 groups are no longer truncated to ten matrices while decoding. An asset exceeding the
   `.n3d` group limit now fails conversion with an explicit error before a file is written.
-- **Native asset conversion fails on incomplete output** (`tools/3DS/native/build_native.py`):
+- **Native asset conversion fails on incomplete output** (`tools/3ds/native/build_native.py`):
   conversion failures are still written to `report.txt`, but the converter now exits nonzero
   after reporting them. Build automation cannot mistake a partially converted native asset set
   for complete coverage.
@@ -582,7 +582,7 @@ keep the Wii build byte-identical.
   Metrowerks intrinsics replaced by portable code (`runtime.h`, `arithmetic.h`,
   `OSFastCast.h`, `OSTime.h`, `os.h`, `MathUtil.hpp`).
 - **Jumps over initializations**: braces around `case` bodies and labels, added by
-  `tools/3ds/brace_cases.py` (`XanimeResource.cpp`, `ChangeBgmCube.cpp`, `KCollision.cpp`,
+  a script of the development repository (`XanimeResource.cpp`, `ChangeBgmCube.cpp`, `KCollision.cpp`,
   `MarioActor.cpp`, `MarioWarp.cpp`, `SurfRay.cpp`, `GameEventFlagChecker.cpp`,
   `JMapInfo.cpp`, `JKRMemArchive.cpp`).
 - **Undefined behaviour in the original that GCC exploits**: two vectors accessed as an array
@@ -813,7 +813,7 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
   `KirairaChain` remains an explicit 3DS no-op because its Wii model display-list path has no
   native chain-material equivalent yet. `MarioShadow` volume drawing is native on 3DS; its
   trailing Wii destination-alpha reset is now also excluded from the 3DS target.
-- The 3DS build intentionally still compiles `platform/3ds/gx/draw.cpp`, `pixel.cpp`,
+- (Superseded: these files were deleted later, see "Block 8" below.) The 3DS build intentionally still compiled `platform/3ds/gx/draw.cpp`, `pixel.cpp`,
   `texture.cpp`, `pe.cpp`, and `processor.cpp` as compatibility shims. Symbol-level inspection
   confirms they are not native draw entry points; `rvlGXProcess()` is empty, FIFO processing
   discards pending commands, and `GXCallDisplayList()` returns immediately on 3DS. Removing the
@@ -966,7 +966,7 @@ The native model files are version 7 (`platform/3ds/gx/native.cpp` `kVersion`, `
 
 ## Particles drawn as the Wii draws them (Oct 28 2026, CIA 0.13.7: JPA equivalence)
 
-The JPA draws keep the Wii's code; where they send GX their vertex arrays, display lists, matrices and TEV state, the 3DS branches hand the same values to `platform/3ds/gx/particle.cpp` (`JPA3DS`, `platform/3ds/include/JPADraw3DS.hpp`). It builds the vertices and texture coordinates GX would and draws them with the combiners of `platform/3ds/gx/particle_tev.inc`, generated by `tools/3ds/particles/jpatev.py` and checked against the Wii TEV by `tools/3ds/particles/jpacheck.py` (3159 of 3327 effects the same; 162 use the indirect texture, which the PICA lacks; 6 use an alpha test on a range, reduced to its lower bound).
+The JPA draws keep the Wii's code; where they send GX their vertex arrays, display lists, matrices and TEV state, the 3DS branches hand the same values to `platform/3ds/gx/particle.cpp` (`JPA3DS`, `platform/3ds/include/JPADraw3DS.hpp`). It builds the vertices and texture coordinates GX would and draws them with the combiners of `platform/3ds/gx/particle_tev.inc`, generated and checked against the Wii TEV by scripts of the development repository (3159 of 3327 effects the same; 162 use the indirect texture, which the PICA lacks; 6 use an alpha test on a range, reduced to its lower bound).
 - `JPABaseShape.cpp` (3DS):
   - `JPASetPointSize`, `JPASetLineWidth`: the sizes go to `JPA3DS::setPointSize` / `setLineWidth`.
   - `JPAGenTexCrdMtxIdt/Anm/Prj`: `JPA3DS::setTexGen`.
@@ -1097,7 +1097,7 @@ A development script (not published) lists every draw function outside JPA with 
 
 ## Memory budget measurements (Oct 28 2026, block R: Old 3DS)
 
-- `HeapMemoryWatcher::destroySceneHeap` (3DS): before destroying the scene heaps, logs the KB they used (and their size) and the file cache's. They are solid heaps, so the use at the end of the scene is the peak. The numbers size the emulated MEM2 for the Old 3DS's 96 MB (`_workspace/plans/R_memoria-old-3ds.md`).
+- `HeapMemoryWatcher::destroySceneHeap` (3DS): before destroying the scene heaps, logs the KB they used (and their size) and the file cache's. They are solid heaps, so the use at the end of the scene is the peak. The numbers size the emulated MEM2 for the Old 3DS's 96 MB.
 - The log is written by a shared `reportSceneHeaps`, called from `destroySceneHeap` and `destroyGameHeap`. Scene changes go through either one (`GameSystemSceneController`), and the file cache may already be destroyed: it is then reported as 0.
 
 ## Collision built at run time (Oct 28 2026)
@@ -1210,7 +1210,7 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
   - `SpinDriverPathDrawer.cpp`: upstream's `GXCmd1f32` writes on the Wii side of our `#ifndef __3DS__`.
   - `LayoutUtil.cpp`: upstream version with our two guards put back (`__MWERKS__` template instantiation, `__3DS__` GX state).
   - `HashUtil.cpp`: upstream version as is. Its local `tolower` moved to `<cctype>`, so our `__MWERKS__` guard is no longer needed.
-  - `README.md`: the port's README stays; upstream's new one is in `docs/PETARI_README.md`.
+  - `README.md`: the port's README stays; upstream's new one is kept, renamed, in the development repository.
 
   Wii `main.dol` SHA-1 is still `9a71008ae1ee9010e267fa67d1f0b0d4f0e895dd`, and the 3DS build is clean.
 
@@ -1235,4 +1235,4 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 - Every `#ifdef __3DS__` / `#ifndef __3DS__` block of `src/`, `include/` and `libs/` that had no comment got a one-line comment above it saying what the 3DS does there and why (703 blocks in 197 files). The comment sits above the directive, so both builds see only a comment.
 - 18 empty `#ifdef __3DS__ ... #endif` blocks (leftovers of earlier edits) were removed.
 - `src/Game/Screen/WipeFade.cpp`: a dead copy of `GXSetColorUpdate`/`GXSetBlendMode` under `#ifdef __3DS__` inside the Wii branch (never compiled by either build) was removed; the Wii's own calls stay above it, under `#ifndef __3DS__`.
-- Wii SHA-1 unchanged (full Wii rebuild); wiiview: 0 Wii code differences, comment-only differences in the 197 files.
+- Wii SHA-1 unchanged (full Wii rebuild); the Wii view of the 197 files (each file as the Wii compiler sees it) differs in comments only.
