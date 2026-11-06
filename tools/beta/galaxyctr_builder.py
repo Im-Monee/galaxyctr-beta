@@ -33,18 +33,28 @@ from pathlib import Path
 # ############################################################################
 # # Where the builder's own files are                                       #
 # #                                                                         #
-# # Frozen by PyInstaller (tools/beta/build_builder.py), everything it      #
-# # carries is unpacked to sys._MEIPASS: the converter, its modules, the    #
-# # helper tools and the port's program. Run from the repository instead,   #
-# # the same files are found in their usual places (developer mode).        #
+# # This file always runs from a whole source tree: the repository, or the  #
+# # release the launcher (tools/beta/launcher.py) keeps up to date in       #
+# # GalaxyCTR-Builder-files/source. REPO is that tree's root; the converter #
+# # and its modules are in their usual places in it. The launcher hands     #
+# # over the helper programs and the port's program (GALAXYCTR_TOOLS,       #
+# # GALAXYCTR_ELF); run straight from the repository (developer mode), they #
+# # are looked for in build/.                                               #
 # ############################################################################
+
+# The launcher version this file needs. Raise it when the builder starts using something only a
+# new executable has (a new helper program, a Python module the executable does not carry): the
+# launcher then sends the user to download the new executable instead of running this file.
+LAUNCHER_NEEDED = 1
+LAUNCHER_LINES = []  # what the launcher printed before the builder started, for the log
 
 FROZEN = getattr(sys, "frozen", False)
 REPO = Path(__file__).resolve().parents[2]
-BUNDLE = Path(getattr(sys, "_MEIPASS", REPO))
+TOOLS = os.environ.get("GALAXYCTR_TOOLS")
+ELF = Path(os.environ.get("GALAXYCTR_ELF") or REPO / "build" / "3ds" / "smg.elf")
+RELEASE = os.environ.get("GALAXYCTR_RELEASE", "dev")
 
-# The converter and its modules: in the bundle they sit at the top level.
-for folder in ([BUNDLE] if FROZEN else [REPO / "tools" / "3ds", REPO / "tools" / "3ds" / "builder"]):
+for folder in (REPO / "tools" / "3ds", REPO / "tools" / "3ds" / "builder"):
     sys.path.insert(0, str(folder))
 
 # The disc this port is built for. The main.dol hash is the one the decomp's Wii build matches
@@ -100,8 +110,8 @@ def step(number, total, title):
 # # Helper programs                                                         #
 # #                                                                         #
 # # nodtool (github.com/encounter/nod-rs) reads every Wii disc format;     #
-# # bannertool (icon and banner) and makerom make the CIA. The frozen one   #
-# # carries the copies for its own system in tools/<system>/; developer     #
+# # bannertool (icon and banner) and makerom make the CIA. The executable  #
+# # carries the copies for its own system (GALAXYCTR_TOOLS); developer      #
 # # mode looks in build/beta/tools and devkitPro's tools folder.            #
 # ############################################################################
 
@@ -115,8 +125,8 @@ def system_key():
 
 def find_tool(name):
     exe = name + (".exe" if os.name == "nt" else "")
-    candidates = [BUNDLE / "tools" / system_key() / exe]
-    if not FROZEN:
+    candidates = [Path(TOOLS) / exe] if TOOLS else []
+    if not TOOLS:
         candidates += sorted((REPO / "build" / "beta" / "tools").glob(f"*/{name}*"))
         # devkitPro: DEVKITPRO is often an msys path (/opt/devkitpro) on Windows, so try the usual folder too.
         for root in (os.environ.get("DEVKITPRO_WIN"), os.environ.get("DEVKITPRO"), "C:/devkitPro", "/opt/devkitpro"):
@@ -372,8 +382,7 @@ def make_icon_and_banner(disc, work):
 
 def make_cia(work):
     meta = work / "cia"
-    payload = BUNDLE / "payload" if FROZEN else REPO / "build" / "3ds"
-    elf, rsf = payload / "smg.elf", (BUNDLE / "payload" / "cia.rsf" if FROZEN else REPO / "tools" / "3ds" / "cia_showcase.rsf")
+    elf, rsf = ELF, REPO / "tools" / "3ds" / "cia_showcase.rsf"
     if not elf.is_file():
         raise BuildError("The port's program is missing from the builder. Download the builder again.")
     major, minor, micro = port_version()
@@ -388,8 +397,8 @@ def make_cia(work):
 
 
 def port_version():
-    """The port's version, from platform/3ds/host/build_version.h (copied into the payload)."""
-    header = (BUNDLE / "payload" / "build_version.h") if FROZEN else REPO / "platform" / "3ds" / "host" / "build_version.h"
+    """The port's version, from platform/3ds/host/build_version.h."""
+    header = REPO / "platform" / "3ds" / "host" / "build_version.h"
     text = header.read_text(encoding="ascii")
     return tuple(int(text.split(f"SMG_CIA_VERSION_{part} ", 1)[1].split()[0]) for part in ("MAJOR", "MINOR", "MICRO"))
 
@@ -539,7 +548,9 @@ def main():
     global LOG
     log_path = Path.home() / "galaxyctr-builder-log.txt"
     LOG = log_path.open("w", encoding="utf-8")
-    LOG.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {system_key()} {platform.platform()}\n")
+    LOG.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {system_key()} {platform.platform()} release {RELEASE}\n")
+    for line in LAUNCHER_LINES:
+        LOG.write(line + "\n")
     code = 0
     # Developer options, for testing without questions: --disc <image> --sd <folder> --work <folder>.
     args = sys.argv[1:]

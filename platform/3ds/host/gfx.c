@@ -612,7 +612,7 @@ void hostGfxTextureDestroyNow(void* texture) {
 // # Whether the next loop draws, and the detail level (hostPerfDetail) the rest of the port    #
 // # lowers its work by while the game runs behind: actors clip nearer, fewer particles. With a #
 // # drawn and an undrawn loop together over 41 ms, one loop in three is drawn, until they are  #
-// # under 37 ms again (DETAILS.md, section 10).                                                #
+// # under 37 ms again (DETAILS.md, section 7).                                                 #
 // ##############################################################################################
 static void beginFrame(void);
 

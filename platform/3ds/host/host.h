@@ -546,7 +546,7 @@ int hostGfxDrawNativeIndexed(unsigned long first, const unsigned short* pIndices
 // # Frames and pacing                                                                          #
 // #                                                                                            #
 // # Frame start and end, and the pacing that decides which frames are drawn when the game runs #
-// # behind the clock (gfx.c, DETAILS.md section 10).                                           #
+// # behind the clock (gfx.c, DETAILS.md section 7).                                            #
 // ##############################################################################################
 // Ends the frame; the next one starts cleared to clearColor (0xRRGGBBAA).
 void hostGfxClearFrame(unsigned long clearColor);

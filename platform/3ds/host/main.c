@@ -420,7 +420,7 @@ unsigned long hostMainStackUsed(void) {
 // # New 3DS family only                                                                        #
 // #                                                                                            #
 // # The game needs the New 3DS's memory and CPU: on an original 3DS it does not fit in memory  #
-// # and runs far below game speed (DETAILS.md, section 10). A CIA installer cannot refuse a    #
+// # and runs far below game speed (DETAILS.md, section 11). A CIA installer cannot refuse a    #
 // # console model, so the check happens here, before anything else: the bottom screen explains #
 // # why and the app closes on START. The low-memory mode (hostLowMemory) is separate: it is    #
 // # the memory layout the app was started with, while this checks the console itself, so the   #

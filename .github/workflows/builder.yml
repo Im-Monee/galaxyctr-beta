@@ -9,6 +9,9 @@
 # # fetches its helper programs, packs the builder with PyInstaller          #
 # # (tools/beta/build_builder.py) and attaches it to the same release.       #
 # #                                                                          #
+# # The release's tag is built into each builder: its launcher              #
+# # (tools/beta/launcher.py) compares it with the latest release on start.   #
+# #                                                                          #
 # # Helper programs, pinned:                                                  #
 # #   nodtool    encounter/nod-rs v2.0.0-alpha.12  (reads the disc image)     #
 # #   makerom    3DSGuy/Project_CTR makerom-v0.19.0 (makes the CIA)          #
@@ -60,9 +63,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: PyInstaller
+      - name: PyInstaller, and certifi (HTTPS certificates for the launcher on macOS)
         if: inputs.only == 'all' || inputs.only == matrix.os
-        run: python -m pip install pyinstaller==6.22.3
+        run: python -m pip install pyinstaller==6.22.3 certifi==2026.7.22
 
       # Each tool ends up in helpers/ under any name starting with its own; build_builder.py
       # copies it into the builder as tools/<system>/<tool>[.exe].
@@ -101,7 +104,7 @@ jobs:
 
       - name: Pack the builder
         if: inputs.only == 'all' || inputs.only == matrix.os
-        run: python tools/beta/build_builder.py --elf payload/smg.elf --tools helpers
+        run: python tools/beta/build_builder.py --elf payload/smg.elf --tools helpers --release-tag "${{ inputs.release }}"
 
       - name: Attach to the release
         if: inputs.only == 'all' || inputs.only == matrix.os
