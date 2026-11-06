@@ -8,7 +8,7 @@ on Windows). Without --elf, the public beta's program is built first (build_rele
 compares it with GitHub's latest release. The executable lands in build/beta/dist/. Run it
 once per system (Windows, Linux, macOS): PyInstaller only builds for the system it runs on.
 
-What goes inside, and nothing else (no game data, see DETAILS.md):
+What goes inside, and nothing else (no game data, see docs/DETAILS.md):
   launcher.py                  the program that starts: updates, then runs the builder
   source/                      the builtin copy of the source files the builder runs
                                (SOURCE_FILES, at their places in the repository)
