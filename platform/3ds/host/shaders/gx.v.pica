@@ -1,0 +1,280 @@
+; Vertex shader for the GX renderer (platform/3ds/gx/draw.cpp decodes the Wii vertices).
+;
+; Two kinds of draws share one vertex layout (HostGfxModelVertex in host.h):
+; - pretransformed (CPU path): v0.xyz and v1.x hold the clip-space position, v2 the final
+;   colour and v4-v6 the final texture coordinates;
+; - model (GPU path): v0 is the model-space position, v1 the normal (view space, or model space with nrmpalette), v2 the vertex
+;   colour of the lighting channel, v3.x the position matrix row, v3.yzw the texture matrix row
+;   of units 0-2 when vtxmtxN is set, and v4-v6 the inputs of the
+;   three texture coordinate generations. The shader applies the position matrix, projection,
+;   GX lighting and texture coordinate generation with the uniforms below (HostGfxTransform).
+; Colours arrive as unsigned bytes, which the GPU reads as 0..255 (not normalized).
+;
+; Every component of every output register must be written exactly once on each path: the
+; console's PICA waits for the missing ones and never finishes the draw (3dbrew GPU/Pitfalls;
+; emulators do not check it). The model path writes the texture coordinates' z and w as well.
+
+; Uniforms, in the order of HostGfxTransform.
+.fvec clip[4]       ; view space to 3DS clip space, rows x y z w
+.fvec palette[30]   ; Wii position matrices (XF rows 0-29)
+.fvec texmtx[9]     ; texture matrix of each unit (3 rows)
+.fvec texpost[9]    ; dual transform matrix of each unit (3 rows)
+.fvec texfinal[6]   ; s and t after the divide, as rows applied to (s, t, 1, 0)
+.fvec material      ; material colour register (0..1)
+.fvec ambient       ; ambient colour register (0..1)
+.fvec maskmat       ; 1 where the material comes from the vertex colour
+.fvec maskamb       ; 1 where the ambient comes from the vertex colour
+.fvec masklit       ; 1 where the channel is lit
+.fvec srtg          ; 1 where the unit's coordinates are the lit colour's red and green (GX_TG_SRTG;
+                    ; its matrices are zero then)
+.fvec lights[30]    ; up to 6 lights: position, direction (w: 1 - k), angular attenuation
+                    ; (w: lowest diffuse factor), distance attenuation (w: k), colour
+
+.bool pretransformed
+.bool lit
+.bool haslights
+.bool normalize0
+.bool normalize1
+.bool normalize2
+.bool divide0
+.bool divide1
+.bool divide2
+.bool nrmpalette     ; the normal is in model space: transform it with the position matrix
+.bool nrmcofactor    ; with nrmpalette: use the inverse transpose of the position matrix (cofactors)
+.bool vtxmtx0        ; unit 0 takes its matrix from palette rows v3.y.. (texmtx[0].x: has a third
+                     ; row; texmtx[2]: the third output when it has not)
+.bool vtxmtx1
+.bool vtxmtx2
+.ivec lightloop     ; light count - 1, 0, 5
+
+.constf consts(0.00392156862, 1.0, 0.0, 0.5)  ; 1 / 255, one, zero
+.alias inv255 consts.xxxx
+.alias one consts.yyyy
+.alias zero consts.zzzz
+
+.out outpos position
+.out outclr color
+.out outtc0 texcoord0.st
+.out -      texcoord0w outtc0.p
+.out outtc1 texcoord1
+.out outtc2 texcoord2
+
+.alias inpos v0
+.alias innrm v1
+.alias inclr v2
+.alias inmtx v3
+.alias intc0 v4
+.alias intc1 v5
+.alias intc2 v6
+
+.proc main
+    ifu pretransformed
+        mov outpos.xyz, inpos
+        mov outpos.w, innrm.x
+        mul outclr, inv255, inclr
+        mov outtc0, intc0
+        mov outtc1, intc1
+        mov outtc2, intc2
+    .else
+        ; Position: model -> view (r0) -> clip.
+        mova a0.x, inmtx.x
+        dp4 r0.x, palette[a0.x], inpos
+        dp4 r0.y, palette[a0.x+1], inpos
+        dp4 r0.z, palette[a0.x+2], inpos
+        mov r0.w, one
+        dp4 outpos.x, clip[0], r0
+        dp4 outpos.y, clip[1], r0
+        dp4 outpos.z, clip[2], r0
+        dp4 outpos.w, clip[3], r0
+
+        ; Material (r2): the register or the vertex colour (r1).
+        mul r1, inv255, inclr
+        add r2, -material, r1
+        mul r2, maskmat, r2
+        add r2, material, r2
+
+        ifu lit
+            ; Ambient plus the lights (r3).
+            add r3, -ambient, r1
+            mul r3, maskamb, r3
+            add r3, ambient, r3
+            ; View-space normal (r14).
+            mov r14, innrm
+            ifu nrmpalette
+                ifu nrmcofactor
+                    ; Rows of the inverse transpose, up to a scale: r1 x r2, r2 x r0, r0 x r1.
+                    mov r4, palette[a0.x]
+                    mov r5, palette[a0.x+1]
+                    mov r6, palette[a0.x+2]
+                    mul r7, r5.yzxw, r6.zxyw
+                    mul r8, r6.yzxw, r5.zxyw
+                    add r7, r7, -r8
+                    mul r9, r6.yzxw, r4.zxyw
+                    mul r8, r4.yzxw, r6.zxyw
+                    add r9, r9, -r8
+                    mul r10, r4.yzxw, r5.zxyw
+                    mul r8, r5.yzxw, r4.zxyw
+                    add r10, r10, -r8
+                    dp3 r14.x, r7, innrm
+                    dp3 r14.y, r9, innrm
+                    dp3 r14.z, r10, innrm
+                .else
+                    dp3 r14.x, palette[a0.x], innrm
+                    dp3 r14.y, palette[a0.x+1], innrm
+                    dp3 r14.z, palette[a0.x+2], innrm
+                .end
+                ; Normalized for the lights, as Dolphin's VertexShaderGen.cpp: also the 383 models
+                ; whose s16 normals are length 2 (keeping that length burned out MarioFace, TrickRabbit).
+                dp3 r15.x, r14, r14
+                rsq r15.x, r15.x
+                mul r14.xyz, r15.xxx, r14
+            .end
+            ifu haslights
+                for lightloop
+                    add r4.xyz, lights[aL], -r0     ; to the light
+                    dp3 r5.x, r4, r4                ; distance squared
+                    rsq r5.y, r5.x
+                    mul r4.xyz, r5.yyy, r4          ; direction to the light
+                    mul r5.z, r5.x, r5.y            ; distance
+                    ; Attenuation: angular(cos) / distance(d), cos clamped at 0.
+                    dp3 r6.x, lights[aL+1], r4
+                    max r6.x, zero, r6.x
+                    mov r7.x, one
+                    mov r7.y, r6.x
+                    mul r7.z, r6.x, r6.x
+                    dp3 r8.x, lights[aL+2], r7
+                    max r8.x, zero, r8.x
+                    mov r7.y, r5.z
+                    mov r7.z, r5.x
+                    dp3 r8.y, lights[aL+3], r7
+                    rcp r8.y, r8.y
+                    mul r8.x, r8.x, r8.y
+                    ; Diffuse factor: max(n.l * k + (1 - k), lowest).
+                    dp3 r9.x, r14, r4
+                    mul r9.x, lights[aL+3].w, r9.x
+                    add r9.x, lights[aL+1].w, r9.x
+                    max r9.x, lights[aL+2].w, r9.x
+                    mul r8.x, r8.x, r9.x
+                    mul r10, lights[aL+4], r8.xxxx
+                    add r3, r3, r10
+                .end
+            .end
+            min r3, one, r3
+            max r3, zero, r3
+            mul r3, r2, r3
+            ; Lit components take the lit colour.
+            add r3, -r2, r3
+            mul r3, masklit, r3
+            add r2, r2, r3
+        .end
+        mov outclr, r2
+
+        ; Texture coordinates: matrix, optional normalization and dual transform, divide,
+        ; then the unit's scale (or EFB copy mapping).
+        ifu vtxmtx0
+            mova a0.y, inmtx.y
+            dp4 r11.x, palette[a0.y], intc0
+            dp4 r11.y, palette[a0.y+1], intc0
+            dp4 r11.z, palette[a0.y+2], intc0
+            mul r11.z, texmtx[0].xxxx, r11.z
+            dp4 r12.x, texmtx[2], intc0
+            add r11.z, r11.z, r12.x
+        .else
+            dp4 r11.x, texmtx[0], intc0
+            dp4 r11.y, texmtx[1], intc0
+            dp4 r11.z, texmtx[2], intc0
+        .end
+        mov r11.w, one
+        ifu normalize0
+            dp3 r12.x, r11, r11
+            rsq r12.x, r12.x
+            mul r11.xyz, r12.xxx, r11
+        .end
+        dp4 r12.x, texpost[0], r11
+        dp4 r12.y, texpost[1], r11
+        dp4 r12.z, texpost[2], r11
+        ; Unit 0 divides per pixel, as GX does: s, t and the unit's final rows stay multiplied by
+        ; q, which goes out as texcoord0w; gfx.c binds unit 0 in projection mode for these draws.
+        ; Divided at the vertex instead (units 1 and 2) the coordinates bend across large
+        ; triangles (the title's sea).
+        ifu divide0
+            mul r13.xy, r2.xy, r12.zz
+            mad r12.xy, r13.xy, srtg.xx, r12.xy
+        .else
+            mad r12.xy, r2.xy, srtg.xx, r12.xy
+            mov r12.z, one
+        .end
+        mov r12.w, zero
+        dp4 outtc0.x, texfinal[0], r12
+        dp4 outtc0.y, texfinal[1], r12
+        mov outtc0.z, r12.z
+        mov outtc0.w, zero
+
+        ifu vtxmtx1
+            mova a0.y, inmtx.z
+            dp4 r11.x, palette[a0.y], intc1
+            dp4 r11.y, palette[a0.y+1], intc1
+            dp4 r11.z, palette[a0.y+2], intc1
+            mul r11.z, texmtx[3].xxxx, r11.z
+            dp4 r12.x, texmtx[5], intc1
+            add r11.z, r11.z, r12.x
+        .else
+            dp4 r11.x, texmtx[3], intc1
+            dp4 r11.y, texmtx[4], intc1
+            dp4 r11.z, texmtx[5], intc1
+        .end
+        mov r11.w, one
+        ifu normalize1
+            dp3 r12.x, r11, r11
+            rsq r12.x, r12.x
+            mul r11.xyz, r12.xxx, r11
+        .end
+        dp4 r12.x, texpost[3], r11
+        dp4 r12.y, texpost[4], r11
+        dp4 r12.z, texpost[5], r11
+        ifu divide1
+            rcp r13.x, r12.z
+            mul r12.xy, r13.xx, r12
+        .end
+        mad r12.xy, r2.xy, srtg.yy, r12.xy
+        mov r12.z, one
+        mov r12.w, zero
+        dp4 outtc1.x, texfinal[2], r12
+        dp4 outtc1.y, texfinal[3], r12
+        mov outtc1.zw, zero
+
+        ifu vtxmtx2
+            mova a0.y, inmtx.w
+            dp4 r11.x, palette[a0.y], intc2
+            dp4 r11.y, palette[a0.y+1], intc2
+            dp4 r11.z, palette[a0.y+2], intc2
+            mul r11.z, texmtx[6].xxxx, r11.z
+            dp4 r12.x, texmtx[8], intc2
+            add r11.z, r11.z, r12.x
+        .else
+            dp4 r11.x, texmtx[6], intc2
+            dp4 r11.y, texmtx[7], intc2
+            dp4 r11.z, texmtx[8], intc2
+        .end
+        mov r11.w, one
+        ifu normalize2
+            dp3 r12.x, r11, r11
+            rsq r12.x, r12.x
+            mul r11.xyz, r12.xxx, r11
+        .end
+        dp4 r12.x, texpost[6], r11
+        dp4 r12.y, texpost[7], r11
+        dp4 r12.z, texpost[8], r11
+        ifu divide2
+            rcp r13.x, r12.z
+            mul r12.xy, r13.xx, r12
+        .end
+        mad r12.xy, r2.xy, srtg.zz, r12.xy
+        mov r12.z, one
+        mov r12.w, zero
+        dp4 outtc2.x, texfinal[4], r12
+        dp4 outtc2.y, texfinal[5], r12
+        mov outtc2.zw, zero
+    .end
+    end
+.end

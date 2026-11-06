@@ -1,0 +1,108 @@
+# ############################################################################
+# # Builds the GalaxyCTR builder for Windows, Linux and macOS                #
+# #                                                                          #
+# # Copied to .github/workflows/builder.yml in the public repository by      #
+# # tools/beta/export_public.py. Run it by hand (Actions tab, "Run workflow") #
+# # with the tag of a release that already holds smg.elf: the port's program, #
+# # built and tested on a real console by the developer                      #
+# # (python tools/beta/build_builder.py --elf-only). Each system's job        #
+# # fetches its helper programs, packs the builder with PyInstaller          #
+# # (tools/beta/build_builder.py) and attaches it to the same release.       #
+# #                                                                          #
+# # Helper programs, pinned:                                                  #
+# #   nodtool    encounter/nod-rs v2.0.0-alpha.12  (reads the disc image)     #
+# #   makerom    3DSGuy/Project_CTR makerom-v0.19.0 (makes the CIA)          #
+# #   bannertool diasurgical/bannertool 1.2.0      (HOME Menu icon, banner); #
+# #              that release has no macOS build, so macOS compiles it       #
+# ############################################################################
+
+name: Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Tag of the release that holds smg.elf"
+        required: true
+      only:
+        description: "Only this runner (for example macos-latest), or all"
+        default: all
+
+permissions:
+  contents: write  # attaching the builders to the release
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  NOD_VERSION: v2.0.0-alpha.12
+  MAKEROM_VERSION: makerom-v0.19.0
+  BANNERTOOL_VERSION: "1.2.0"
+
+jobs:
+  builder:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, nod: nodtool-windows-x86_64.exe, makerom: win_x86_64, bannertool: windows-x86_64 }
+          - { os: ubuntu-22.04, nod: nodtool-linux-x86_64, makerom: ubuntu_x86_64, bannertool: linux-x86_64 }
+          - { os: macos-latest, nod: nodtool-macos-arm64, makerom: macos_arm64, bannertool: source }
+          - { os: macos-15-intel, nod: nodtool-macos-x86_64, makerom: macos_x86_64, bannertool: source }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        if: inputs.only == 'all' || inputs.only == matrix.os
+
+      - uses: actions/setup-python@v5
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        with:
+          python-version: "3.12"
+
+      - name: PyInstaller
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        run: python -m pip install pyinstaller==6.22.3
+
+      # Each tool ends up in helpers/ under any name starting with its own; build_builder.py
+      # copies it into the builder as tools/<system>/<tool>[.exe].
+      - name: Helper programs
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        run: |
+          mkdir -p helpers downloads
+          exe=""; [ "$RUNNER_OS" = "Windows" ] && exe=".exe"
+
+          gh release download "$NOD_VERSION" --repo encounter/nod-rs --pattern "${{ matrix.nod }}" --dir downloads
+          cp "downloads/${{ matrix.nod }}" "helpers/nodtool$exe"
+
+          gh release download "$MAKEROM_VERSION" --repo 3DSGuy/Project_CTR --pattern "$MAKEROM_VERSION-${{ matrix.makerom }}.zip" --dir downloads
+          unzip -o -q "downloads/$MAKEROM_VERSION-${{ matrix.makerom }}.zip" -d downloads/makerom
+          cp "$(find downloads/makerom -type f -name "makerom$exe" | head -n 1)" "helpers/makerom$exe"
+
+          if [ "${{ matrix.bannertool }}" = "source" ]; then
+            git clone --quiet --recursive --branch master https://github.com/diasurgical/bannertool.git downloads/bannertool-src
+            # Its build scripts (Steveice10/buildtools) predate Apple Silicon and stop on an
+            # arm64 host; told it is x86_64, they build for the host anyway (clang's default).
+            make -C downloads/bannertool-src UNAME_M=x86_64
+            cp "$(find downloads/bannertool-src/output -type f -name bannertool | head -n 1)" helpers/bannertool
+          else
+            gh release download "$BANNERTOOL_VERSION" --repo diasurgical/bannertool --pattern bannertool.zip --dir downloads
+            unzip -o -q downloads/bannertool.zip -d downloads/bannertool
+            cp "downloads/bannertool/${{ matrix.bannertool }}/bannertool$exe" "helpers/bannertool$exe"
+          fi
+
+          chmod +x helpers/* || true
+          ls -l helpers
+          for tool in helpers/*; do "$tool" --help > /dev/null 2>&1 || true; done
+
+      - name: The port's program
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        run: gh release download "${{ inputs.release }}" --pattern smg.elf --dir payload
+
+      - name: Pack the builder
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        run: python tools/beta/build_builder.py --elf payload/smg.elf --tools helpers
+
+      - name: Attach to the release
+        if: inputs.only == 'all' || inputs.only == matrix.os
+        run: gh release upload "${{ inputs.release }}" build/beta/dist/GalaxyCTR-Builder-* --clobber

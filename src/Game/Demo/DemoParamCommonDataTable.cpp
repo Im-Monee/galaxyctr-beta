@@ -1,0 +1,51 @@
+#include "Game/Demo/DemoParamCommonDataTable.hpp"
+#include "Game/Util/StringUtil.hpp"
+
+namespace {
+    struct Param {
+        /* 0x0 */ const char* mParamName;
+        /* 0x4 */ f32 mCameraShakeIntensity;
+        /* 0x8 */ f32 mCameraShakeSpeed;
+        /* 0xC */ const char* pRumbleName;
+    };
+
+    const Param sDataTable[] = {
+        {"SeaBottomBigDoorA", 0.1f, 2.2f, "中"},
+        {"SeaBottomBigDoorB", 0.1f, 2.2f, "中"},
+        {"SeaBottomBigDoorC", 0.1f, 2.2f, "中"},
+    };
+
+    const Param* getParam(const char* pParamName) {
+        for (u32 i = 0; i < ARRAY_SIZE(sDataTable); i++) {
+            if (MR::isEqualString(pParamName, sDataTable[i].mParamName)) {
+                return &sDataTable[i];
+            }
+        }
+
+        return &sDataTable[0];
+    }
+};  // namespace
+
+f32 MR::Demo::getCameraShakeIntensity(const char* pParamName) {
+    return ::getParam(pParamName)->mCameraShakeIntensity;
+}
+
+f32 MR::Demo::getCameraShakeSpeed(const char* pParamName) {
+    return ::getParam(pParamName)->mCameraShakeSpeed;
+}
+
+const char* MR::Demo::getPadRumble(const char* pParamName) {
+    return ::getParam(pParamName)->pRumbleName;
+}
+
+bool MR::Demo::isExistCameraShaking(const char* pParamName) {
+    return 0.0f < ::getParam(pParamName)->mCameraShakeIntensity;
+}
+
+bool MR::Demo::isExistPadRumble(const char* pParamName) {
+    return ::getParam(pParamName)->pRumbleName != nullptr;
+}
+
+const char* MR::Demo::getStartEffect(const char* pParamName) {
+    return "Open";
+}

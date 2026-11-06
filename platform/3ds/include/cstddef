@@ -1,0 +1,8 @@
+#pragma once
+
+// MSL compatibility shim: MSL's <cstddef> also works from C, which some Wii SDK files rely on.
+#ifdef __cplusplus
+#include_next <cstddef>
+#else
+#include <stddef.h>
+#endif
