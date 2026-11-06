@@ -147,15 +147,17 @@ def latest_release():
 def download(url, target, label, accept="application/octet-stream"):
     with request(url, accept) as response, open(target, "wb") as out:
         total = int(response.headers.get("Content-Length") or 0)
-        done = 0
+        done, last = 0, None
         while True:
             block = response.read(1 << 16)
             if not block:
                 break
             out.write(block)
             done += len(block)
-            shown = f"{100 * done / total:5.1f}%" if total else f"{done >> 20} MB"
-            print(f"\r  {label}: {shown}", end="", flush=True)
+            shown = f"{100 * done / total:3.0f}%" if total else f"{done >> 20} MB"
+            if shown != last:  # GitHub's source archives have no size: megabytes then
+                print(f"\r  {label}: {shown}", end="", flush=True)
+                last = shown
     print()
 
 
@@ -187,6 +189,18 @@ class NeedsNewBuilder(Exception):
     pass
 
 
+def patiently(action, tries=20):
+    """On Windows a folder whose files were just written is often held for a moment (an
+    antivirus scanning them): "access denied". Retried for up to ten seconds."""
+    for attempt in range(tries):
+        try:
+            return action()
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.5)
+
+
 def install(release, folder):
     tag = release["tag_name"]
     elf_asset = next((a for a in release.get("assets", []) if a["name"] == "smg.elf"), None)
@@ -207,14 +221,23 @@ def install(release, folder):
         shutil.rmtree(work, ignore_errors=True)
         raise NeedsNewBuilder(tag)
 
-    shutil.rmtree(folder / "source", ignore_errors=True)
-    (work / "source").rename(folder / "source")
-    os.replace(work / "smg.elf", folder / "smg.elf")
-    (folder / "release.json").write_text(json.dumps({
-        "tag": tag, "name": release.get("name"), "published": release.get("published_at"),
-        "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }, indent=1), encoding="utf-8")
+    swap_in(folder, work / "source", work / "smg.elf", {
+        "tag": tag, "name": release.get("name"), "published": release.get("published_at")})
     shutil.rmtree(work, ignore_errors=True)
+
+
+def swap_in(folder, source, elf, info):
+    """Puts a checked source tree and program in place of the folder's. The old copy is moved
+    aside first and deleted last, so the swap itself is only renames."""
+    old = folder / "source.old"
+    shutil.rmtree(old, ignore_errors=True)
+    if (folder / "source").exists():
+        patiently(lambda: (folder / "source").rename(old))
+    patiently(lambda: source.rename(folder / "source"))
+    patiently(lambda: os.replace(elf, folder / "smg.elf"))
+    shutil.rmtree(old, ignore_errors=True)
+    info["downloaded"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    (folder / "release.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
 
 
 def choose_copy():
@@ -259,20 +282,19 @@ def choose_copy():
 
 
 def place_builtin(builtin, folder):
-    shutil.rmtree(folder / "source", ignore_errors=True)
-    shutil.copytree(builtin.source, folder / "source")
-    shutil.copyfile(builtin.elf, folder / "smg.elf")
-    (folder / "release.json").write_text(json.dumps({
-        "tag": builtin.tag, "name": "the copy inside the builder program",
-        "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }, indent=1), encoding="utf-8")
+    work = folder / "download"
+    shutil.rmtree(work, ignore_errors=True)
+    shutil.copytree(builtin.source, work / "source")
+    shutil.copyfile(builtin.elf, work / "smg.elf")
+    swap_in(folder, work / "source", work / "smg.elf", {"tag": builtin.tag, "name": "the copy inside the builder program"})
+    shutil.rmtree(work, ignore_errors=True)
 
 
 # ##############################################################################################
 # # Running the builder                                                                        #
 # #                                                                                            #
 # # The builder is imported from the chosen source tree, with the helper programs and the      #
-# # port's program handed over through the environment (GALAXYCTR_TOOLS, GALAXYCTR_ELF),      #
+# # port's program handed over through the environment (GALAXYCTR_TOOLS, GALAXYCTR_ELF),       #
 # # which the converter's worker processes inherit too. Child processes the converter starts   #
 # # run this executable again: freeze_support() hands them over before anything else happens.  #
 # # If the downloaded builder cannot even start, the copy inside the executable runs instead.  #
