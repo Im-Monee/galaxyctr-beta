@@ -37,13 +37,13 @@ later TEV stage. This gives water refraction, heat haze, normal-map lighting and
 
 | User | Wii effect | 3DS today |
 |---|---|---|
-| J3D materials with indirect stages (`n3d` `FLAG_INDIRECT`) | distorted textures | drawn without the offset |
+| J3D materials with indirect stages (`n3d` `FLAG_INDIRECT`) | distorted textures | approximated: the displaced texture is a blend of two or more samples, chosen by the indirect texture's value (`RvlDistortion` in `gx/gx_state.h`, `setupDistortion` in `gx/native.cpp`). Where texture units or combiner stages run out, the average displacement alone. |
 | `OceanRing*`, `OceanBowl`, `OceanSphere`, `WaterRoad`, `WhirlPool` | water refraction of the scene behind | water surface through `WaterRender3DS`, no refraction |
-| `NormalMapBase` (and `SimpleNormalMapObj`, `NormalMapTestObj`) | per-pixel normal-map lighting | not drawn (only the Wii draw path reaches it) |
+| `NormalMapBase` (and `SimpleNormalMapObj`, `NormalMapTestObj`) | per-pixel normal-map lighting | the model drawn by the native renderer, without the normal map |
 | `FurDrawer` | fur strands bent by the indirect texture | fur layers drawn straight |
 | `SpiderThread` | thread shading | drawn without the indirect term |
 | `WaterCameraFilter` | underwater screen distortion | colour filter only |
-| JPA particles and nw4r layout materials with indirect stages | heat haze, wavy panes | drawn without the offset |
+| JPA particles and nw4r layout materials with indirect stages | heat haze, wavy panes | approximated the same way for particles (`gx/particle.cpp`) and for layout materials with one texture and one indirect stage, such as the smoke picture (`lyt_material.cpp`). Other layout materials are drawn without the offset. |
 
 **Possible later.**
 - Refraction, heat haze and wavy screens: draw the screen capture on a grid of small quads
