@@ -15,6 +15,7 @@
 
 #endif
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
+    // 3DS: no display list is made: the native renderer reads the J3D objects instead.
 #ifdef __3DS__
     mMaxSize = 0;
     mpDisplayList[0] = mpDisplayList[1] = NULL;
@@ -30,6 +31,7 @@ J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
 }
 
 J3DError J3DDisplayListObj::newSingleDisplayList(u32 maxSize) {
+    // 3DS: no display list is made: the native renderer reads the J3D objects instead.
 #ifdef __3DS__
     mMaxSize = 0;
     mpDisplayList[0] = mpDisplayList[1] = NULL;
@@ -72,12 +74,16 @@ void J3DDisplayListObj::swapBuffer() {
 }
 
 void J3DDisplayListObj::callDL() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXCallDisplayList(mpDisplayList[0], mSize);
 #endif
 }
 
 void J3DDisplayListObj::beginDL() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -89,6 +95,7 @@ void J3DDisplayListObj::beginDL() {
 }
 
 u32 J3DDisplayListObj::endDL() {
+    // 3DS: no display list is made: the native renderer reads the J3D objects instead.
 #ifdef __3DS__
     return mSize;
 #else
@@ -106,6 +113,8 @@ void J3DDisplayListObj::beginPatch() {
 }
 
 u32 J3DDisplayListObj::endPatch() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     OSRestoreInterrupts(sInterruptFlag);
     GDSetCurrent(NULL);
@@ -202,6 +211,7 @@ void rvl3DSDrawMatPacket(J3DMatPacket* pPacket);  // Game/System/DrawBuffer.cpp
 #endif
 
 void J3DMatPacket::draw() {
+    // 3DS: a plain draw buffer's packet drawn by the native renderer (DrawBuffer.cpp).
 #ifdef __3DS__
     rvl3DSDrawMatPacket(this);
     return;

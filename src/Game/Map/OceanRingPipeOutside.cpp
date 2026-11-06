@@ -9,6 +9,7 @@
 #include "Game/Util/SchedulerUtil.hpp"
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include "WaterRender3DS.hpp"
 #endif
@@ -30,6 +31,8 @@ OceanRingPipeOutside::OceanRingPipeOutside(const OceanRingPipe* pPipe)
 
 void OceanRingPipeOutside::init(const JMapInfoIter& rIter) {
     MR::connectToScene(this, MR::MovementType_None, MR::CalcAnimType_None, MR::DrawBufferType_None, MR::DrawType_OceanRingPipeOutside);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     initDisplayList();
 #endif
@@ -43,6 +46,8 @@ void OceanRingPipeOutside::movement() {
     mTexU = MR::repeat(mTexU + ::sTexSpeedU, 0.0f, 1.0f);
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void OceanRingPipeOutside::initDisplayList() {
     MR::ProhibitSchedulerAndInterrupts prohibit(false);
@@ -99,6 +104,8 @@ void OceanRingPipeOutside::draw() const {
 }
 
 const GXColor sFogCol = {0xFF, 0xFF, 0xFF, 0xFF};
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 
 void OceanRingPipeOutside::loadMaterial() const {

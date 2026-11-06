@@ -3,6 +3,7 @@
 #include "JSystem/JParticle/JPAResource.hpp"
 #include <cstring>
 
+// 3DS: the texture loaded on each map, for the particles' Citro3D draw.
 #ifdef __3DS__
 JUTTexture* JPAResourceManager::sLoadedTexture[4];
 #endif

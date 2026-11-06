@@ -22,6 +22,7 @@
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include "WaterRender3DS.hpp"
 #endif
@@ -113,6 +114,8 @@ namespace NrvWaterRoad {
 WaterRoadModelInfo::WaterRoadModelInfo(WaterRoad* pRoad, bool isLow)
     : mIsLow(isLow), mNumPoints(), mNumLinePoints(), mNumLoopPoints(12), mPoints(), mNormals(), mRailCoords(), mDispListLength(), mDispList() {
     initPoints(pRoad);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     initDisplayList();
 #endif
@@ -179,6 +182,8 @@ void WaterRoadModelInfo::initPoints(WaterRoad* pRoad) {
     }
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void WaterRoadModelInfo::initDisplayList() {
     MR::ProhibitSchedulerAndInterrupts scheduler(false);
@@ -257,11 +262,13 @@ void WaterRoadModelInfo::sendGD() const {
 }
 #endif
 
+// 3DS: the road's draw takes the road, whose textures the Citro3D draw binds itself.
 #ifdef __3DS__
 void WaterRoadModelInfo::drawGD(const WaterRoad* pRoad) const {
 #else
 void WaterRoadModelInfo::drawGD() const {
 #endif
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     draw3DS(pRoad, mNumLinePoints);
 #else
@@ -276,6 +283,7 @@ void WaterRoadModelInfo::drawGD() const {
 }
 
 void WaterRoadModelInfo::drawDirect(const WaterRoad* pRoad) const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     draw3DS(pRoad, calcDemoDrawPointNum(pRoad));
 #else
@@ -385,9 +393,7 @@ void WaterRoadModelInfo::drawDirect(const WaterRoad* pRoad) const {
     }
 #endif
 }
-#ifdef __3DS__
-
-#endif
+// 3DS: the water road through Citro3D (WaterRender3DS.hpp).
 #ifdef __3DS__
 void WaterRoadModelInfo::draw3DS(const WaterRoad* pRoad, s32 pointNum) const {
     void* water = rvl3DSGetJUTTexture(pRoad->mTexture);
@@ -429,6 +435,8 @@ s32 WaterRoadModelInfo::calcDemoDrawPointNum(const WaterRoad* pRoad) const {
     return mNumLinePoints;
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void WaterRoadModelInfo::loadMaterialHigh(const WaterRoad* pRoad) const {
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
@@ -889,6 +897,7 @@ void WaterRoad::draw() const {
         return;
     }
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     if (isNerve(GET_NERVE(WaterRoad, WaterRoadNrvDemoGrowUp)) || isNerve(GET_NERVE(WaterRoad, WaterRoadNrvDemoWaitEnd))) {
         mModelInfoHigh->drawDirect(this);

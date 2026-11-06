@@ -1,6 +1,11 @@
-// Portable implementation of the Wii matrix library (revolution/mtx.h).
-// The PS* functions use paired-single assembly on the Wii; these give the same results in C.
-// The C_* functions are copied from the decompiled SDK (src/RVL_SDK/mtx).
+// ##############################################################################################
+// # The Wii matrix library                                                                     #
+// #                                                                                            #
+// # A portable implementation of revolution/mtx.h. The PS* functions use paired-single         #
+// # assembly on the Wii; these give the same results in C. The C_* functions are copied from   #
+// # the decompiled SDK (src/RVL_SDK/mtx). A Mtx is 3 rows of 4: the last row of a 4x4 matrix   #
+// # is implicitly (0, 0, 0, 1).                                                                #
+// ##############################################################################################
 
 #include <revolution/mtx.h>
 #include <math.h>
@@ -231,6 +236,11 @@ void PSMTX44Copy(const Mtx44 src, Mtx44 dst) {
     }
 }
 
+// ##############################################################################################
+// # Vectors and quaternions                                                                    #
+// #                                                                                            #
+// # The vector and quaternion functions the game calls.                                        #
+// ##############################################################################################
 void PSVECAdd(const Vec* a, const Vec* b, Vec* ab) {
     ab->x = a->x + b->x;
     ab->y = a->y + b->y;
@@ -296,6 +306,12 @@ f32 PSQUATDotProduct(const Quaternion* p, const Quaternion* q) {
     return p->x * q->x + p->y * q->y + p->z * q->z + p->w * q->w;
 }
 
+// ##############################################################################################
+// # Camera and projection matrices                                                             #
+// #                                                                                            #
+// # As in the SDK: the camera matrix, the texture projections of lights, and the perspective   #
+// # and orthographic projections.                                                              #
+// ##############################################################################################
 void C_MTXLookAt(Mtx m, const Point3d* camPos, const Vec* camUp, const Point3d* target) {
     Vec vLook, vRight, vUp;
 

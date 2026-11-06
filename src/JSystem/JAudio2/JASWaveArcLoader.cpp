@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stdint.h>
 
+// 3DS: the port's log, for the wave archive messages below.
 #ifdef __3DS__
 extern "C" void hostLog(const char* fmt, ...);
 #endif
@@ -77,15 +78,18 @@ bool JASWaveArc::eraseSetup() {
 void JASWaveArc::loadToAramCallback(void* this_) {
     loadToAramCallbackParams* tmp = (loadToAramCallbackParams*)this_;
     JASWaveArc* wavArc = tmp->mWavArc;
+    // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
     hostLog("audio: loading wave archive %ld to ARAM %08lX\n", static_cast< long >(tmp->mEntryNum), static_cast< unsigned long >(tmp->mBase));
 #endif
     if (JKRDvdAramRipper::loadToAram(tmp->mEntryNum, tmp->mBase, EXPAND_SWITCH_UNKNOWN0, 0, 0, nullptr) == nullptr) {
+        // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
         hostLog("audio: wave archive %ld FAILED to load\n", static_cast< long >(tmp->mEntryNum));
 #endif
         return;
     }
+    // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
     hostLog("audio: wave archive %ld loaded\n", static_cast< long >(tmp->mEntryNum));
 #endif

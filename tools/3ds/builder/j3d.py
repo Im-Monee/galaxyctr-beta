@@ -10,6 +10,12 @@ Tables inside a block have no element count: their size runs to the next table's
 
 from binary import ConversionError, swap16, swap16_array, swap32, swap32_array
 
+# ##############################################################################################
+# # Recognising a J3D file                                                                     #
+# #                                                                                            #
+# # A converted file starts with the magic reversed (2D3J), so a second conversion is          #
+# # detected; restore_model turns a converted model back to the Wii layout.                    #
+# ##############################################################################################
 J3D_MAGIC = b"J3D2"
 J3D_CONVERTED_MAGIC = b"2D3J"
 _source_endian = "big"
@@ -63,8 +69,14 @@ def offsets(buf, block, first, count):
     return [be_u32(buf, block + first + i * 4) for i in range(count)]
 
 
-# Blocks ------------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # The blocks of a model                                                                      #
+# #                                                                                            #
+# # One converter per block (INF1 scene graph, VTX1 vertices, EVP1 and DRW1 skinning, JNT1     #
+# # joints, SHP1 shapes, MAT3 materials, MDL3 display lists, TEX1 textures): every multi-byte  #
+# # field the game reads is swapped to little-endian; the material display lists stay          #
+# # big-endian, as GX data.                                                                    #
+# ##############################################################################################
 
 def convert_inf1(buf, block, size):
     hierarchy = be_u32(buf, block + 0x14)
@@ -171,6 +183,12 @@ def convert_shp1(buf, block, size):
     swap32_array(buf, block + draw_init, (ends[draw_init] - draw_init) // 4)
 
 
+# ##############################################################################################
+# # Materials (MAT3)                                                                           #
+# #                                                                                            #
+# # MAT3 is a set of tables shared by the materials; each table's elements are converted by    #
+# # their own layout, found from the materials that index them.                                #
+# ##############################################################################################
 # MAT3 table element sizes and how to convert one element, by offset slot in the block.
 def _bytes(buf, pos):
     pass
@@ -357,6 +375,11 @@ BLOCKS = {
 }
 
 
+# ##############################################################################################
+# # Converting a whole model                                                                   #
+# #                                                                                            #
+# # Every block in order, then the header; and the .bti files, one texture each.               #
+# ##############################################################################################
 def convert_model(data, source_endian="big"):
     global _source_endian
     previous_endian = _source_endian

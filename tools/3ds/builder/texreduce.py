@@ -19,6 +19,13 @@ import os
 import struct
 import sys
 
+# ##############################################################################################
+# # Sizes and formats                                                                          #
+# #                                                                                            #
+# # How large a model texture may stay (the top screen is 400x240; skies keep more), and the   #
+# # GX formats with their block sizes. The 3DS's own formats (ETC1, ETC1A4, LA4) are numbered  #
+# # past the GX ones, as rvl/jut_texture.cpp reads them.                                       #
+# ##############################################################################################
 LIMIT = 128
 # Sky archives: their CMPR textures keep up to this size, unencoded again. CMPR at 128 re-encoded shows
 # its 4x4 blocks as steps once a sky magnifies it (the title's Earth); jut_texture.cpp's fitImage
@@ -54,6 +61,12 @@ def target_size(width, height, limit=LIMIT):
     return width, height, steps
 
 
+# ##############################################################################################
+# # The GX texel codecs                                                                        #
+# #                                                                                            #
+# # Decoding and encoding every GX format the game's models use, exactly as the console's      #
+# # decoder (rvl/jut_texture.cpp) reads them back, and halving an image.                       #
+# ##############################################################################################
 # Texel codecs, as jut_texture.cpp decodes. Images are four flat lists (r, g, b, a) of width x height.
 
 def _565(v):
@@ -255,8 +268,13 @@ def encode(fmt, image, width, height):
     return bytes(out)
 
 
-# The 3DS's formats ---------------------------------------------------------------------------
-
+# ##############################################################################################
+# # The 3DS's formats                                                                          #
+# #                                                                                            #
+# # ETC1 (4 bits a texel, colour), ETC1A4 (with 4-bit alpha) and LA4, written in the GPU's own #
+# # layout (8x8 tiles of 4x4 blocks in Morton order), so the console only copies them: an      #
+# # encoder on the console took tens of milliseconds a texture.                                #
+# ##############################################################################################
 _ETC1_TABLES = ((2, 8), (5, 17), (9, 29), (13, 42), (18, 60), (24, 80), (33, 106), (47, 183))
 # Each table's modifiers in rising order and their index (0 +a, 1 +b, 2 -a, 3 -b).
 _ETC1_SORTED = tuple(((-b, 3), (-a, 2), (a, 0), (b, 1)) for a, b in _ETC1_TABLES)
@@ -456,6 +474,15 @@ def _compressed(fmt, data, width, height):
     return _encode_native(target, image, (pot_w, pot_h)), target, pot_w, pot_h, largest
 
 
+# ##############################################################################################
+# # Reducing a texture                                                                         #
+# #                                                                                            #
+# # A texture over the limit is halved (its own mipmaps are not used: they differ from the     #
+# # halved base level), and compressed into a 3DS format, except the textures NormalMapBase    #
+# # works on, which keep their GX format. An indirect texture (I4 to IA8) with a narrow range  #
+# # of values is stretched to the whole 8 bits, since the 3DS blends its samples by those      #
+# # values (native.cpp, rvlDistortionPlan).                                                    #
+# ##############################################################################################
 def _reduced(fmt, data, width, height, mips, sky=False):
     """(bytes, width, height) of the level the port uploads, or None to keep the base level."""
     _, _, steps = target_size(width, height, SKY_CMPR_LIMIT if sky and fmt == CMPR else LIMIT)
@@ -534,6 +561,12 @@ def _stretched(fmt, image, value_range):
     return bytes(four[b >> 4] << 4 | four[b & 0xF] for b in image)
 
 
+# ##############################################################################################
+# # A model's textures                                                                         #
+# #                                                                                            #
+# # The TEX1 block of a J3D model, rewritten with the reduced textures; the counts go to the   #
+# # converter's log.                                                                           #
+# ##############################################################################################
 def reduce_model(data, stats=None, sky=False, stretch=True, compress=True):
     """The model with its TEX1 textures reduced (unchanged when there is nothing to do or the
     block is not laid out as expected). stats, a dict, gets "before" and "after" byte counts.

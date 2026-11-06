@@ -1,13 +1,17 @@
 #pragma once
 
-// Counters of the native renderer (native.cpp, native_submit.cpp), logged and reset every 100
-// frames by rvl3DSEndFrame.
-
+// ##############################################################################################
+// # Native renderer counters                                                                   #
+// #                                                                                            #
+// # Counters of the native renderer (native.cpp, native_submit.cpp), logged and reset every    #
+// # 100 frames by rvl3DSEndFrame, and the profile timers, which run only with debug.txt        #
+// # profile=1 or in a showcase build (reading the tick is a system call).                      #
+// ##############################################################################################
 #include <revolution/types.h>
 
 struct RvlGXProfile {
     u64 host;        // native submissions (Citro3D state and draws)
-    u32 nativeDraws; // native J3D draws (block N, native.cpp)
+    u32 nativeDraws; // native J3D draws (native.cpp)
     u32 nativeFallbacks[9];  // J3D packets rejected by native.cpp, by reason
     u32 nativeShapeFallbacks[4];  // bad index, no matrix, differed tex-mtx, missing matrix table
     u32 nativeBillboards;  // native J3D billboard packets

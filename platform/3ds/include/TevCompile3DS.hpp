@@ -1,9 +1,14 @@
 #pragma once
 
-// 3DS: a Wii TEV configuration given as data (the values of GXSetTevOrder, GXSetTevColorIn/Op,
-// GXSetTevAlphaIn/Op, GXSetTevKColorSel/KAlphaSel, GXSetTevSwapMode(Table), GXSetTevColorS10 and
-// GXSetTevKColor) compiled into 3DS texture combiner stages, by the rules and approximations of
-// platform/3ds/gx/tev_terms.h. For draws that set their TEV without GX (nw4r layout materials).
+// ##############################################################################################
+// # A TEV configuration as data                                                                #
+// #                                                                                            #
+// # The values of GXSetTevOrder, GXSetTevColorIn/Op, GXSetTevAlphaIn/Op,                       #
+// # GXSetTevKColorSel/KAlphaSel, GXSetTevSwapMode(Table), GXSetTevColorS10 and GXSetTevKColor, #
+// # compiled into 3DS texture combiner stages by platform/3ds/gx/tev_compile.cpp, with the     #
+// # rules and approximations of tev_terms.h. For draws that set their TEV without GX (nw4r     #
+// # layout materials, native.cpp).                                                             #
+// ##############################################################################################
 
 #include "host.h"
 #include <revolution/types.h>

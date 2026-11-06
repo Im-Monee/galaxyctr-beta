@@ -16,9 +16,7 @@ MainLoopFramework* MainLoopFramework::sManager;
 MR::BothDirList< MainLoopFrameworkAlarm > MainLoopFrameworkAlarm::sList(false);
 
 GXTexObj clear_z_tobj;
-#ifdef __3DS__
-
-#endif
+// 3DS: the frame phase for the stall report, and the 3DS renderer's frame end.
 #ifdef __3DS__
 extern "C" void rvlGXDebugSetFramePhase(int phase);
 void rvl3DSEndFrame();
@@ -65,6 +63,8 @@ void MainLoopFramework::ctor_subroutine(bool useAlpha) {
     mLastVideoTickDelta = 0;
     mSingleBufferIndex = 0;
     _3E = 0;
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXInitTexObj(&clear_z_tobj, clearZTexData, 4, 4, GX_TF_Z24X8, GX_REPEAT, GX_REPEAT, GX_FALSE);
     GXInitTexObjLOD(&clear_z_tobj, GX_NEAR, GX_NEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
@@ -133,6 +133,8 @@ void MainLoopFramework::drawendXfb_single() {
     if (pXfbMgr->mDrawingXfbIndex >= 0) {
         prepareCopyDisp();
         ::waitDrawDoneAndSetAlarm();
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXFlush();
 #endif
@@ -141,6 +143,8 @@ void MainLoopFramework::drawendXfb_single() {
 }
 
 void MainLoopFramework::exchangeXfb_double() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -183,6 +187,7 @@ extern "C" void rvlPollInterrupts(void);
 
 namespace {
     s32 getDisplayingXfbIndex() {
+        // 3DS: delivers pending interrupts while the loop waits for the retrace.
 #ifdef __3DS__
         rvlPollInterrupts();
 #endif
@@ -206,6 +211,8 @@ void MainLoopFramework::exchangeXfb_triple() {
 }
 
 void MainLoopFramework::copyXfb_triple() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -243,11 +250,13 @@ void MainLoopFramework::preGX() {
 }
 
 void MainLoopFramework::endGX() {
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(9);
 #endif
     J2DOrthoGraph ortho(0.0f, 0.0f, JUTVideo::getManager()->getRenderMode()->fbWidth, JUTVideo::getManager()->getRenderMode()->efbHeight, -1.0f,
                         1.0f);
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(10);
 #endif
@@ -255,12 +264,14 @@ void MainLoopFramework::endGX() {
         ortho.setPort();
         JUTConsoleManager::sManager->draw();
     }
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(11);
 #endif
     if (_C || JUTXfb::sManager->mBufferNum == 1) {
         JUTAssertion::flushMessage_dbPrint();
     }
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(12);
 #endif
@@ -312,10 +323,13 @@ void MainLoopFramework::beginRender() {
 }
 
 void MainLoopFramework::endRender() {
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(13);
 #endif
     endGX();
+    // 3DS: the frame ends here: the clear colour for the next frame, and the 3DS renderer's frame
+    // end.
 #ifdef __3DS__
     {
         GXColor clear = mClearColor;
@@ -327,10 +341,13 @@ void MainLoopFramework::endRender() {
         hostGfxEndFrame(clearValue);
     }
 #endif
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(14);
 #endif
     if (mDoRenderFrame) {
+        // Wii only: the Wii's external frame buffers; the 3DS shows its render target itself
+        // (host/gfx.c).
 #ifndef __3DS__
         JUTXfb* xfb = JUTXfb::sManager;
         switch (xfb->mBufferNum) {
@@ -345,10 +362,12 @@ void MainLoopFramework::endRender() {
         }
 #endif
     }
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(15);
 #endif
     calcCombinationRatio();
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     rvlGXDebugSetFramePhase(3);
 #endif
@@ -362,12 +381,16 @@ void MainLoopFramework::endFrame() {
             break;
         case 2:
             ::waitDrawDoneAndSetAlarm();
+            // Wii only: GX state, display lists and material setup; the 3DS draws this through
+            // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
             GXFlush();
 #endif
             break;
         case 3:
             ::waitDrawDoneAndSetAlarm();
+            // Wii only: GX state, display lists and material setup; the 3DS draws this through
+            // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
             GXFlush();
 #endif
@@ -403,6 +426,8 @@ void MainLoopFramework::clearEfb(GXColor color) {
 }
 
 void MainLoopFramework::clearEfb(int param1, int param2, int param3, int param4, GXColor color) {
+    // 3DS: a clear of the whole frame buffer clears the render target (other areas are not
+    // cleared).
 #ifdef __3DS__
     if (param1 == 0 && param2 == 0 &&
         param3 == JUTVideo::getManager()->getRenderMode()->fbWidth &&
@@ -555,6 +580,8 @@ namespace {
     }
 
     void waitDrawDoneAndSetAlarm() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -577,6 +604,8 @@ namespace {
     }
 
     void handleGXAbortAlarm(OSAlarm* alarm, OSContext* context) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else

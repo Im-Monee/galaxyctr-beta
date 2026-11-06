@@ -312,6 +312,7 @@ void DashRing::draw() const {
 
         PSMTXMultVec(rotMtx, subAxis, subAxis);
     }
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

@@ -705,9 +705,6 @@ void MarioFoo::draw3D() const {
     TDDraw::setDirectAlphaTest(6, 0);
     TDDraw::setDirectDepthMode(false, 5, false);
 #endif
-#ifdef __3DS__
-
-#endif
     if (getPlayer()->_1C._9) {
 #ifdef __3DS__
         const u32 beamColor = 0xFF202080;  // C0 (255, 32, 32, 128)
@@ -740,6 +737,7 @@ void MarioFoo::draw3D() const {
         beamVertices[1] = center - side * 70.0f + front * 2000.0f * length;
         beamVertices[2] = center - side * 50.0f + front * 2000.0f * length;
         beamVertices[3] = center - side * 50.0f;
+        // 3DS: the quad through DirectDraw.
 #ifdef __3DS__
         drawQuad(beamVertices, beamUVs, beamColor);
 #else
@@ -755,6 +753,7 @@ void MarioFoo::draw3D() const {
         beamVertices[1] = center + side * 70.0f + front * 2000.0f * length;
         beamVertices[2] = center + side * 50.0f + front * 2000.0f * length;
         beamVertices[3] = center + side * 50.0f;
+        // 3DS: the quad through DirectDraw.
 #ifdef __3DS__
         drawQuad(beamVertices, beamUVs, beamColor);
 #else
@@ -769,12 +768,15 @@ void MarioFoo::draw3D() const {
 
     const Color8 color2(255, 64, 64, 255);
 
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)color2;
 #else
     GXSetTevColor(GX_TEVREG1, color2);
 #endif
     if (_6B0) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifndef __3DS__
         TDDraw::setup(1, 1, 0);
         MR::ddSetVtxFormat(2);
@@ -847,6 +849,7 @@ void MarioFoo::draw3D() const {
                 width.setLength(10.0f);
                 nextLeftEdge[0] = rPosition + width - _3B0[index] * ::cWidth;
                 nextLeftEdge[1] = rPosition - width - _3B0[index] * ::cWidth;
+                // 3DS: the quad through DirectDraw.
 #ifdef __3DS__
                 const TVec3f leftQuad[4] = {leftEdge[0], nextLeftEdge[0], nextLeftEdge[1], leftEdge[1]};
                 const TVec2f leftUVs[4] = {texCoords[0], nextTexCoords[0], nextTexCoords[1], texCoords[1]};
@@ -862,6 +865,7 @@ void MarioFoo::draw3D() const {
 
                 nextRightEdge[0] = rPosition + width + _3B0[index] * ::cWidth;
                 nextRightEdge[1] = rPosition - width + _3B0[index] * ::cWidth;
+                // 3DS: the quad through DirectDraw.
 #ifdef __3DS__
                 const TVec3f rightQuad[4] = {rightEdge[0], nextRightEdge[0], nextRightEdge[1], rightEdge[1]};
                 const TVec2f rightUVs[4] = {texCoords[0], nextTexCoords[0], nextTexCoords[1], texCoords[1]};

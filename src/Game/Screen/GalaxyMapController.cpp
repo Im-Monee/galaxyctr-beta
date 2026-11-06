@@ -21,6 +21,7 @@
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <nw4r/lyt/drawInfo.h>
+// 3DS: headers the 3DS code of this file uses (JUTTexture3DS.hpp, cstring).
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #include <cstring>
@@ -642,6 +643,8 @@ void GalaxyMapController::setFaderParam(GXColor color, int frame) {
 }
 
 void GalaxyMapController::capture() {
+    // 3DS: the map drawn and captured through the GPU's copy, instead of the Wii's projection and
+    // copy.
 #ifdef __3DS__
     if (_38 != nullptr) {
         drawForCapture();

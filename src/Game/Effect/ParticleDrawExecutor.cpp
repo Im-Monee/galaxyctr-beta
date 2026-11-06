@@ -4,6 +4,7 @@
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/Color.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -30,6 +31,8 @@ ParticleDrawExecutor::ParticleDrawExecutor(const EffectSystem* pSystem, bool cre
 }
 
 void ParticleDrawExecutor::initDraw() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetFog(GX_FOG_NONE, 0.0f, 0.0f, 0.0f, 0.0f, Color8(0, 0, 0, 0));
 #endif
@@ -53,6 +56,7 @@ void ParticleDrawExecutor::draw2D() const {
 
         Mtx44 projection;
         C_MTXOrtho(projection, height, -height, -width, width, -1000.0f, 1000.0f);
+        // 3DS: the 2D particles' projection, handed to the particles' Citro3D draw.
 #ifdef __3DS__
         JPASetDirectProjection(&projection);
 #else
@@ -62,10 +66,13 @@ void ParticleDrawExecutor::draw2D() const {
 #endif
         C_MTXLightOrtho(drawInfo.mPrjMtx, height, -height, -width, width, 0.5f, 0.5f, 0.5f, 0.5f);
         mHost->mEmitterManager->draw(&drawInfo, 6);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
         mHost->mEmitterManager->draw(&drawInfo, 7);
+        // 3DS: the particles go back to the camera's projection.
 #ifdef __3DS__
         JPASetDirectProjection(NULL);
 #else
@@ -78,6 +85,8 @@ void ParticleDrawExecutor::drawIndirect() const {
     if (_20) {
         JPADrawInfo drawInfo(j3dSys.getViewMtx(), MR::getFovy(), MR::getAspect());
         mHost->mEmitterManager->draw(&drawInfo, 2);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
@@ -92,6 +101,8 @@ void ParticleDrawExecutor::drawFor2DModel() const {
     if (_20) {
         JPADrawInfo drawInfo(j3dSys.getViewMtx());
         mHost->mEmitterManager->draw(&drawInfo, 8);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
@@ -110,10 +121,14 @@ void ParticleDrawExecutor::drawWithViewMtx3D(const TPos3f& rViewMtx) const {
     if (_20) {
         JPADrawInfo drawInfo(rViewMtx);
         mHost->mEmitterManager->draw(&drawInfo, 0);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
         mHost->mEmitterManager->draw(&drawInfo, 1);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
@@ -124,6 +139,8 @@ void ParticleDrawExecutor::drawWithViewMtxAfterIndirect(const TPos3f& rViewMtx) 
     if (_20) {
         JPADrawInfo drawInfo(rViewMtx);
         mHost->mEmitterManager->draw(&drawInfo, 3);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
@@ -134,6 +151,8 @@ void ParticleDrawExecutor::drawWithViewMtxForBloomEffect(const TPos3f& rViewMtx)
     if (_20) {
         JPADrawInfo drawInfo(rViewMtx);
         mHost->mEmitterManager->draw(&drawInfo, 4);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif
@@ -144,6 +163,8 @@ void ParticleDrawExecutor::drawWithViewMtxAfterImageEffect(const TPos3f& rViewMt
     if (_20) {
         JPADrawInfo drawInfo(rViewMtx);
         mHost->mEmitterManager->draw(&drawInfo, 5);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetClipMode(GX_CLIP_ENABLE);
 #endif

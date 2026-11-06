@@ -1,20 +1,30 @@
-; Vertex shader for the GX renderer (platform/3ds/gx/draw.cpp decodes the Wii vertices).
-;
-; Two kinds of draws share one vertex layout (HostGfxModelVertex in host.h):
-; - pretransformed (CPU path): v0.xyz and v1.x hold the clip-space position, v2 the final
-;   colour and v4-v6 the final texture coordinates;
-; - model (GPU path): v0 is the model-space position, v1 the normal (view space, or model space with nrmpalette), v2 the vertex
-;   colour of the lighting channel, v3.x the position matrix row, v3.yzw the texture matrix row
-;   of units 0-2 when vtxmtxN is set, and v4-v6 the inputs of the
-;   three texture coordinate generations. The shader applies the position matrix, projection,
-;   GX lighting and texture coordinate generation with the uniforms below (HostGfxTransform).
-; Colours arrive as unsigned bytes, which the GPU reads as 0..255 (not normalized).
-;
-; Every component of every output register must be written exactly once on each path: the
-; console's PICA waits for the missing ones and never finishes the draw (3dbrew GPU/Pitfalls;
-; emulators do not check it). The model path writes the texture coordinates' z and w as well.
-
-; Uniforms, in the order of HostGfxTransform.
+; ##############################################################################################
+; # The vertex shader                                                                          #
+; #                                                                                            #
+; # The port's only vertex shader, assembled with picasso and embedded by the build            #
+; # (tools/3ds/configure.py, embed.py). It does what the Wii's transform unit (XF) does: the   #
+; # position matrix, the projection, GX lighting and texture coordinate generation.            #
+; #                                                                                            #
+; # Two kinds of draws share one vertex layout (HostGfxModelVertex in host.h). Pretransformed  #
+; # draws (made on the CPU: host/gfx.c hostGfxDraw): v0.xyz and v1.x hold the clip-space       #
+; # position, v2 the final colour and v4-v6 the final texture coordinates. Model draws (the    #
+; # native renderer, platform/3ds/gx, vertices from the .n3d files): v0 is the model-space     #
+; # position, v1 the normal (view space, or model space with nrmpalette), v2 the vertex colour #
+; # of the lighting channel, v3.x the position matrix row, v3.yzw the texture matrix row of    #
+; # units 0-2 when vtxmtxN is set, and v4-v6 the inputs of the three texture coordinate        #
+; # generations, with the uniforms below (HostGfxTransform). Colours arrive as unsigned bytes, #
+; # which the GPU reads as 0..255 (not normalized).                                            #
+; #                                                                                            #
+; # Every component of every output register must be written exactly once on each path: the    #
+; # console's PICA waits for the missing ones and never finishes the draw (3dbrew              #
+; # GPU/Pitfalls; emulators do not check it). The model path writes the texture coordinates' z #
+; # and w as well.                                                                             #
+; ##############################################################################################
+; ##############################################################################################
+; # Uniforms                                                                                   #
+; #                                                                                            #
+; # In the order of HostGfxTransform (host.h); host/gfx.c sends only those that changed.       #
+; ##############################################################################################
 .fvec clip[4]       ; view space to 3DS clip space, rows x y z w
 .fvec palette[30]   ; Wii position matrices (XF rows 0-29)
 .fvec texmtx[9]     ; texture matrix of each unit (3 rows)
@@ -52,6 +62,12 @@
 .alias one consts.yyyy
 .alias zero consts.zzzz
 
+; ##############################################################################################
+; # Outputs and inputs                                                                         #
+; #                                                                                            #
+; # The position, the colour and three texture coordinates; unit 0's w is its q, for the GPU's #
+; # per-pixel projection. The inputs are the attributes of HostGfxModelVertex in order.        #
+; ##############################################################################################
 .out outpos position
 .out outclr color
 .out outtc0 texcoord0.st
@@ -67,6 +83,13 @@
 .alias intc1 v5
 .alias intc2 v6
 
+; ##############################################################################################
+; # The program                                                                                #
+; #                                                                                            #
+; # Pretransformed vertices are copied to the outputs. Model vertices: the position through    #
+; # its matrix row and the projection; the colour from the material and ambient (register or   #
+; # vertex colour) and the lights; then each unit's texture coordinates.                       #
+; ##############################################################################################
 .proc main
     ifu pretransformed
         mov outpos.xyz, inpos

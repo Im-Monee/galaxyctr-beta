@@ -10,6 +10,7 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/RailUtil.hpp"
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -46,6 +47,8 @@ SpinDriverPathDrawer::SpinDriverPathDrawer(SpinDriverShootPath* pShootPath)
 }
 
 void SpinDriverPathDrawInit::initDraw() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     TDDraw::cameraInit3D();
 
@@ -82,18 +85,24 @@ void SpinDriverPathDrawInit::initDraw() {
 
 namespace MR {
     void setSpinDriverPathColorNormal() {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         MR::getSceneObj< SpinDriverPathDrawInit >(SceneObj_SpinDriverPathDrawInit)->mOrangeTexture->load(GX_TEXMAP0);
 #endif
     }
 
     void setSpinDriverPathColorGreen() {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         MR::getSceneObj< SpinDriverPathDrawInit >(SceneObj_SpinDriverPathDrawInit)->mGreenTexture->load(GX_TEXMAP0);
 #endif
     }
 
     void setSpinDriverPathColorPink() {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         MR::getSceneObj< SpinDriverPathDrawInit >(SceneObj_SpinDriverPathDrawInit)->mPinkTexture->load(GX_TEXMAP0);
 #endif
@@ -441,6 +450,8 @@ void SpinDriverPathDrawer::draw() const {
 }
 
 void SpinDriverPathDrawer::sendPoint(const TVec3f& rA1, f32 a2, f32 a3) const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXCmd1f32(rA1.x);
     GXCmd1f32(rA1.y);

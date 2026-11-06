@@ -1,12 +1,23 @@
 #pragma once
 
-// Native J3D drawing (block N): draws of pre-converted vertices (the .n3d files, native.cpp)
-// with a state built from the J3D material, submitted by native_submit.cpp. No GX command is
-// read: the GX command interpreter left the 3DS target in block 8.
-
+// ##############################################################################################
+// # The native draw                                                                            #
+// #                                                                                            #
+// # The game's J3D models are drawn natively: their vertices come pre-converted from the .n3d  #
+// # files the converter wrote (native.cpp), and the state of each draw is built from the J3D   #
+// # material, never from GX commands (DETAILS.md, section 5). RvlNativeDraw is one such draw,  #
+// # handed from native.cpp to native_submit.cpp, which turns it into the uniforms and state of #
+// # host.h; native_clip.cpp cuts the triangles the GPU cannot draw as they are.                #
+// ##############################################################################################
 #include "host.h"
 #include <revolution/types.h>
 
+// ##############################################################################################
+// # Texture coordinate generation and the point light                                          #
+// #                                                                                            #
+// # How each unit's coordinates are made (GX's texgen: a matrix applied to the position, the   #
+// # normal or a texture coordinate), and the player's point light (GX_LIGHT4).                 #
+// ##############################################################################################
 struct RvlNativeTexGen {
     bool generated;    // a matrix generation (else the coordinate is (0, 0))
     bool direct;       // vertex.tex already contains the CPU-computed J3D deferred coordinate
@@ -30,6 +41,12 @@ struct RvlNativePointLight {
 void rvlNativeLoadPointLight(const PointLightInfo* pInfo);
 const RvlNativePointLight* rvlNativePointLight();  // null until a point light was loaded
 
+// ##############################################################################################
+// # Runs of a large group                                                                      #
+// #                                                                                            #
+// # For the clipper (native_clip.cpp): a large group's triangles in runs of 32, each with a    #
+// # bounding sphere, so most runs can be judged inside or outside at once.                     #
+// ##############################################################################################
 // A run of RVL_NATIVE_CHUNK_TRIANGLES consecutive triangles of a large group: the bounding sphere
 // (centre, radius) of its vertices in the space of their position matrix row, or row 0xFF when
 // they use several rows or the sphere is unknown (the run is then tested triangle by triangle).
@@ -39,6 +56,14 @@ struct RvlNativeChunk {
     u32 row;
 };
 
+// ##############################################################################################
+// # Indirect texturing, approximated                                                           #
+// #                                                                                            #
+// # The PICA has no indirect texturing (a texture that moves another texture's coordinates:    #
+// # water, heat haze). The displaced sample is approximated as a blend of a few samples at     #
+// # fixed offsets, weighted by the distortion texture (rvlDistortionPlan, native.cpp;          #
+// # platform/3ds/HARDWARE_LIMITS.md).                                                          #
+// ##############################################################################################
 enum { RVL_DISTORT_NONE, RVL_DISTORT_ONE_DRAW, RVL_DISTORT_TWO_DRAWS, RVL_DISTORT_MEAN };
 
 // A displaced sample as a piecewise linear blend of samples, GX indirect texturing being absent from
@@ -57,6 +82,14 @@ struct ResTIMG;
 // texture of the material has.
 void rvlDistortionPlan(const ResTIMG* indirect, f32 rowS, f32 rowT, u32 width, u32 height, u32 halvings, u32 maxSamples, u32 samples, RvlDistortion& plan);
 
+// ##############################################################################################
+// # One native draw                                                                            #
+// #                                                                                            #
+// # Everything native_submit.cpp needs: the pixel state, the lighting channels in the Wii's    #
+// # own words, the texture coordinate generation, the position matrices of the draw's slots,   #
+// # the light, the vertices and indices, the bounds for culling and clipping, the units that   #
+// # sample a screen capture, and the indirect texturing plan.                                  #
+// ##############################################################################################
 struct RvlNativeDraw {
     const HostGfxState* state;  // state built from the J3D material
     u32 unitCount, rasChannel;
@@ -90,6 +123,12 @@ struct RvlNativeDraw {
     f32 distortMean[3][2], distortStep[3][2];
 };
 
+// ##############################################################################################
+// # Submitting, clipping and the frame end                                                     #
+// #                                                                                            #
+// # The functions of native_submit.cpp, native_clip.cpp and native.cpp that the rest of the    #
+// # native renderer calls.                                                                     #
+// ##############################################################################################
 // Draws with the GPU shader (shaders/gx.v.pica); false when the host rejects the submission.
 bool rvlNativeDrawSubmit(const RvlNativeDraw& draw);
 // What a native draw needs (native_clip.cpp): nothing (straight to the GPU), the CPU clipper

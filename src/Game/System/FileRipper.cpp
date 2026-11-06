@@ -116,6 +116,7 @@ void* FileRipper::loadToMainRAM(const char* fpath, u8* dest, bool decompress, JK
         }
         return dest;
     } else if (compression == 2) {
+        // 3DS: compressed file loads go to the log.
 #ifdef __3DS__
         OSReport("FileRipper: Yaz0 %s (%lu -> %lu bytes)\n", fpath, fsize, decompressedSize);
 #endif
@@ -155,6 +156,8 @@ bool FileRipper::decompressFromDVD(DVDFileInfo* fileInfo, void* dest, u32 readSi
 
     bool result;
     if (buf) {
+        // 3DS: the decompression knows the output size, so a damaged file cannot write past the
+        // buffer.
 #ifdef __3DS__
         result = decompressSzsSub(buf, (u8*)dest, destSize);
 #else
@@ -170,6 +173,7 @@ bool FileRipper::decompressFromDVD(DVDFileInfo* fileInfo, void* dest, u32 readSi
     return result;
 }
 
+// 3DS: the decompression knows the output size, so a damaged file cannot write past the buffer.
 #ifdef __3DS__
 bool FileRipper::decompressSzsSub(u8* src, u8* dest, u32 destSize) {
 #else

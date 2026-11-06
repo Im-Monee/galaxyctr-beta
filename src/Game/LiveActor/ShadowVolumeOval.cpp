@@ -3,6 +3,7 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -79,6 +80,7 @@ void ShadowVolumeOval::loadModelDrawMtx() const {
 
     mtx.setXDir(side);
     mtx.setZDir(front);
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setModelMtxDirect(mtx.toMtxPtr());
 #else

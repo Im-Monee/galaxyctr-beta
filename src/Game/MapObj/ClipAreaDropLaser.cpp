@@ -68,6 +68,7 @@ void ClipAreaDropLaser::draw() const {
             u2 += 0x40;
 
         if (u1 != mPointIndexToSkipDraw) {
+            // 3DS: the laser as a line with a width: the PICA draws no lines.
 #ifdef __3DS__
             TDDraw::drawLineWidth(mPoints[u1], mPoints[u2], 0x40F080, 0x14);
 #else
@@ -75,6 +76,7 @@ void ClipAreaDropLaser::draw() const {
 #endif
         }
     }
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

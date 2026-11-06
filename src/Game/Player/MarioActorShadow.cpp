@@ -1,3 +1,4 @@
+// 3DS: with the 96 MB of an Old 3DS the shadow capture runs one frame in three.
 #ifdef __3DS__
 extern "C" int hostLowMemory(void);
 #endif
@@ -617,6 +618,8 @@ void MarioActor::drawSilhouette() const {
     pModel->mFlags._1C = true;
     pModel->directDraw(nullptr);
     pModel->mFlags._1C = false;
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetAlphaUpdate(GX_TRUE);
     GXSetColorUpdate(GX_TRUE);

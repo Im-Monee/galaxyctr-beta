@@ -33,6 +33,7 @@
 #include <revolution/gx/GXVert.h>
 #include <revolution/mtx.h>
 #include <revolution/wpad.h>
+// 3DS: GXImmediate3DS.hpp, this file's GXBegin geometry through DirectDraw.
 #ifdef __3DS__
 #include "GXImmediate3DS.hpp"
 #endif

@@ -11,6 +11,7 @@
 #include <JSystem/JSupport/JSupport.hpp>
 #include <cstring>
 
+// 3DS: the port's log, for the wave archive messages below.
 #ifdef __3DS__
 extern "C" void hostLog(const char* fmt, ...);
 #endif
@@ -163,6 +164,7 @@ void JASWaveArc::setFileName(const char* pName) {
     #endif
 
     int entryNum = DVDConvertPathToEntrynum(fileName);
+    // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
     if (entryNum < 0) {
         hostLog("audio: wave archive file not found: %s\n", fileName);
@@ -177,6 +179,7 @@ void JASWaveArc::setFileName(const char* pName) {
 
 bool JASWaveArc::load(JASHeap* pHeap) {
     if (mEntryNum < 0) {
+        // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
         hostLog("audio: wave archive without a file asked to load\n");
 #endif
@@ -185,6 +188,7 @@ bool JASWaveArc::load(JASHeap* pHeap) {
 
     JASMutexLock mutexLock(&mMutex);
     if (mStatus != 0) {
+        // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
         hostLog("audio: wave archive %ld asked to load in state %ld\n", static_cast< long >(mEntryNum), static_cast< long >(mStatus));
 #endif
@@ -196,6 +200,7 @@ bool JASWaveArc::load(JASHeap* pHeap) {
     }
 
     if (mHeap.alloc(pHeap, mFileLength) == false) {
+        // 3DS: logged, for the port's diagnostics (sdmc:/smg/log.txt).
 #ifdef __3DS__
         hostLog("audio: wave archive %ld (%lu bytes): no room in the ARAM heap\n", static_cast< long >(mEntryNum),
                 static_cast< unsigned long >(mFileLength));

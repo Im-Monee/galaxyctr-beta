@@ -18,6 +18,7 @@
 #include <revolution/gx/GXEnum.h>
 #include <JSystem/J3DGraphBase/J3DDrawBuffer.hpp>
 #include <JSystem/J3DGraphBase/J3DSys.hpp>
+// 3DS: GXDelta3DS.hpp, GX state changes as data; host.h, the port's host interface.
 #ifdef __3DS__
 #include "GXDelta3DS.hpp"
 #include <host.h>
@@ -138,6 +139,7 @@ void ScenarioSelectScene::calcViewAndEntry() {
     }
 }
 
+// 3DS: the camera of the native draws while the scenario select's own camera is in use.
 #ifdef __3DS__
 void rvl3DSSetCameraContext(CameraContext* pContext);
 #endif
@@ -164,6 +166,7 @@ void ScenarioSelectScene::draw() const {
         j3dSys.mDrawMode = 4;
         _24->draw();
         _24->frameInit();
+        // 3DS: back to the whole screen for the native draws.
 #ifdef __3DS__
         rvlNativeSetViewport(nullptr, nullptr, nullptr);
 #endif
@@ -172,6 +175,7 @@ void ScenarioSelectScene::draw() const {
         mScenarioLayout->draw();
         MR::Effect::drawEffect2D(mEffectSystem);
         mCinemaFrame->draw();
+        // 3DS: back to the scene's camera.
 #ifdef __3DS__
         rvl3DSSetCameraContext(nullptr);
 #endif
@@ -240,6 +244,8 @@ bool ScenarioSelectScene::isResetEnd() const {
 
 void ScenarioSelectScene::setupCameraMtx() const {
     PSMTXCopy(mCameraContext->getViewMtx(), j3dSys.mViewMtx);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetProjection(mCameraContext->mProjection, GX_PERSPECTIVE);
 #endif

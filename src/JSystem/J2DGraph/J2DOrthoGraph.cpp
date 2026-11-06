@@ -1,4 +1,5 @@
 #include "JSystem/J2DGraph/J2DOrthoGraph.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -17,6 +18,7 @@ J2DOrthoGraph::J2DOrthoGraph(f32 x, f32 y, f32 width, f32 height, f32 far, f32 n
 void J2DOrthoGraph::setPort() {
     this->J2DGrafContext::setPort();
     C_MTXOrtho(mMtx44, mOrtho.i.y, mOrtho.f.y, mOrtho.i.x, mOrtho.f.x, mNear, mFar);
+    // 3DS: the projection goes to DirectDraw, which keeps it itself.
 #ifdef __3DS__
     TDDraw::setDirectProjectionMtx(mMtx44);
 #else
@@ -32,6 +34,7 @@ void J2DOrthoGraph::setOrtho(JGeometry::TBox2< f32 > const& bounds, f32 far, f32
 
 void J2DOrthoGraph::setLookat() {
     PSMTXIdentity(mPosMtx);
+    // 3DS: the view matrix goes to DirectDraw, which keeps it itself.
 #ifdef __3DS__
     TDDraw::setDirectViewMtx(mPosMtx);
 #else

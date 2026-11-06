@@ -1,6 +1,8 @@
 #include "Game/System/FileLoaderThread.hpp"
 #include "Game/System/FileRipper.hpp"
 #include "Game/Util/FileUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (SingletonHolder.hpp, HeapMemoryWatcher.hpp,
+// MemoryUtil.hpp, JKRSolidHeap.hpp, dvd.h).
 #ifdef __3DS__
 #include "Game/Util/SingletonHolder.hpp"
 #include "Game/System/HeapMemoryWatcher.hpp"
@@ -91,6 +93,7 @@ void* FileLoaderThread::run() {
 
 void FileLoaderThread::loadToMainRAM(RequestFileInfo* pInfo) {
     pInfo->_88 = 1;
+    // 3DS: the file goes to a heap where it fits (memory is tighter than on the Wii).
 #ifdef __3DS__
     moveToHeapItFits(pInfo);
 #endif
@@ -101,6 +104,7 @@ void FileLoaderThread::loadToMainRAM(RequestFileInfo* pInfo) {
 
 void FileLoaderThread::mountArchiveAndStartCreateResource(RequestFileInfo* pInfo) {
     pInfo->_88 = 1;
+    // 3DS: the file goes to a heap where it fits (memory is tighter than on the Wii).
 #ifdef __3DS__
     moveToHeapItFits(pInfo);
 #endif

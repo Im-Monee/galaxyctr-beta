@@ -1,10 +1,13 @@
-// Texture palette libraries (TPL), based on the decompiled src/RVL_SDK/tpl/TPL.c.
-//
-// nw4r decides whether a TPL still needs binding with `descriptorArray < 0x80000000`, which
-// is how a Wii offset differs from a Wii pointer. On the 3DS every pointer is below that, so
-// the same TPL is bound again on each use. Binding is therefore made idempotent: once bound,
-// the descriptor array points at or after the TPL itself, while an offset is always smaller.
-
+// ##############################################################################################
+// # Texture palette libraries (TPL)                                                            #
+// #                                                                                            #
+// # Based on the decompiled src/RVL_SDK/tpl/TPL.c. A TPL file stores offsets that binding      #
+// # turns into pointers. nw4r decides whether a TPL still needs binding with `descriptorArray  #
+// # < 0x80000000`, which is how a Wii offset differs from a Wii pointer. On the 3DS every      #
+// # pointer is below that, so the same TPL is bound again on each use. Binding is therefore    #
+// # made idempotent: once bound, the descriptor array points at or after the TPL itself, while #
+// # an offset is always smaller.                                                               #
+// ##############################################################################################
 #include "host.h"
 #include <revolution/tpl.h>
 

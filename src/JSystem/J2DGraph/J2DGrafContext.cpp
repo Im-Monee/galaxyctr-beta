@@ -1,4 +1,5 @@
 #include "JSystem/J2DGraph/J2DGrafContext.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
@@ -10,6 +11,8 @@ J2DGrafContext::J2DGrafContext(f32 x, f32 y, f32 width, f32 height)
     JUtility::TColor color(-1);
     setColor(color);
     mLineWidth = 6;
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetLineWidth(mLineWidth, GX_TO_ZERO);
 #endif
@@ -58,6 +61,7 @@ void J2DGrafContext::setColor(JUtility::TColor colorTL, JUtility::TColor colorTR
 
 void J2DGrafContext::setPort() {
     setScissor();
+    // Wii only: GX's 2D setup; the 3DS layouts set their own state through Citro3D.
 #ifndef __3DS__
     setup2D();
 #endif
@@ -72,12 +76,16 @@ void J2DGrafContext::setPort() {
         bounds.i.y = 0.0f;
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetViewport(bounds.i.x, bounds.i.y, bounds.getWidth(), bounds.getHeight(), 0.0f, 1.0f);
 #endif
 }
 
 void J2DGrafContext::setup2D() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetNumIndStages(0);
     for (int i = 0; i < GX_MAX_TEVSTAGE; i++) {
@@ -123,6 +131,7 @@ void J2DGrafContext::setScissor() {
         curBounds.i.y = (u32)curBounds.i.y;
         curBounds.f.x = ceil(curBounds.f.x);
         curBounds.f.y = ceil(curBounds.f.y);
+        // 3DS: the scissor goes to DirectDraw.
 #ifdef __3DS__
         TDDraw::setDirectScissor(static_cast<u16>(curBounds.i.x), static_cast<u16>(curBounds.i.y),
                                  static_cast<u16>(curBounds.getWidth()), static_cast<u16>(curBounds.getHeight()));
@@ -130,6 +139,7 @@ void J2DGrafContext::setScissor() {
         GXSetScissor(curBounds.i.x, curBounds.i.y, curBounds.getWidth(), curBounds.getHeight());
 #endif
     } else {
+        // 3DS: no scissor.
 #ifdef __3DS__
         TDDraw::setDirectScissor(0, 0, 0, 0);
 #else
@@ -147,6 +157,7 @@ void J2DGrafContext::place(JGeometry::TBox2< f32 > const& rBounds) {
 }
 
 void J2DGrafContext::fillBox(JGeometry::TBox2< f32 > const& rBox) {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     const TVec3f positions[6] = {
         TVec3f(rBox.i.x, rBox.i.y, 0.0f),

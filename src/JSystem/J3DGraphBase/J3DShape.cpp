@@ -228,6 +228,7 @@ void J3DShape::makeVtxArrayCmd() {
 }
 
 void J3DShape::makeVcdVatCmd() {
+    // 3DS: the vertex format command list is built without GD (no display list hardware).
 #ifdef __3DS__
     makeVtxArrayCmd();
     return;
@@ -250,6 +251,8 @@ void J3DShape::makeVcdVatCmd() {
 }
 
 void J3DShape::loadPreDrawSetting() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -274,6 +277,8 @@ void J3DShape::setArrayAndBindPipeline() const {
 }
 
 void J3DShape::drawFast() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -307,6 +312,7 @@ void J3DShape::drawFast() const {
 }
 
 void J3DShape::draw() const {
+    // 3DS: nothing to draw here: the native renderer draws the shape.
 #ifdef __3DS__
     return;
 #else
@@ -317,6 +323,7 @@ void J3DShape::draw() const {
 }
 
 void J3DShape::simpleDraw() const {
+    // 3DS: nothing to draw here: the native renderer draws the shape.
 #ifdef __3DS__
     return;
 #else
@@ -333,6 +340,8 @@ void J3DShape::simpleDraw() const {
 }
 
 void J3DShape::simpleDrawCache() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

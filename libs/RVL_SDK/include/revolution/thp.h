@@ -118,6 +118,7 @@ typedef struct {
     u32 validSample;
 } THPAudioBuffer;
 
+// Wii only: the THP decoder's audio; the 3DS plays movies through its video decoder (host/movie.c).
 #ifndef __3DS__
 s32 __THPAudioGetNewSample(THPAudioDecodeInfo *);
 void __THPAudioInitialize(THPAudioDecodeInfo *, u8 *);

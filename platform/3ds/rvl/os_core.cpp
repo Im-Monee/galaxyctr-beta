@@ -1,11 +1,23 @@
-// Core Wii OS functions: memory arenas, logging, time, interrupts and cache control.
-// Threads, mutexes and message queues live in os_thread.cpp.
+// ##############################################################################################
+// # Core Wii OS functions                                                                      #
+// #                                                                                            #
+// # Memory arenas, logging, time, interrupts and cache control; threads, mutexes and message   #
+// # queues are in os_thread.cpp.                                                               #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
 #include <revolution.h>
 #include <revolution/os/OSBootInfo.h>
 
+// ##############################################################################################
+// # Memory arenas                                                                              #
+// #                                                                                            #
+// # The Wii has two memory banks, MEM1 and MEM2, and the game builds its heaps inside the      #
+// # "arenas" the OS gives it in each. Here both arenas come from the 3DS application heap, at  #
+// # sizes that keep the game's own heap layout working (the comments below say why each size   #
+// # is what it is), with a smaller reserve for the port's own allocations.                     #
+// ##############################################################################################
 // Sizes of the two Wii memory arenas. MEM1 holds the root heap; the first 14 MB of MEM2
 // stand in for the audio RAM and the rest becomes the "GDDR3" heap.
 // On the Wii the game's code and data take the first 6.7 MB of MEM1 (its arena is about
@@ -79,6 +91,12 @@ static void initArenas() {
 
 extern "C" {
 
+// ##############################################################################################
+// # Arena bounds, and the OS log                                                               #
+// #                                                                                            #
+// # The game reads and moves the arena bounds as it carves out its heaps. OSReport goes to the #
+// # port's log (host/main.c); OSPanic stops with a fatal error.                                #
+// ##############################################################################################
 void* OSGetArenaLo(void) {
     initArenas();
     return sArenaLo;
@@ -143,6 +161,11 @@ void OSPanic(const char* pFile, int line, const char* pFormat, ...) {
 void OSRegisterVersion(const char* pVersion) {
 }
 
+// ##############################################################################################
+// # Time                                                                                       #
+// #                                                                                            #
+// # Wii time from the 3DS clock and system tick (details below).                               #
+// ##############################################################################################
 // Time is reported in Wii timer ticks (OS_TIMER_CLOCK) so that game timing stays unchanged.
 // Like on the Wii, OSGetTime counts from 2000-01-01: the wall clock is read once at startup
 // and the high-resolution system tick provides the elapsed time from then on.
@@ -180,6 +203,13 @@ void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* pTime) {
     pTime->usec = 0;
 }
 
+// ##############################################################################################
+// # Interrupts                                                                                 #
+// #                                                                                            #
+// # Disabling interrupts postpones the handlers; enabling them again delivers what is pending  #
+// # (os_thread.cpp). Each thread keeps its own enable state, as the Wii keeps it in each       #
+// # thread's saved MSR register.                                                               #
+// ##############################################################################################
 // Only one game thread runs at a time (see os_thread.cpp), so disabling interrupts only
 // has to postpone interrupt handlers: they are delivered once interrupts are enabled again.
 static BOOL sInterruptsEnabled = TRUE;
@@ -225,6 +255,13 @@ BOOL OSRestoreInterrupts(BOOL level) {
     return prev;
 }
 
+// ##############################################################################################
+// # Caches and PowerPC registers                                                               #
+// #                                                                                            #
+// # The Wii game flushes its caches for the Wii's GPU and DMA; on the 3DS the renderer flushes #
+// # what the GPU reads itself, so these do nothing. The PowerPC registers the game touches     #
+// # read as their neutral values.                                                              #
+// ##############################################################################################
 // The CPU caches are coherent from the game's point of view; the GPU layer flushes what it needs
 // (the native renderer uploads its own vertices: nothing the game writes is read by the GPU).
 void DCFlushRange(void* pAddr, u32 size) {

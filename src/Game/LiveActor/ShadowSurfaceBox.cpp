@@ -2,12 +2,14 @@
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/LiveActor/ShadowController.hpp"
 #include "Game/LiveActor/ShadowSurfaceDrawer.hpp"
+// 3DS: headers the 3DS code of this file uses (CameraUtil.hpp).
 #ifdef __3DS__
 #include "Game/Util/CameraUtil.hpp"
 #endif
 #include "Game/Util/DirectDraw.hpp"
 #include <JSystem/JGeometry/TMatrix.hpp>
 #include <JSystem/JGeometry/TVec.hpp>
+// Wii only: the GX headers of the Wii's drawing code.
 #ifndef __3DS__
 #include <revolution/gx/GXEnum.h>
 #include <revolution/gx/GXGeometry.h>
@@ -63,6 +65,7 @@ void ShadowSurfaceBox::draw() const {
     modelMtx.setXYZDir(side, up, front);
     controller->getProjectionPos(&position);
     modelMtx.setTrans(position + normal);
+    // 3DS: the model matrix for the DirectDraw (Citro3D) draw.
 #ifdef __3DS__
     TDDraw::setModelMtxDirect(modelMtx.toMtxPtr());
 #else
@@ -73,6 +76,7 @@ void ShadowSurfaceBox::draw() const {
     upDot = upDot >= 0.0f ? 1.0f : -1.0f;
     frontDot = frontDot >= 0.0f ? 1.0f : -1.0f;
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     const TVec3f positions[18] = {
         TVec3f(sideDot, -sideDot, -1.0f), TVec3f(sideDot, -sideDot, 1.0f), TVec3f(sideDot, sideDot, 1.0f),

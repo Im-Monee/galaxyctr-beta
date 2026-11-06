@@ -11,6 +11,7 @@
 #include "Game/Util/SchedulerUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/JKernel/JKRHeap.hpp>
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include "WaterRender3DS.hpp"
 #endif
@@ -55,6 +56,8 @@ OceanRingPartDrawer::OceanRingPartDrawer(const OceanRing* pRing, int a3, int a4,
     mDispListLength = 0;
     mDispList = nullptr;
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     initDisplayList(pTexCoordU0, pTexCoordU1, pTexCoordU2);
 #endif
@@ -72,6 +75,8 @@ OceanRingPartDrawer::OceanRingPartDrawer(const OceanRing* pRing, int a3, int a4,
     mPosition.scale(1.0f / a4);
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void OceanRingPartDrawer::initDisplayList(f32* pTexCoordU0, f32* pTexCoordU1, f32* pTexCoordU2) {
     MR::ProhibitSchedulerAndInterrupts prohibit(false);
@@ -91,6 +96,7 @@ void OceanRingPartDrawer::initDisplayList(f32* pTexCoordU0, f32* pTexCoordU1, f3
 #endif
 
 void OceanRingPartDrawer::draw() const {
+    // 3DS: always the dynamic draw: the Wii's far display list is GX data.
 #ifdef __3DS__
     drawDynamic();
 #else
@@ -186,6 +192,7 @@ void OceanRingPartDrawer::drawGD(f32* pTexCoordU0, f32* pTexCoordU1, f32* pTexCo
 #endif
 
 void OceanRingPartDrawer::drawDynamic() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     void* water = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterTex);
     void* indirect = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterIndTex);
@@ -288,6 +295,7 @@ void OceanRingPartDrawer::drawDynamic() const {
 }
 
 void OceanRingPartDrawer::drawDynamicBloom() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     void* water = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterTex);
     f32 u = _1C, v = _20;
@@ -385,6 +393,8 @@ OceanRingDrawer::OceanRingDrawer(const OceanRing* pOceanRing) {
     mWaterTex = new JUTTexture(MR::loadTexFromArc("WaterWave.arc", "Water.bti"), 0);
     mWaterIndTex = new JUTTexture(MR::loadTexFromArc("WaterWave.arc", "WaterIndirect.bti"), 0);
     initParts();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     initDisplayList();
 #endif
@@ -400,6 +410,7 @@ void OceanRingDrawer::update() {
 }
 
 void OceanRingDrawer::draw() const {
+    // 3DS: each part draws itself through Citro3D.
 #ifdef __3DS__
     for (s32 i = 0; i < mDrawerCount; i++) {
         getDrawer(i)->draw();
@@ -418,6 +429,7 @@ void OceanRingDrawer::draw() const {
 }
 
 void OceanRingDrawer::drawBloom() const {
+    // 3DS: the bloom pass through Citro3D, part by part.
 #ifdef __3DS__
     TVec3f zDir = MR::getCamZdir();
     zDir.scale(::sBloomCameraOffsetZ);
@@ -475,6 +487,8 @@ void OceanRingDrawer::initParts() {
     mPartDrawers[last] = new OceanRingPartDrawer(mRing, w, v, flag, &a, &b, &c);
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void OceanRingDrawer::initDisplayList() {
     MR::ProhibitSchedulerAndInterrupts prohibit(false);

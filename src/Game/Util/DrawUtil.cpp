@@ -3,6 +3,7 @@
 #include "Game/Screen/ScreenAlphaCapture.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/Color.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
@@ -17,6 +18,7 @@
 #include <JSystem/J3DGraphBase/J3DSys.hpp>
 #include <JSystem/JGeometry/TMatrix.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
+// 3DS: GXDelta3DS.hpp, GX state changes as data; host.h, the port's host interface.
 #ifdef __3DS__
 #include "GXDelta3DS.hpp"
 #include "host.h"
@@ -72,6 +74,8 @@ TVec3f mShadowVec;
 
 namespace MR {
     void drawInit() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -82,6 +86,8 @@ namespace MR {
     }
 
     void reinitGX() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -96,6 +102,7 @@ namespace MR {
     }
 
     void resetTextureCacheSize() {
+        // 3DS: no GX texture cache to set up.
 #ifdef __3DS__
         return;
 #else
@@ -137,6 +144,8 @@ namespace MR {
     }
 
     void setDefaultViewportAndScissor() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -354,6 +363,7 @@ namespace MR {
     }
 
     void fillScreenSetup(const GXColor& rColor) {
+        // 3DS: the fill colour, for the DirectDraw fill.
 #ifdef __3DS__
         sDirectFillScreenColor = rColor;
 #else
@@ -451,6 +461,7 @@ namespace MR {
         fillScreenArea(TVec2s(0, 0), TVec2s(width, height));
     }
 
+    // 3DS: a fill that blends by its alpha (LogoFader, WipeFade), through DirectDraw.
 #ifdef __3DS__
     void fillScreenAlpha(const GXColor& color) {
 #ifdef __3DS__
@@ -466,6 +477,7 @@ namespace MR {
 
 #endif
     void setupShadowVolumeDraw() {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         TDDraw::setupDirect(0, 0, 0);
         TDDraw::setDirectDepthMode(true, GXToCitro3D::depthTest(GX_GEQUAL), false);
@@ -606,6 +618,8 @@ namespace MR {
     }
 
     void loadTexProjectionMtx(u32 id) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)id;
         return;
@@ -633,6 +647,8 @@ namespace MR {
     }
 
     void nonFilteredCapture(JUTTexture* pTexture, s16 width, s16 height) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)pTexture;
         (void)width;
@@ -647,6 +663,8 @@ namespace MR {
     }
 
     void simpleDraw(J3DModel* pModel, J3DMaterial* pMaterial) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)pModel;
         (void)pMaterial;

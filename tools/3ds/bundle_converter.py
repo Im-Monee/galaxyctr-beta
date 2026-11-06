@@ -12,6 +12,14 @@ import sys
 import zipfile
 from pathlib import Path
 
+# ##############################################################################################
+# # What is bundled                                                                            #
+# #                                                                                            #
+# # convert_smg_files.py carries the converter's modules (tools/3ds/builder and                #
+# # tools/3ds/native) as zip files in base64, so that one file is the whole converter. After a #
+# # change to a module this script writes them in again; --check only says whether they are    #
+# # current.                                                                                   #
+# ##############################################################################################
 TOOLS = Path(__file__).resolve().parent
 SCRIPT = TOOLS / "convert_smg_files.py"
 BUNDLES = {"_BUILDER_ZIP_B64": TOOLS / "builder", "_NATIVE_ZIP_B64": TOOLS / "native"}
@@ -20,6 +28,12 @@ BUNDLES = {"_BUILDER_ZIP_B64": TOOLS / "builder", "_NATIVE_ZIP_B64": TOOLS / "na
 REQUIRED = {"_NATIVE_ZIP_B64": ["far.py", "tevcheck.py", "build_native.py"]}
 
 
+# ##############################################################################################
+# # Rewriting the embedded literals                                                            #
+# #                                                                                            #
+# # Each bundle is a Python tuple of base64 lines in the script: found, rebuilt from the       #
+# # module folder with the same file names, and put back in the same layout.                   #
+# ##############################################################################################
 def literal_span(text, var):
     start = text.index(var + " = (")
     end = text.index("\n)\n", start) + 3

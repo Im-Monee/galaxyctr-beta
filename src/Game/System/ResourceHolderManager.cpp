@@ -136,6 +136,8 @@ ResourceHolderManagerName2Resource* ResourceHolderManager::createAndAddInnerStat
 }
 
 void ResourceHolderManager::createResourceHolder(const char* pParam1, CreateResourceHolderArgs* pArgs) {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     ::GDCurrentRestorer gdRestorer = ::GDCurrentRestorer();
 #endif
@@ -148,12 +150,15 @@ void ResourceHolderManager::createResourceHolder(const char* pParam1, CreateReso
     rvlNativeSetArchive(pParam1);  // block N: the models' .n3d files are found by archive path
 #endif
     pArgs->mResourceHolder = new ResourceHolder(*pArchive);
+    // 3DS: the archive whose models are being registered is done.
 #ifdef __3DS__
     rvlNativeSetArchive(nullptr);
 #endif
 }
 
 void ResourceHolderManager::createLayoutHolder(const char* pParam1, CreateResourceHolderArgs* pArgs) {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     ::GDCurrentRestorer gdRestorer = ::GDCurrentRestorer();
 #endif

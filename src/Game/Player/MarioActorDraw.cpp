@@ -26,6 +26,7 @@
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SchedulerUtil.hpp"
+// 3DS: GXDelta3DS.hpp, GX state changes as data.
 #ifdef __3DS__
 #include "GXDelta3DS.hpp"
 #endif
@@ -450,6 +451,7 @@ void MarioActor::calcViewAndEntry() {
 }
 
 void MarioActor::drawMarioModel() const {
+    // 3DS: the model's own packets drawn by the native renderer.
 #ifdef __3DS__
     J3DModelXVisibleDraw visible;
 #endif
@@ -508,6 +510,8 @@ void MarioActor::drawMarioModel() const {
         }
 
         if (mBeeWallWalk != 0) {
+            // Wii only: GX state, display lists and material setup; the 3DS draws this through
+            // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
             GXSetAlphaUpdate(GX_TRUE);
             GXSetDstAlpha(GX_TRUE, 0);
@@ -534,6 +538,8 @@ void MarioActor::drawMarioModel() const {
     }
 
     if (mBeeWallWalk != 0) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetAlphaUpdate(GX_FALSE);
         GXSetDstAlpha(GX_FALSE, 0);
@@ -790,6 +796,7 @@ void MarioActor::drawIndirect() const {
 }
 
 void MarioActor::drawIndirectModel() const {
+    // 3DS: the model's own packets drawn by the native renderer.
 #ifdef __3DS__
     J3DModelXVisibleDraw visible;
 #endif
@@ -885,6 +892,8 @@ void MarioActor::drawReflectModel() const {
     model->mFlags.clear();
 
     if (_A08 == 2) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetZScaleOffset(1.0f, 0.00001f);
 #endif
@@ -902,6 +911,8 @@ void MarioActor::drawReflectModel() const {
         model->mFlags._14 = true;
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetZScaleOffset(1.0f, 0.0f);
 #endif

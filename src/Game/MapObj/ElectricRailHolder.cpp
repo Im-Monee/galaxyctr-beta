@@ -11,9 +11,11 @@
 #include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/RailUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
+// 3DS: NativeMaterial3DS.hpp, a model's material for immediate geometry.
 #ifdef __3DS__
 #include "NativeMaterial3DS.hpp"
 #endif

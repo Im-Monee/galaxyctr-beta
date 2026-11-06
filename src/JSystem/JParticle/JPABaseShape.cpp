@@ -1,4 +1,6 @@
 #include "JSystem/JParticle/JPABaseShape.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX values as 3DS GPU values;
+// JPADraw3DS.hpp, the particles' 3DS drawing.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
@@ -21,6 +23,7 @@ void setParticleTevColor(GXTevRegID id, GXColor color) {
 #endif
 
 void JPASetPointSize(JPAEmitterWorkData* work) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setPointSize((u8)(25.0f * work->mGlobalPtclScl.x));
 #else
@@ -29,6 +32,7 @@ void JPASetPointSize(JPAEmitterWorkData* work) {
 }
 
 void JPASetLineWidth(JPAEmitterWorkData* work) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setLineWidth((u8)(25.0f * work->mGlobalPtclScl.x));
 #else
@@ -37,6 +41,7 @@ void JPASetLineWidth(JPAEmitterWorkData* work) {
 }
 
 void JPASetPointSize(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setPointSize((u8)(ptcl->mParticleScaleX * (25.0f * work->mGlobalPtclScl.x)));
 #else
@@ -45,6 +50,7 @@ void JPASetPointSize(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
 }
 
 void JPASetLineWidth(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setLineWidth((u8)(ptcl->mParticleScaleX * (25.0f * work->mGlobalPtclScl.x)));
 #else
@@ -59,6 +65,8 @@ void JPARegistPrm(JPAEmitterWorkData* work) {
     prm.g = COLOR_MULTI(prm.g, emtr->mGlobalPrmClr.g);
     prm.b = COLOR_MULTI(prm.b, emtr->mGlobalPrmClr.b);
     prm.a = COLOR_MULTI(prm.a, emtr->mGlobalPrmClr.a);
+    // 3DS: the colour goes to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // register.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
 #else
@@ -72,6 +80,8 @@ void JPARegistEnv(JPAEmitterWorkData* work) {
     env.r = COLOR_MULTI(env.r, emtr->mGlobalEnvClr.r);
     env.g = COLOR_MULTI(env.g, emtr->mGlobalEnvClr.g);
     env.b = COLOR_MULTI(env.b, emtr->mGlobalEnvClr.b);
+    // 3DS: the colour goes to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // register.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG1, env);
 #else
@@ -90,6 +100,8 @@ void JPARegistPrmEnv(JPAEmitterWorkData* work) {
     env.r = COLOR_MULTI(env.r, emtr->mGlobalEnvClr.r);
     env.g = COLOR_MULTI(env.g, emtr->mGlobalEnvClr.g);
     env.b = COLOR_MULTI(env.b, emtr->mGlobalEnvClr.b);
+    // 3DS: the colours go to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // registers.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
     setParticleTevColor(GX_TEVREG1, env);
@@ -107,6 +119,8 @@ void JPARegistAlpha(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
     prm.b = COLOR_MULTI(prm.b, emtr->mGlobalPrmClr.b);
     prm.a = COLOR_MULTI(prm.a, emtr->mGlobalPrmClr.a);
     prm.a = COLOR_MULTI(prm.a, ptcl->mPrmColorAlphaAnm);
+    // 3DS: the colour goes to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // register.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
 #else
@@ -122,6 +136,8 @@ void JPARegistPrmAlpha(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
     prm.b = COLOR_MULTI(prm.b, emtr->mGlobalPrmClr.b);
     prm.a = COLOR_MULTI(prm.a, emtr->mGlobalPrmClr.a);
     prm.a = COLOR_MULTI(prm.a, ptcl->mPrmColorAlphaAnm);
+    // 3DS: the colour goes to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // register.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
 #else
@@ -141,6 +157,8 @@ void JPARegistPrmAlphaEnv(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
     env.r = COLOR_MULTI(env.r, emtr->mGlobalEnvClr.r);
     env.g = COLOR_MULTI(env.g, emtr->mGlobalEnvClr.g);
     env.b = COLOR_MULTI(env.b, emtr->mGlobalEnvClr.b);
+    // 3DS: the colours go to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // registers.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
     setParticleTevColor(GX_TEVREG1, env);
@@ -162,6 +180,8 @@ void JPARegistAlphaEnv(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
     env.r = COLOR_MULTI(env.r, emtr->mGlobalEnvClr.r);
     env.g = COLOR_MULTI(env.g, emtr->mGlobalEnvClr.g);
     env.b = COLOR_MULTI(env.b, emtr->mGlobalEnvClr.b);
+    // 3DS: the colours go to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // registers.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG0, prm);
     setParticleTevColor(GX_TEVREG1, env);
@@ -177,6 +197,8 @@ void JPARegistEnv(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
     env.r = COLOR_MULTI(env.r, emtr->mGlobalEnvClr.r);
     env.g = COLOR_MULTI(env.g, emtr->mGlobalEnvClr.g);
     env.b = COLOR_MULTI(env.b, emtr->mGlobalEnvClr.b);
+    // 3DS: the colour goes to the particles' 3DS drawing (particle.cpp) in place of GX's TEV
+    // register.
 #ifdef __3DS__
     setParticleTevColor(GX_TEVREG1, env);
 #else
@@ -283,6 +305,7 @@ void JPACalcColorCopy(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
 }
 
 void JPAGenTexCrdMtxIdt(JPAEmitterWorkData* param_0) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setTexGen(JPA3DS::TEXGEN_IDENTITY);
 #else
@@ -291,6 +314,7 @@ void JPAGenTexCrdMtxIdt(JPAEmitterWorkData* param_0) {
 }
 
 void JPAGenTexCrdMtxAnm(JPAEmitterWorkData* param_0) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setTexGen(JPA3DS::TEXGEN_MATRIX);
 #else
@@ -299,6 +323,7 @@ void JPAGenTexCrdMtxAnm(JPAEmitterWorkData* param_0) {
 }
 
 void JPAGenTexCrdMtxPrj(JPAEmitterWorkData* param_0) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::setTexGen(JPA3DS::TEXGEN_POSITION);
 #else
@@ -333,6 +358,7 @@ void JPAGenCalcTexCrdMtxAnm(JPAEmitterWorkData* work) {
     local_108[2][1] = 0.0f;
     local_108[2][2] = 1.0f;
     local_108[2][3] = 0.0f;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadTexMtx(local_108);
     JPA3DS::setTexGen(JPA3DS::TEXGEN_MATRIX);
@@ -370,6 +396,7 @@ void JPALoadCalcTexCrdMtxAnm(JPAEmitterWorkData* work, JPABaseParticle* param_1)
     local_108[2][1] = 0.0f;
     local_108[2][2] = 1.0f;
     local_108[2][3] = 0.0f;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadTexMtx(local_108);
 #else
@@ -455,6 +482,7 @@ void JPACalcTexIdxRandom(JPAEmitterWorkData* work, JPABaseParticle* param_1) {
 }
 
 void JPALoadPosMtxCam(JPAEmitterWorkData* work) {
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(work->mPosCamMtx);
 #else
@@ -469,6 +497,7 @@ static void noLoadPrj(JPAEmitterWorkData const* work, const Mtx srt) {
 void loadPrj(JPAEmitterWorkData const* work, const Mtx srt) {
     Mtx mtx;
     PSMTXConcat(work->mPrjMtx, srt, mtx);
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadTexMtx(mtx);
 #else
@@ -505,6 +534,7 @@ static void loadPrjAnm(JPAEmitterWorkData const* work, const Mtx srt) {
     local_108[2][3] = 0.0f;
     PSMTXConcat(local_108, work->mPrjMtx, local_108);
     PSMTXConcat(local_108, srt, local_108);
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadTexMtx(local_108);
 #else
@@ -553,6 +583,7 @@ void JPADrawBillboard(JPAEmitterWorkData* work, JPABaseParticle* param_1) {
         local_38[1][0] = 0.0f;
         local_38[0][2] = 0.0f;
         local_38[0][1] = 0.0f;
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::loadPosMtx(local_38);
         p_prj[work->mPrjType](work, local_38);
@@ -587,6 +618,7 @@ void JPADrawRotBillboard(JPAEmitterWorkData* work, JPABaseParticle* param_1) {
         local_38[2][0] = 0.0f;
         local_38[1][2] = 0.0f;
         local_38[0][2] = 0.0f;
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::loadPosMtx(local_38);
         p_prj[work->mPrjType](work, local_38);
@@ -756,6 +788,7 @@ void JPADrawRotation(JPAEmitterWorkData* param_0, JPABaseParticle* param_1) {
         auStack_88[1][3] = param_1->mPosition.y;
         auStack_88[2][3] = param_1->mPosition.z;
         PSMTXConcat(param_0->mPosCamMtx, auStack_88, auStack_88);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::loadPosMtx(auStack_88);
         p_prj[param_0->mPrjType](param_0, auStack_88);
@@ -773,6 +806,7 @@ void JPADrawPoint(JPAEmitterWorkData* work, JPABaseParticle* ptcl) {
         return;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_POINTS);
     JPA3DS::vertex(ptcl->mPosition.x, ptcl->mPosition.y, ptcl->mPosition.z, 0.0f, 0.0f);
@@ -808,6 +842,7 @@ void JPADrawLine(JPAEmitterWorkData* param_0, JPABaseParticle* param_1) {
 
     local_28.setLength(param_0->mGlobalPtclScl.y * (25.0f * param_1->mParticleScaleY));
     local_28.sub(local_1c, local_28);
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_LINES);
     JPA3DS::vertex(local_1c.x, local_1c.y, local_1c.z, 0.0f, 0.0f);

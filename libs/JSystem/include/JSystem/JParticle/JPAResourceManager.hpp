@@ -6,6 +6,7 @@
 
 class JKRHeap;
 class JPAResource;
+// 3DS: the particles' textures are kept as JUTTextures for the Citro3D draw.
 #ifdef __3DS__
 class JUTTexture;
 #endif
@@ -35,6 +36,8 @@ public:
     }
 
     inline void INLINE_FUNC_DECL(load, u16 idx, GXTexMapID texMapID) {
+        // 3DS: remembers the texture loaded on each map, which the particles' Citro3D draw binds
+        // (particle.cpp).
 #ifdef __3DS__
         if (texMapID < 4) {
             sLoadedTexture[texMapID] = getJUTTexture(idx);

@@ -74,6 +74,8 @@ void J3DSys::loadNrmMtxIndx(int addr, u16 indx) const {
 }
 
 void J3DSys::setTexCacheRegion(GXTexCacheSize size) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -238,6 +240,8 @@ void J3DSys::drawInit() {
 }
 
 void J3DSys::reinitGX() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -257,6 +261,8 @@ void J3DSys::reinitGX() {
 }
 
 void J3DSys::reinitLighting() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -270,6 +276,8 @@ void J3DSys::reinitLighting() {
 }
 
 void J3DSys::reinitTransform() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -286,6 +294,8 @@ void J3DSys::reinitTransform() {
 }
 
 void J3DSys::reinitTexture() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -303,6 +313,8 @@ void J3DSys::reinitTexture() {
 }
 
 void J3DSys::reinitTevStages() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -352,6 +364,8 @@ void J3DSys::reinitTevStages() {
 }
 
 void J3DSys::reinitIndStages() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

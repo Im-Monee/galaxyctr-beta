@@ -18,6 +18,7 @@ GCaptureRibbon::GCaptureRibbon(const char* pName) : LiveActor(pName), mTexture()
 
 void GCaptureRibbon::draw() const {
     if (_990 >= 2) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         TDDraw::setupDirect(1, 2, 0);
         TDDraw::setDirectDepthMode(true, 7, false);

@@ -11,6 +11,7 @@
 #include <JSystem/JGeometry/TVec.hpp>
 #include <revolution/gx/GXEnum.h>
 #include <revolution/gx/GXLighting.h>
+// 3DS: headers the 3DS code of this file uses (cmath).
 #ifdef __3DS__
 #include <cmath>
 #endif
@@ -48,6 +49,7 @@ void ShadowSurfaceOval::draw() const {
     TVec3f pos, normal;
     controller->getProjectionPos(&pos);
     controller->getProjectionNormal(&normal);
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TPos3f mtx;
     mtx.setInline(baseMtx);

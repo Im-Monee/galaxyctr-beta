@@ -9,10 +9,12 @@
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/RailUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include <JSystem/J3DGraphBase/J3DShapeDraw.hpp>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
@@ -91,6 +93,7 @@ void KirairaChain::initPoints() {
 }
 
 void KirairaChain::draw() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     if (!MR::isValidDraw(this) || mPoints == nullptr || mPointCount < 2) {
         return;

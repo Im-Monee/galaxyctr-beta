@@ -14,6 +14,13 @@
 #include <stdio.h>
 #include <string.h>
 
+// ##############################################################################################
+// # Output slots                                                                               #
+// #                                                                                            #
+// # Three buffers in linear memory, where the DSP can read them. The game's mixed audio        #
+// # arrives one buffer at a time (the Wii AI's DMA, rvl/ai.cpp): each goes into a free slot,   #
+// # and the DSP plays the slots in order.                                                      #
+// ##############################################################################################
 #define SLOTS 3
 #define SLOT_FRAMES 2048  // stereo frames per slot (the game sends 560 at 32 kHz)
 
@@ -35,6 +42,13 @@ static void writeWavHeader(FILE* file, unsigned long frames, unsigned long rate)
     fwrite(header, sizeof(header), 1, file);
 }
 
+// ##############################################################################################
+// # The DSP's callback                                                                         #
+// #                                                                                            #
+// # ndsp calls frameCallback on its own thread after every audio frame. It reads only the      #
+// # slots' status: when one is free it raises HOST_IRQ_AUDIO, and the game side (ai.cpp, at    #
+// # its next interrupt point) sends the next buffer. Game memory is never read here.           #
+// ##############################################################################################
 static bool slotFree(int i) {
     return sSlots[i].status == NDSP_WBUF_FREE || sSlots[i].status == NDSP_WBUF_DONE;
 }
@@ -49,6 +63,13 @@ static void frameCallback(void* data) {
     }
 }
 
+// ##############################################################################################
+// # Starting and stopping the output                                                           #
+// #                                                                                            #
+// # hostAudioStart starts ndsp (which needs the console's DSP firmware), allocates the slots   #
+// # once and sets one stereo PCM16 channel to the game's rate (32 kHz). With the debug option  #
+// # audiodump the output is also written to sdmc:/smg/audio.wav.                               #
+// ##############################################################################################
 int hostAudioActive(void) {
     return sReady ? 1 : 0;
 }
@@ -106,6 +127,14 @@ void hostAudioShutdown(void) {
     }
 }
 
+// ##############################################################################################
+// # Queueing the game's buffers                                                                #
+// #                                                                                            #
+// # A buffer of the game into the first free slot: its samples swapped from the Wii's          #
+// # right-left order to ndsp's left-right, the cache flushed so the DSP reads them, then       #
+// # queued. The loudest sample of the last few seconds goes to the log (peak 32767 or 32768    #
+// # means the mix was clipped).                                                                #
+// ##############################################################################################
 int hostAudioSlotFree(void) {
     if (!sReady) {
         return 0;

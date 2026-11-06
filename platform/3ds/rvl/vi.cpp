@@ -1,5 +1,12 @@
-// Video interface: the vertical retrace interrupt and frame pacing.
-// The 3DS screen refresh (VBlank, 60 Hz like an NTSC Wii) stands in for the Wii's retrace.
+// ##############################################################################################
+// # Video interface (VI)                                                                       #
+// #                                                                                            #
+// # The Wii's video output and its retrace interrupt. The 3DS screen refresh (60 Hz, like an   #
+// # NTSC Wii) stands in for the Wii's retrace: the retrace thread raises HOST_IRQ_VBLANK       #
+// # (host/thread.c) and rvlVIRetraceInterrupt runs as the Wii's VI interrupt. The picture      #
+// # itself is the renderer's (host/gfx.c): the frame buffer settings are only kept for the     #
+// # game to read back.                                                                         #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
@@ -20,6 +27,13 @@ static BOOL sBlack = TRUE;
 static BOOL sDimmingEnabled;
 static BOOL sTrapFilterEnabled;
 
+// ##############################################################################################
+// # The retrace interrupt                                                                      #
+// #                                                                                            #
+// # At every retrace: the frame's controls are read (hostMainLoop, which also ends the game on #
+// # START and SELECT), the retrace is counted, the game's callbacks run, and the threads       #
+// # waiting in VIWaitForRetrace wake up. The game paces itself on this.                        #
+// ##############################################################################################
 void rvlVIRetraceInterrupt() {
     if (!hostMainLoop()) {
         hostQuit();

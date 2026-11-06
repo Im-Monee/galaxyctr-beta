@@ -1,13 +1,12 @@
 #include "JSystem/J2DGraph/J2DPicture.hpp"
 #include "JSystem/J2DGraph/J2DScreen.hpp"
 #include "JSystem/JUtility/JUTPalette.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include <revolution/gx/GXVert.h>
-#ifdef __3DS__
-
-#endif
+// 3DS: a picture's quad through Citro3D, with its textures blended by their ratios as GX's TEV did.
 #ifdef __3DS__
 namespace {
 void drawDirectPictureQuad(const TVec3f* positions, const TVec2f* texcoords, const u32* colors, JUTTexture* const* textures,
@@ -344,6 +343,7 @@ void J2DPicture::drawFullSet(f32 param_0, f32 param_1, f32 param_2, f32 param_3,
 
 void J2DPicture::draw(f32 x, f32 y, f32 width, f32 height, bool mirrorX, bool mirrorY, bool rotate90) {
     if (isVisible() && mTextureNum != 0 && mTexture[0] != NULL) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         mColorAlpha = mAlpha;
         JUtility::TColor color[4];
@@ -425,6 +425,7 @@ void J2DPicture::draw(f32 x, f32 y, f32 width, f32 height, bool mirrorX, bool mi
 
 void J2DPicture::drawOut(JGeometry::TBox2< f32 > const& posBox, JGeometry::TBox2< f32 > const& texRect) {
     if (isVisible() && mTextureNum != 0 && mTexture[0] != NULL) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         mColorAlpha = mAlpha;
         JUtility::TColor color[4];
@@ -503,6 +504,7 @@ void J2DPicture::drawOut(JGeometry::TBox2< f32 > const& posBox, JGeometry::TBox2
 void J2DPicture::drawTexCoord(f32 param_0, f32 param_1, f32 param_2, f32 param_3, s16 param_4, s16 param_5, s16 param_6, s16 param_7, s16 param_8,
                               s16 param_9, s16 param_10, s16 param_11, Mtx* param_12) {
     if (mTextureNum != 0) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         JUtility::TColor color[4];
         getNewColor(color);
@@ -574,6 +576,8 @@ void J2DPicture::drawTexCoord(f32 param_0, f32 param_1, f32 param_2, f32 param_3
 }
 
 void J2DPicture::setTevMode() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     u8 i;
     for (i = 0; i < mTextureNum; i++) {

@@ -1,25 +1,26 @@
-// Stand-in for the Wii's audio DSP.
-//
-// JAudio2 boots a DSP program and talks to it through two mailboxes. The 3DS has no such DSP,
-// so this answers the protocol and does the DSP program's mixing on the CPU:
-//
-// - booting a task immediately runs its init callback;
-// - DSPSendCommands2 (JAudio2/dsptask.cpp) sends the number of mails, then the command mails.
-//   Once a whole command has arrived, the DSP replies 0xF355xxxx, where xxxx is the top half
-//   of the first command mail, and calls the task's request callback. Frame sync commands
-//   reply 0xF355FF00 instead ("frame done");
-// - the 2-channel frame sync (DsyncFrame2ch: 0x82, subframes, mixer level; left buffer;
-//   right buffer) mixes the 64 channels of JASDsp::CH_BUF (layout in JASDSPInterface.cpp)
-//   into the two buffers, subframes * 80 samples each, which JASDriver::readDspBuffer then
-//   interleaves for the audio interface (ai.cpp).
-//
-// Replies are delivered immediately, because the game spins waiting for them without
-// re-enabling interrupts.
-//
-// Mixing (first version): AFC ADPCM (9-byte blocks, coefficients of JASDsp::DSPADPCM_FILTER)
-// and big-endian PCM16 waves, linear resampling by the channel pitch (4096 = one source sample
-// per output sample), loops, end and forced stop (mIsFinished), volume ramps per subframe on
-// the front left/right buses. Reverb sends, filters and oscillator channels are silent.
+// ##############################################################################################
+// # Stand-in for the Wii's audio DSP                                                           #
+// #                                                                                            #
+// # JAudio2 boots a DSP program and talks to it through two mailboxes. The 3DS has no such     #
+// # DSP, so this answers the protocol and does the DSP program's mixing on the CPU.            #
+// #                                                                                            #
+// # Booting a task immediately runs its init callback. DSPSendCommands2 (JAudio2/dsptask.cpp)  #
+// # sends the number of mails, then the command mails; once a whole command has arrived, the   #
+// # DSP replies 0xF355xxxx, where xxxx is the top half of the first command mail, and calls    #
+// # the task's request callback. Frame sync commands reply 0xF355FF00 instead ("frame done").  #
+// # The 2-channel frame sync (DsyncFrame2ch: 0x82, subframes, mixer level; left buffer; right  #
+// # buffer) mixes the 64 channels of JASDsp::CH_BUF (layout in JASDSPInterface.cpp) into the   #
+// # two buffers, subframes * 80 samples each, which JASDriver::readDspBuffer then interleaves  #
+// # for the audio interface (ai.cpp). Replies are delivered immediately, because the game      #
+// # spins waiting for them without re-enabling interrupts.                                     #
+// #                                                                                            #
+// # The mixing: AFC ADPCM (9-byte blocks, coefficients of JASDsp::DSPADPCM_FILTER) and         #
+// # big-endian PCM16 waves, square and saw oscillators, linear resampling by the channel pitch #
+// # (4096 = one source sample per output sample), loops, end and forced stop (mIsFinished),    #
+// # volume ramps per subframe on the front left and right buses. Reverb sends and filters are  #
+// # silent. The mixing runs on the game's core; with the 96 MB of an Old 3DS on the second     #
+// # core (below).                                                                              #
+// ##############################################################################################
 
 #include <revolution/dsp.h>
 
@@ -36,8 +37,14 @@ static u32 sVaramBase;
 // First byte of the frame sync command sent by DsyncFrame2ch and DsyncFrame4ch.
 static const u32 kFrameSyncCommands[] = {0x82};
 
-// Mixer ---------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # The mixer                                                                                  #
+// #                                                                                            #
+// # Per channel the DSP program keeps a voice: where it is in its wave, the ADPCM history, the #
+// # last volumes. readSample gives the next source sample (decoding an AFC block when needed,  #
+// # looping or ending), mixChannel resamples it by the pitch and adds it to the buses with the #
+// # volume ramp.                                                                               #
+// ##############################################################################################
 static const int kChannels = 64;
 static const int kSubframeSamples = 80;
 static const int kMaxSamples = 10 * kSubframeSamples;
@@ -289,6 +296,11 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
     (void)level;
 }
 
+// ##############################################################################################
+// # Frames and subframes                                                                       #
+// #                                                                                            #
+// # How a frame is mixed, subframe by subframe (explained below).                              #
+// ##############################################################################################
 // The frame being mixed. Like the DSP program, subframes are mixed one at a time: the first when
 // the frame sync arrives, each next one once the game has updated the channels for it (the
 // release halt of the last channel group, sent at the end of JASDSPChannel::updateAll), each
@@ -352,6 +364,11 @@ static void mixSubframe(u32 index) {
     }
 }
 
+// ##############################################################################################
+// # The mailboxes                                                                              #
+// #                                                                                            #
+// # The command being received and the reply waiting to be read by the game.                   #
+// ##############################################################################################
 // Mails of the command being received.
 static u32 sMails[8];
 static u32 sMailCount;
@@ -373,6 +390,14 @@ static void reply(u32 mail) {
     }
 }
 
+// ##############################################################################################
+// # Mixing on the second core (Old 3DS only)                                                   #
+// #                                                                                            #
+// # With the 96 MB of an Old 3DS the mixing runs on the second core, and a watchdog takes it   #
+// # back to the first when that core does not answer. On a New 3DS the mixing runs on the      #
+// # game's core, in DSPSendMailToDSP: a third-core version was tried in CIAs 0.20.9-0.21.2 and #
+// # dropped, since the sound broke up whenever the game was busy.                              #
+// ##############################################################################################
 // With the 96 MB of an Old 3DS the mixing, 18% of the CPU in Gateway Galaxy (CIA 0.16.4), runs on
 // the second core, as it runs on the Wii's DSP: the game hears "subframe done" by interrupt once
 // it is over, and JASAudioThread touches the channels only after that.
@@ -446,6 +471,12 @@ void rvlDSPWatchdog() {
 
 extern "C" {
 
+// ##############################################################################################
+// # The DSP functions                                                                          #
+// #                                                                                            #
+// # Booting the task, the two mailboxes, and the commands: each complete command is answered,  #
+// # and a frame sync starts mixing its first subframe.                                         #
+// ##############################################################################################
 void DSPInit(void) {
 }
 

@@ -8,11 +8,13 @@
 #include "Game/Util/JMapUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
 
 ClipFieldFillDraw::ClipFieldFillDraw(const char* pName)
+    // 3DS: the fill's blending as plain numbers: the 3DS draw translates them (GXToCitro3D.hpp).
 #ifdef __3DS__
     : NameObj(pName), mFillBlendMode(), mFillSrcFactor(), mFillDstFactor(), mFillLogicOp(),
       _1C(255, 230, 80, 200), _20(255, 255, 255, 255), _24(), _25() {
@@ -31,6 +33,8 @@ void ClipFieldFillDraw::init(const JMapInfoIter& rIter) {
 }
 
 void ClipFieldFillDraw::setModeSubColor() {
+    // 3DS: GX_BM_SUBTRACT, GX_BL_ONE, GX_BL_ONE, GX_LO_NOOP as plain numbers, translated by the 3DS
+    // draw.
 #ifdef __3DS__
     mFillBlendMode = static_cast< decltype(mFillBlendMode) >(2);
     mFillDstFactor = static_cast< decltype(mFillDstFactor) >(1);
@@ -44,6 +48,8 @@ void ClipFieldFillDraw::setModeSubColor() {
 #endif
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void ClipFieldFillDraw::setUpFillScreen() const {
     Mtx44 projectionMtx;

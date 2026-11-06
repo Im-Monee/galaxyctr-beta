@@ -31,6 +31,13 @@ import mat as M
 import n3d
 from tevcheck import gx_eval
 
+# ##############################################################################################
+# # The far model file                                                                         #
+# #                                                                                            #
+# # The header and vertex layout (they must match platform/3ds/gx/native.cpp, FarHeader and    #
+# # FarVertex), and which models are worth one: fixed ones (no animation that moves them or    #
+# # changes their colours) with at least a few draws.                                          #
+# ##############################################################################################
 MAGIC = b"N3DF"
 VERSION = 1
 HEADER = struct.Struct("<4sIHHIIf4fB3xI")
@@ -52,8 +59,11 @@ def _be32(b, o):
     return struct.unpack_from(">I", b, o)[0]
 
 
-# Joints ------------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Joints                                                                                     #
+# #                                                                                            #
+# # The model's joint matrices in its rest pose, to put every vertex in the model's space.     #
+# ##############################################################################################
 
 def _mul(a, b):
     """3x4 matrices (rows), as 4x4 with (0, 0, 0, 1) last."""
@@ -141,8 +151,12 @@ def _draw_matrices(data, found):
     return [(data[db + flags + i], _be16(data, db + indices + i * 2)) for i in range(count)]
 
 
-# Textures ----------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Textures                                                                                   #
+# #                                                                                            #
+# # Each texture as a small grid of average colours: a far model has no textures, its vertices #
+# # take the colours.                                                                          #
+# ##############################################################################################
 
 class _Textures:
     """Each TEX1 texture as a grid of average colours, decoded on first use."""
@@ -210,8 +224,12 @@ class _Textures:
         return cells[coord(uv[1], gh, wrap[1])][coord(uv[0], gw, wrap[0])]
 
 
-# Materials ---------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Materials                                                                                  #
+# #                                                                                            #
+# # Which materials are opaque (only those are kept), and a vertex's colour from its material  #
+# # and texture.                                                                               #
+# ##############################################################################################
 
 def _opaque(m):
     """Drawn opaque, with depth writes, and not a texture effect the colours cannot keep."""
@@ -250,8 +268,12 @@ def _vertex_colour(m, v, textures):
     return cache[key]
 
 
-# Building ----------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Building the far model                                                                     #
+# #                                                                                            #
+# # The opaque triangles of the whole model in one list, their vertices merged where they fall #
+# # together at the far model's precision.                                                     #
+# ##############################################################################################
 
 def none():
     """The .far of a model that gets no far model."""

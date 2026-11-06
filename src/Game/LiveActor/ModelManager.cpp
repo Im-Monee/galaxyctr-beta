@@ -16,6 +16,7 @@
 #include <JSystem/J3DGraphAnimator/J3DModel.hpp>
 #include <cstdio>
 
+// 3DS: what the pose check below needs.
 #ifdef __3DS__
 #include <JSystem/J3DGraphAnimator/J3DJoint.hpp>
 #include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
@@ -27,6 +28,7 @@ extern bool gRvl3DSSkipJointCalc;
 ModelManager::ModelManager()
     : mBtkPlayer(), mBrkPlayer(), mBtpPlayer(), mBpkPlayer(), mBvaPlayer(), mXanimeResourceTable(), mXanimePlayer(), mModel(), mModelResourceHolder(),
       mDisplayListMaker() {
+    // 3DS: the first calculation always runs.
 #ifdef __3DS__
     mCalculatedOnce = false;
 #endif
@@ -62,6 +64,8 @@ void ModelManager::update() {
 }
 
 void ModelManager::calcAnim() {
+    // 3DS: a pose that has not changed since the last calculation is not calculated again (CPU
+    // time).
 #ifdef __3DS__
     const bool unchanged = isPoseUnchanged();
     mCalculatedOnce = true;

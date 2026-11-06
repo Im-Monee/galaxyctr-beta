@@ -26,6 +26,7 @@ static void readBigEndian(GhostPacket* pPacket, u8* pOut, u32 len) {
 #endif
 
 void GhostPacket::read(u32* pOut) {
+    // 3DS: the ghost race data stay big-endian as on the disc.
 #ifdef __3DS__
     readBigEndian(this, (u8*)pOut, 4);
 #else
@@ -34,6 +35,7 @@ void GhostPacket::read(u32* pOut) {
 }
 
 void GhostPacket::read(s16* pOut) {
+    // 3DS: the ghost race data stay big-endian as on the disc.
 #ifdef __3DS__
     readBigEndian(this, (u8*)pOut, 2);
 #else
@@ -59,6 +61,7 @@ void GhostPacket::read(TVec3Sc* pOut) {
 }
 
 void GhostPacket::read(TVec3s* pOut) {
+    // 3DS: the ghost race data stay big-endian as on the disc.
 #ifdef __3DS__
     readBigEndian(this, (u8*)&pOut->x, 2);
     readBigEndian(this, (u8*)&pOut->y, 2);

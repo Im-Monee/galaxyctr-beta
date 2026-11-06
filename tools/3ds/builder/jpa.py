@@ -11,6 +11,13 @@ from binary import ConversionError, be_u16, be_u32, swap16, swap16_array, swap32
 from j3d import convert_texture_header
 
 
+# ##############################################################################################
+# # One converter per block                                                                    #
+# #                                                                                            #
+# # A particle resource is a list of emitters, each a list of blocks (fields, keys, dynamics,  #
+# # shapes, textures); each block's fields are swapped by its own layout (BLOCKS), and convert #
+# # walks them all.                                                                            #
+# ##############################################################################################
 def convert_field(buf, b, size):
     # JPAFieldBlockData: flags, position, direction, then magnitudes and timings (f32), u8 cycle.
     swap32(buf, b + 0x08)

@@ -1,8 +1,10 @@
 #include "nw4r/lyt/common.h"
 #include "nw4r/lyt/layout.h"
+// 3DS: headers the 3DS code of this file uses (texMap.h).
 #ifdef __3DS__
 #include "nw4r/lyt/texMap.h"
 #endif
+// 3DS: DirectDraw, TDDraw's Citro3D draws; host.h, the port's host interface.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "host.h"
@@ -15,6 +17,7 @@
 namespace nw4r {
     namespace lyt {
         namespace detail {
+            // 3DS: the material of the next layout quads drawn through Citro3D.
 #ifdef __3DS__
             static const NativeQuadMaterial* sNativeMaterial;
             void SetNativeMaterial(const NativeQuadMaterial* pMaterial) {

@@ -2,10 +2,12 @@
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Util/DrawUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif

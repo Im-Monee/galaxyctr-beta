@@ -21,12 +21,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ##############################################################################################
+# # What is built                                                                              #
+# #                                                                                            #
+# # The decompiled source trees and the parts of the Wii SDK that are compiled as they are;    #
+# # everything else of the Wii SDK is replaced by platform/3ds/rvl. Only RMGE01 (USA) is       #
+# # supported; the other versions exist because Petari's sources test VERSION.                 #
+# ##############################################################################################
 VERSIONS = ["RMGJ01", "RMGE01", "RMGP01", "RMGK01"]
 
 # Decompiled source trees built into the port. The Wii SDK, MSL, the runtime,
 # the debugger and the Mii library are replaced by the platform layer instead.
 # No GX: the game draws through Citro3D (platform/3ds/gx: the native J3D renderer and the TEV
-# translation), and neither the GX/GD SDK nor a GX command interpreter is linked (block 8).
+# translation), and neither the GX/GD SDK nor a GX command interpreter is linked (DETAILS.md, section 5).
 GAME_SOURCE_DIRS = ["src/Game", "src/JSystem", "src/nw4r", "platform/3ds/rvl", "platform/3ds/gx"]
 HOST_SOURCE_DIRS = ["platform/3ds/host"]
 
@@ -44,6 +51,11 @@ APP_DESCRIPTION = "Unofficial 3DS port"
 APP_AUTHOR = "Petari 3DS port"
 
 
+# ##############################################################################################
+# # Helpers                                                                                    #
+# #                                                                                            #
+# # Paths for the ninja file and for shell commands.                                           #
+# ##############################################################################################
 def ninja_escape(path):
     return str(path).replace("$", "$$").replace(" ", "$ ").replace(":", "$:")
 
@@ -52,6 +64,13 @@ def quote(path):
     return f'"{path}"'
 
 
+# ##############################################################################################
+# # Writing build/3ds/build.ninja                                                              #
+# #                                                                                            #
+# # The compiler flags of the two worlds, one rule per kind of step (compile, link, the .3dsx, #
+# # the shaders), then a build line per source. Header dependencies come from the compiler     #
+# # (ninja's deps = gcc), so ninja rebuilds what a changed header touches.                     #
+# ##############################################################################################
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default="RMGE01", choices=VERSIONS)
@@ -70,6 +89,14 @@ def main():
     # No game data is compiled in: the data files the Wii keeps inside main.dol are read from the
     # SD card at startup (platform/3ds/rvl/port_data.cpp), so the Wii build is not needed first.
 
+    # ##############################################################################################
+    # # Compiler flags                                                                             #
+    # #                                                                                            #
+    # # The game world sees the Wii's headers and MSL's environment (msl_compat.h,                 #
+    # # force-included), with int-sized enums and 16-bit wchar_t like the Wii's compiler; the host #
+    # # world sees libctru's. printf and friends are redirected to platform/3ds/rvl/printf.cpp     #
+    # # with the linker's --wrap.                                                                  #
+    # ##############################################################################################
     arch = "-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft"
     common = f"{arch} -O2 -g -fno-math-errno -mword-relocations -ffunction-sections -fdata-sections -fno-strict-aliasing -D__3DS__"
 
@@ -166,6 +193,12 @@ def main():
         "",
     ]
 
+    # ##############################################################################################
+    # # Sources                                                                                    #
+    # #                                                                                            #
+    # # Every C and C++ file of the source trees, the reused SDK files, and the shaders (assembled #
+    # # with picasso, then embedded as C arrays by embed.py).                                      #
+    # ##############################################################################################
     objects = []
 
     def add_sources(dirs, cxx_rule, cc_rule):
@@ -201,6 +234,12 @@ def main():
         if shader_headers and lines[i].startswith("build "):
             lines[i] += " || " + " ".join(shader_headers)
 
+    # ##############################################################################################
+    # # Linking and the .3dsx                                                                      #
+    # #                                                                                            #
+    # # The ELF, the .3dsx made from it (with an icon only where the development repository has    #
+    # # one), and a check that the .3dsx loads (check_3dsx.py).                                    #
+    # ##############################################################################################
     elf = (out / "smg.elf").as_posix()
     smdh = (out / "smg.smdh").as_posix()
     dsx = (out / "smg.3dsx").as_posix()

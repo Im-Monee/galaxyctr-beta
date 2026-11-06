@@ -638,6 +638,8 @@ void MR::calcAnimLayoutWithDrawInfo(const LayoutActor* pActor, const nw4r::lyt::
 
 void MR::drawLayoutWithDrawInfoWithoutProjectionSetup(const LayoutActor* pActor, const nw4r::lyt::DrawInfo& rDrawInfo) {
     if (isExecuteDrawLayout(pActor)) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetCullMode(GX_CULL_NONE);
         GXSetZMode(GX_FALSE, GX_NEVER, GX_FALSE);

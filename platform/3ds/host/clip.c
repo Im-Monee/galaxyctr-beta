@@ -13,6 +13,14 @@
 #include <math.h>
 #include <string.h>
 
+// ##############################################################################################
+// # Planes and outcodes                                                                        #
+// #                                                                                            #
+// # Five planes: near, and the four sides of the guard band (HOST_CLIP_GUARD times the screen, #
+// # host.h). An outcode has one bit per plane the vertex is outside of: a triangle whose three #
+// # vertices share a bit is entirely outside and is dropped; one with no bit at all needs no   #
+// # clipping.                                                                                  #
+// ##############################################################################################
 // Signed distance of clip-space position c to clip plane `plane` (inside when >= 0).
 static float planeDistance(const float* c, int plane) {
     switch (plane) {
@@ -39,6 +47,14 @@ unsigned hostClipOutcode(const float* c) {
     return code;
 }
 
+// ##############################################################################################
+// # Clipping a polygon                                                                         #
+// #                                                                                            #
+// # Sutherland-Hodgman: the polygon is cut by one plane after the other, keeping the inside    #
+// # part. A vertex is any structure that starts with its clip-space position; lerp makes the   #
+// # new vertex where an edge crosses a plane (each caller interpolates its own attributes).    #
+// # The result has up to count + 5 vertices and is written back over the input.                #
+// ##############################################################################################
 int hostClipPolygon(unsigned char* pPolygon, int count, unsigned size, HostClipLerp lerp, unsigned char* pScratch) {
     unsigned char* in = pPolygon;
     unsigned char* out = pScratch;

@@ -1,5 +1,6 @@
 #include "Game/System/PauseButtonCheckerInGame.hpp"
 #include "Game/Util/GamePadUtil.hpp"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif

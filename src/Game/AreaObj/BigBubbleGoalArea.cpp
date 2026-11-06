@@ -6,6 +6,7 @@
 #include "Game/Util/DirectDraw.hpp"
 #include "Game/Util/JMapUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
@@ -80,6 +81,7 @@ void BigBubbleGoalArea::draw() const {
 
     TDDraw::drawFillFan(mTrans, MR::getCamZdir(), MR::getCamYdir() * 150.0f, 0xFFFF00FF, 0.0f, f, 16);
     TDDraw::drawFillFan(mTrans, MR::getCamZdir(), MR::getCamYdir() * 150.0f, 0x80FF, f, TWO_PI, 16);
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

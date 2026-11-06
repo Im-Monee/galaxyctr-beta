@@ -5,6 +5,7 @@
 #include "Game/Util/MtxUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DJoint.hpp>
 #include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -51,6 +52,7 @@ namespace {
 #endif
 
 void ShadowVolumeFlatModel::loadModelDrawMtx() const {
+    // 3DS: the volume drawn through DirectDraw instead of the model's GX display lists.
 #ifdef __3DS__
     ShadowController* controller = getController();
     TPos3f rootMtx;

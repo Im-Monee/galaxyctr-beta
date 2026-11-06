@@ -11,6 +11,8 @@ ShadowVolumeLine::ShadowVolumeLine() : ShadowVolumeDrawer("影描画[ボリュ�
 }
 
 void ShadowVolumeLine::loadModelDrawMtx() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXLoadPosMtxImm(MR::getCameraViewMtx(), 0);
     GXSetCurrentMtx(0);
@@ -63,6 +65,7 @@ void ShadowVolumeLine::drawShape() const {
     points[6].scaleAdd(toLength, toDrop, points[4]);
     points[7].scaleAdd(toLength, toDrop, points[5]);
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     const u8 indices[] = {1, 5, 7, 3, 0, 2, 6, 4, 0, 1, 2, 3, 6, 7, 4, 5, 0, 1};
     TVec3f triangles[36];

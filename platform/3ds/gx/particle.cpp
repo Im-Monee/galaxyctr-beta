@@ -1,10 +1,14 @@
-// JPA particles on the 3DS (JPADraw3DS.hpp). The JPA draws keep the Wii's code: where it sends
-// GX its vertex arrays, display lists, matrices and TEV state, the 3DS branches hand the same
-// values to this file, which makes the vertices and texture coordinates GX would (positions
-// through the position matrix, coordinate 0 through the texture coordinate generation, the second
-// texture's from the vertex's own) and draws them with the combiners of particle_tev.inc
-// (tools/3ds/particles/jpatev.py, checked against the Wii TEV by jpacheck.py).
-
+// ##############################################################################################
+// # JPA particles on the 3DS                                                                   #
+// #                                                                                            #
+// # The game's particles (JParticle, JPA) keep the Wii's drawing code. Where it sends GX its   #
+// # vertex arrays, display lists, matrices and TEV state, the 3DS branches of                  #
+// # src/JSystem/JParticle hand the same values to this file (JPADraw3DS.hpp). Here the         #
+// # vertices and texture coordinates GX would make are computed on the CPU: positions through  #
+// # the position matrix, coordinate 0 through the texture coordinate generation, the second    #
+// # texture's from the vertex's own. They are drawn with the combiners of particle_tev.inc,    #
+// # generated offline from the Wii TEV of every JPA shape and checked against it.              #
+// ##############################################################################################
 #include "JPADraw3DS.hpp"
 #include "Game/Util/DirectDraw.hpp"
 #include "JSystem/JParticle/JPAResourceManager.hpp"
@@ -13,6 +17,13 @@
 #include <math.h>
 #include <string.h>
 
+// ##############################################################################################
+// # State handed over by the JPA code                                                          #
+// #                                                                                            #
+// # The combiner table's entry type, then what the JPA draw has set so far: its vertex arrays, #
+// # texture generation and matrices, the prm and env colours, the colour and alpha modes, and  #
+// # the alpha test.                                                                            #
+// ##############################################################################################
 struct ParticleStage3DS {
     u8 colorSrc[3];
     u8 colorFunc;
@@ -40,6 +51,14 @@ namespace {
     u32 sAlphaHigh = 255;
     f32 sPointSize = 6.0f, sLineWidth = 6.0f;
 
+    // ##############################################################################################
+    // # The batch                                                                                  #
+    // #                                                                                            #
+    // # Particles are batched: their triangles collect until the texture or a mode changes, then   #
+    // # go to the GPU as one draw (TDDraw::drawParticleTriangles, src/Game/Util/DirectDraw.cpp). A #
+    // # draw per particle cost about 29 ms a frame at 268 MHz. Quads wholly beyond one side of the #
+    // # screen are dropped before they reach the batch.                                            #
+    // ##############################################################################################
     // A camera-space vertex with its texture coordinates (0: the generated one, 1: the vertex's).
     struct Vertex {
         TVec3f position;
@@ -84,6 +103,14 @@ namespace {
         return false;
     }
 
+    // ##############################################################################################
+    // # Drawing a batch                                                                            #
+    // #                                                                                            #
+    // # The combiner stages for the batch's colour and alpha modes (and the second texture's       #
+    // # stage), the textures, the blending, depth and alpha test, then one draw of all its         #
+    // # triangles. A batch that would sample a texture not loaded for it is dropped, as GX would   #
+    // # draw garbage.                                                                              #
+    // ##############################################################################################
     void drawBatch() {
         if (sBatchCount == 0) {
             return;
@@ -254,6 +281,13 @@ namespace {
         }
     }
 
+    // ##############################################################################################
+    // # GX's vertices and primitives, rebuilt                                                      #
+    // #                                                                                            #
+    // # makeVertex is what GX's transform unit does to one vertex; points and lines (which the     #
+    // # PICA does not draw) become camera-facing squares and bands of their size on screen; add    #
+    // # turns the incoming vertices of quads, strips and fans into triangles.                      #
+    // ##############################################################################################
     // GX's vertex: the position through GX_PNMTX0, coordinate 0 through the texture coordinate
     // generation (GX_TG_TEX0 with (s, t, 1, 1), or GX_TG_POS with the model-space position).
     Vertex makeVertex(f32 x, f32 y, f32 z, f32 s, f32 t) {
@@ -351,6 +385,13 @@ namespace {
         }
     }
 
+    // ##############################################################################################
+    // # The alpha test                                                                             #
+    // #                                                                                            #
+    // # GX tests alpha with two comparisons and a logic operation; the PICA has one comparison.    #
+    // # computeAlphaTest finds the one comparison that passes the same values, and for a range     #
+    // # inside 0-255 also the highest value, which the combiners then cut off.                     #
+    // ##############################################################################################
     // GX comparison of an alpha value (GXCompare).
     bool compare(GXCompare comp, u32 a, u32 ref) {
         switch (comp) {
@@ -424,6 +465,12 @@ namespace {
 }  // namespace
 
 namespace JPA3DS {
+    // ##############################################################################################
+    // # The interface for the JPA code (JPADraw3DS.hpp)                                            #
+    // #                                                                                            #
+    // # Called from the 3DS branches of the JPA draws in place of their GX calls. A change of the  #
+    // # batch's texture, mode or state draws the batch first; the reason is counted for the log.   #
+    // ##############################################################################################
     void setArrays(const u8* pPositions, const u8* pTexCoords, u32 textureMap) {
         if (textureMap != sTextureMap) {
             drawBatchFor(FLUSH_ARRAYS);
@@ -478,8 +525,8 @@ namespace JPA3DS {
         sAlphaMode = alphaMode;
     }
 
-    // The one PICA comparison passing the alpha values the two GX ones do (tools/3ds/particles/
-    // jpacheck.py reduced_alpha_test): the values passing make no comparison or all of them, the
+    // The one PICA comparison passing the alpha values the two GX ones do (checked offline for
+    // all 256 values): the values passing make no comparison or all of them, the
     // values from one up, up to one, one or all but one. A range inside 0-255 takes its lower
     // bound here and its upper one in the combiners (flush, sAlphaHigh).
     void setAlphaCompare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, u8 ref1) {
@@ -545,6 +592,13 @@ namespace JPA3DS {
         sLineWidth = sixths;
     }
 
+    // ##############################################################################################
+    // # Display lists and immediate vertices                                                       #
+    // #                                                                                            #
+    // # JPA's display lists of quads are read here, since GX never runs them on the 3DS; begin,    #
+    // # vertex and end take the vertices the JPA code sends one by one, as GXBegin, GXPosition and #
+    // # GXEnd would.                                                                               #
+    // ##############################################################################################
     void callDisplayList(const u8* pList) {
         if (sPositions == nullptr || sTexCoords == nullptr) {
             return;

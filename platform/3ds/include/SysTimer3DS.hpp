@@ -1,5 +1,11 @@
 #pragma once
 
+// ##############################################################################################
+// # Timing parts of the update                                                                 #
+// #                                                                                            #
+// # A scoped timer for the profile log (debug.txt profile=1): the update's parts, by number,   #
+// # listed below.                                                                              #
+// ##############################################################################################
 // Times a part of the update for the 3DS profile log as kind "sys" (platform/3ds/gx/native_submit.cpp).
 extern "C" void rvlGXCategoryMark(int kind, int type, unsigned long long* pMark);
 extern "C" void rvlGXCategoryEnd(int kind, int type, const unsigned long long* pMark);

@@ -1,15 +1,15 @@
 #include "Game/System/ArchiveHolder.hpp"
 #include "Game/Util.hpp"
 #include <cstring>
-#ifdef __3DS__
-
-#endif
+// 3DS: headers the 3DS code of this file uses (revolution.h).
 #ifdef __3DS__
 #include <revolution.h>
 #endif
 
 ArchiveHolderArchiveEntry::ArchiveHolderArchiveEntry(void* pData, JKRHeap* pHeap, const char* pArchiveName)
     : mHeap(pHeap), mArchive(nullptr), mArchiveName(nullptr) {
+    // 3DS: the first bytes of every mounted archive go to the log, to tell a converted file from an
+    // original.
 #ifdef __3DS__
     const u8* header = static_cast< const u8* >(pData);
     if (header != nullptr) {

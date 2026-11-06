@@ -362,6 +362,7 @@ extern "C" int hostDebugAir(void);
 #endif
 
 void MR::connectToSceneSky(LiveActor* pActor) {
+    // 3DS: debug.txt sky=0 leaves the sky actors out (timing checks).
 #ifdef __3DS__
     if (!hostDebugSky()) {
         return;
@@ -371,6 +372,7 @@ void MR::connectToSceneSky(LiveActor* pActor) {
 }
 
 void MR::connectToSceneAir(LiveActor* pActor) {
+    // 3DS: debug.txt air=0 leaves the atmosphere actors out (timing checks).
 #ifdef __3DS__
     if (!hostDebugAir()) {
         return;

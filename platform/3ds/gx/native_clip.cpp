@@ -1,25 +1,28 @@
-// Clipping of native J3D draws before the GPU.
-//
-// The PICA clips only against the near and far planes. A model whose triangles cross the camera
-// plane far off to the side (a sky or backdrop around the camera) leaves the clipper with
-// triangles thousands of screens wide, and rasterizing them stalls the GPU for good: on hardware
-// the title screen's backdrop did (c3d_stall_draw, CIA 0.10.5). The Wii's GX clips every side of
-// the view volume, so those triangles are clipped here instead (host clip.c), and the result on
-// screen is the same.
-//
-// Every draw is first tested with the bounding spheres of its matrix slots (computed when the
-// group is uploaded): a draw wholly inside the near plane and the guard band goes to the GPU as
-// before. The others are processed triangle by triangle: triangles inside are drawn with their
-// cached vertices, triangles outside one plane are dropped (the GPU would drop them), and the rest
-// are clipped into new vertices in the frame's transient vertices. Each vertex is classified
-// once (a triangle list reads a vertex about six times), with the clip and position matrices
-// folded together: the large ground models of a scene go this way every frame, and transforming
-// every triangle's three vertices took most of the frame (CIA 0.11.11, about 10 FPS). A new
-// vertex interpolates the model-space attributes of its edge, which the shader then transforms, lights and maps as it
-// does any vertex. When a triangle's vertices use different position matrices, the vertices are
-// first brought into the space of the first one's matrix (same view-space position; normals
-// through the matrices' inverses); their texture generation inputs are interpolated as they are.
-
+// ##############################################################################################
+// # Clipping native draws before the GPU                                                       #
+// #                                                                                            #
+// # The PICA clips only against the near and far planes. A model whose triangles cross the     #
+// # camera plane far off to the side (a sky or backdrop around the camera) leaves the clipper  #
+// # with triangles thousands of screens wide, and rasterizing them stalls the GPU for good: on #
+// # hardware the title screen's backdrop did (CIA 0.10.5). The Wii's GX clips every side of    #
+// # the view volume, so those triangles are clipped here instead (host clip.c), and the result #
+// # on screen is the same.                                                                     #
+// #                                                                                            #
+// # Every draw is first tested with the bounding spheres of its matrix slots (computed when    #
+// # the group is uploaded): a draw wholly inside the near plane and the guard band goes to the #
+// # GPU as before. The others are processed triangle by triangle: triangles inside are drawn   #
+// # with their cached vertices, triangles outside one plane are dropped (the GPU would drop    #
+// # them), and the rest are clipped into new vertices in the frame's transient vertices.       #
+// #                                                                                            #
+// # Each vertex is classified once (a triangle list reads a vertex about six times), with the  #
+// # clip and position matrices folded together: the large ground models of a scene go this way #
+// # every frame, and transforming every triangle's three vertices took most of the frame (CIA  #
+// # 0.11.11, about 10 FPS). A new vertex interpolates the model-space attributes of its edge,  #
+// # which the shader then transforms, lights and maps as it does any vertex. When a triangle's #
+// # vertices use different position matrices, the vertices are first brought into the space of #
+// # the first one's matrix (same view-space position; normals through the matrices' inverses); #
+// # their texture generation inputs are interpolated as they are.                              #
+// ##############################################################################################
 #include "gx_state.h"
 #include "host.h"
 #include <revolution/mtx.h>
@@ -29,6 +32,14 @@
 
 namespace {
 
+    // ##############################################################################################
+    // # Clip vertices and matrix spaces                                                            #
+    // #                                                                                            #
+    // # A vertex being clipped carries its clip-space position (which clip.c reads) and the arena  #
+    // # vertex. The helpers move a position and a normal between a matrix row's model space, view  #
+    // # space and clip space, and flushOut draws the clipped triangles from the transient          #
+    // # vertices.                                                                                  #
+    // ##############################################################################################
     struct ClipVertex {
         f32 clip[4];  // first: clip.c reads the clip-space position here
         HostGfxModelVertex v;
@@ -185,6 +196,14 @@ namespace {
 
 namespace {
 
+    // ##############################################################################################
+    // # Is a draw inside, outside, or across?                                                      #
+    // #                                                                                            #
+    // # rvlNativeClipNeeded tests each slot's bounding sphere against the planes in view space:    #
+    // # every sphere outside one screen edge culls the draw, a sphere across the near plane or the #
+    // # guard band sends it to the clipper, and draws too small on screen at the lowered detail    #
+    // # level are dropped. A draw with NaN or infinite matrices is dropped whole.                  #
+    // ##############################################################################################
     // The clip planes of clip.c as planes of view space (clip-space plane p becomes p * clip),
     // normalized: [0] with the guard band, [1] with the screen's edges instead (a draw whose every
     // sphere is wholly outside one of them is not seen at all). They depend on the clip matrix
@@ -355,15 +374,22 @@ int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
     return needed;
 }
 
-// Draws with a 3x4 (s/q, t/q) texture coordinate on unit 1 or 2. GX divides it per pixel; the
-// shader divides at the vertex (unit 0 alone has the PICA's projection mode, gfx.c), so across a
-// triangle whose q changes a lot the coordinates bend, in steps along the edges: the title's sea
-// (CometNearOrbitSky's EarthFar_v, clouds on unit 2, q = 7000 - y). Such triangles are cut into an
-// n x n grid of smaller ones, n growing with the ratio of the vertices' q: the error of the
-// division at the vertex falls as 1 / n^2, and colours and other coordinates stay exact (they are
-// linear in model space, where the new vertices are interpolated). Triangles whose q hardly changes
-// go as they are. (Scaling the position by 1 / q instead, CIA 0.20.2-0.20.4, weighted the vertex
-// colours by q: the sea lost its dark lower half.)
+// ##############################################################################################
+// # Subdividing triangles of projected textures                                                #
+// #                                                                                            #
+// # Draws with a 3x4 (s/q, t/q) texture coordinate on unit 1 or 2. GX divides it per pixel;    #
+// # the shader divides at the vertex (unit 0 alone has the PICA's projection mode, gfx.c), so  #
+// # across a triangle whose q changes a lot the coordinates bend, in steps along the edges:    #
+// # the title's sea (CometNearOrbitSky's EarthFar_v, clouds on unit 2, q = 7000 - y).          #
+// #                                                                                            #
+// # Such triangles are cut into an n x n grid of smaller ones, n growing with the ratio of the #
+// # vertices' q: the error of the division at the vertex falls as 1 / n^2, and colours and     #
+// # other coordinates stay exact (they are linear in model space, where the new vertices are   #
+// # interpolated). Triangles whose q hardly changes go as they are. (Scaling the position by 1 #
+// # / q instead, CIA 0.20.2-0.20.4, weighted the vertex colours by q: the sea lost its dark    #
+// # lower half.) A budget per frame, a minimum size on screen and the memory of draws that     #
+// # needed no cut keep the cost down.                                                          #
+// ##############################################################################################
 namespace {
     const u32 kSubMaxN = 8;
     // Grid vertices a frame may make (it has 16384 transient ones). Without this limit and the
@@ -752,6 +778,14 @@ bool rvlNativeSubdivideSubmit(const RvlNativeDraw& d, const HostGfxState* pState
     return true;
 }
 
+// ##############################################################################################
+// # Clipping a draw                                                                            #
+// #                                                                                            #
+// # The triangles wholly inside go into one index list drawn with the cached vertices; the     #
+// # others are clipped (clip.c) into transient vertices and drawn after. A large group's runs  #
+// # (gx_state.h, RvlNativeChunk) are judged by their spheres first, so a run wholly inside or  #
+// # outside needs no per-triangle test.                                                        #
+// ##############################################################################################
 bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, const HostGfxTransform& t, u32 version) {
     const u64 start = hostGetTick();
     sClipDraws++;
@@ -894,6 +928,11 @@ bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, con
     return submitted;
 }
 
+// ##############################################################################################
+// # Counters for the log                                                                       #
+// #                                                                                            #
+// # Taken and reset by native_submit.cpp's periodic log.                                       #
+// ##############################################################################################
 void rvlNativeClipTakeStats(u32& draws, u32& triangles, u32& invalid, u32& invalidMatrixDraws, u32& culled, u64& ticks) {
     invalidMatrixDraws = sInvalidMatrixDraws;
     sInvalidReports = sMatrixReports = 0;  // up to three reports of each kind per log

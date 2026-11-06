@@ -64,6 +64,7 @@ extern u8 rvlHardwareRegisters[];
 #define OSPhysicalToCached(paddr) ((void*)((u32)(paddr) + OS_BASE_CACHED))
 #define OSCachedToPhysical(caddr) ((u32)((u8*)(caddr)-OS_BASE_CACHED))
 #endif
+// Wii only: physical addresses of the Wii's uncached memory, which the 3DS does not have.
 #ifndef __3DS__
 #define OSUncachedToPhysical(ucaddr) ((u32)((u32)(ucaddr) & (~OS_BASE_UNCACHED)))
 #define OSPhysicalToUncached(paddr) ((void*)((u32)(paddr) + OS_BASE_UNCACHED))

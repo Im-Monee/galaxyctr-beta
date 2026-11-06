@@ -55,6 +55,7 @@ public:
     u8 getByte(u32 param_0) const {
         return *(mSeqBuff + param_0);
     }
+    // 3DS: sequence bytecode stays big-endian as on the disc, read byte by byte.
 #ifdef __3DS__
     u16 get16(u32 param_0) const {
         return readBE(mSeqBuff + param_0, 2);
@@ -89,6 +90,7 @@ public:
         return *value;
 #endif
     }
+    // 3DS: sequence bytecode stays big-endian as on the disc, read byte by byte.
 #ifdef __3DS__
     u32 read24() {
         u32 value = readBE(mSeqCursor, 3);

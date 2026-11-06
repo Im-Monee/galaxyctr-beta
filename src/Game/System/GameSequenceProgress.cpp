@@ -143,6 +143,7 @@ static bool requestDebugStartStage() {
 
 void GameSequenceProgress::endScene() {
     if (isNerve(GET_NERVE_ANON(GameSequenceProgressLogo))) {
+        // 3DS: a debug or showcase start stage replaces the title (debug.c).
 #ifdef __3DS__
         if (!requestDebugStartStage())
 #endif

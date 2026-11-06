@@ -4,9 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#ifdef __3DS__
-
-#endif
+// 3DS: the movie picture through the New 3DS video decoder's texture (THPDrawNative.cpp).
 #ifdef __3DS__
 extern void THPNativeDraw(const u8*, const u8*, const u8*, s16, s16, s16, s16, s16, s16);
 #endif
@@ -14,6 +12,8 @@ extern void THPNativeDraw(const u8*, const u8*, const u8*, s16, s16, s16, s16, s
 static GXTexFilter gTexFilter;
 
 void THPGXRestore(void) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -36,6 +36,8 @@ void THPGXRestore(void) {
 }
 
 void THPGXYuv2RgbSetup(GXRenderModeObj* rmode) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)rmode;
     return;
@@ -118,6 +120,7 @@ void THPGXSetTexObjFilter(GXTexFilter filter) {
 }
 
 void THPGXYuv2RgbDraw(u8* y_data, u8* u_data, u8* v_data, s16 x, s16 y, s16 textureWidth, s16 textureHeight, s16 polygonWidth, s16 polygonHeight) {
+    // 3DS: the movie picture through the New 3DS video decoder's texture (THPDrawNative.cpp).
 #ifdef __3DS__
     THPNativeDraw(y_data, u_data, v_data, x, y, textureWidth, textureHeight, polygonWidth, polygonHeight);
 #else

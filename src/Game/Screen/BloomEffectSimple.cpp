@@ -1,18 +1,18 @@
 #include "Game/Screen/BloomEffectSimple.hpp"
+// 3DS: host.h, the port's host interface; DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX
+// values as 3DS GPU values; JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "host.h"
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
 #endif
-#ifdef __3DS__
-
-#endif
 #include "Game/Screen/CopyFilterNegater.hpp"
 #include "Game/Screen/ImageEffectLocalUtil.hpp"
 #include "Game/Screen/ImageEffectResource.hpp"
 #include "Game/Screen/ImageEffectSystemHolder.hpp"
 #include "Game/Util/DrawUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (ScreenUtil.hpp, JUTTexture.hpp).
 #ifdef __3DS__
 #include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/JUtility/JUTTexture.hpp>

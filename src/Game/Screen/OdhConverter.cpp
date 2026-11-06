@@ -6,6 +6,7 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -44,6 +45,8 @@ void OdhConverter::draw() const {
 }
 
 void OdhConverter::convert() {
+    // 3DS: the screen area read from the last finished frame (hostGfxReadRgb565), then encoded as
+    // on the Wii.
 #ifdef __3DS__
     if (mCaptureImage == nullptr || mImage == nullptr || mCaptureWidth == 0 || mCaptureHeight == 0 ||
         mCaptureWidth > 640 || mCaptureHeight > 456 || mLimitSize == 0) {
@@ -97,6 +100,8 @@ namespace MR {
     }
 
     void setPortCaptureOdhImage() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -126,6 +131,7 @@ namespace MR {
 
     u32 getOdhImageSize() {
         if (!isExistSceneObj(SceneObj_OdhConverter)) {
+            // 3DS: a size is a number; nullptr does not convert to u32 in the port's compiler.
 #ifdef __3DS__
             return 0;
 #else

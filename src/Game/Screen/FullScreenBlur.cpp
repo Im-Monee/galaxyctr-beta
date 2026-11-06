@@ -15,6 +15,7 @@ namespace MR {
     void drawFullScreenBlur(f32 param1, f32 param2, u8 param3, u8 param4) {
         f32 screenWidth = MR::getScreenWidth();
 
+        // 3DS: the same state through DirectDraw: blending, alpha test and no depth.
 #ifdef __3DS__
         TDDraw::setupDirect(1, 1, 2);
         TDDraw::setDirectBlendState(0, 6, 7);
@@ -26,12 +27,17 @@ namespace MR {
 
         JUTTexture texture = JUTTexture(MR::getScreenResTIMG(), 0);
 
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetScissorBoxOffset(0, 1584);
 #endif
+        // Wii only: the small capture the Wii blurs; the 3DS draws the full screen capture below.
 #ifndef __3DS__
         TDDraw::drawTexture(TVec2f(0.0f, 0.0f), &texture, TVec2f((screenWidth / 640.0f) * 128.0f, 64.0f));
 #endif
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetScissorBoxOffset(0, 0);
         GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_A0);
@@ -41,12 +47,15 @@ namespace MR {
         GXSetTevColorS10(GX_TEVREG0, color1);
 #endif
 
+        // 3DS: the screen capture drawn over the whole screen.
 #ifdef __3DS__
         TDDraw::drawTexture(TVec2f(-param1, -param1), &texture, TVec2f(screenWidth + param1 * 2.0f, 456.0f + param1 * 2.0f), param3);
 #else
         TDDraw::drawTexture(TVec2f(-param1, -param1), &texture, TVec2f(screenWidth + param1 * 2.0f, 456.0f + param1 * 2.0f));
 #endif
 
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXColorS10 color2 = {0, 0, 0, param4};
         GXSetTevColorS10(GX_TEVREG0, color2);

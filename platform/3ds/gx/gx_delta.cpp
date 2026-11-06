@@ -1,6 +1,13 @@
-// RvlGXDelta (GXDelta3DS.hpp): GX state changes recorded as data, and the viewport folding the
-// native renderer uses for draws into part of the frame buffer.
-
+// ##############################################################################################
+// # GX state changes as data                                                                   #
+// #                                                                                            #
+// # On the Wii, Mario's draws (J3DModelX's mode lists: shadow, silhouette, reflection, blur;   #
+// # and his dynamic lists: alpha, light, rainbow colours, eyes) send small display lists of GX #
+// # state between the material and the shape. On the 3DS they describe those changes as an     #
+// # RvlGXDelta (GXDelta3DS.hpp), which native.cpp lays over the material's state: each set*    #
+// # records one group of settings and marks it in mask; merge lays one delta over another,     #
+// # group by group, so a later change overrides only what it sets.                             #
+// ##############################################################################################
 #include "GXDelta3DS.hpp"
 #include <cstring>
 
@@ -279,6 +286,13 @@ void RvlGXDelta::setTevRegister(u32 reg, s16 r, s16 g, s16 b, s16 a) {
     registers[reg][3] = a;
 }
 
+// ##############################################################################################
+// # Viewport folding                                                                           #
+// #                                                                                            #
+// # The 3DS draws with one fixed viewport, the whole screen; a Wii draw into part of the frame #
+// # buffer (a viewport) is folded into its projection instead: the clip-space x and y are      #
+// # scaled and moved so that they land on that part of the 640x456 frame buffer.               #
+// ##############################################################################################
 void rvlViewportProjection(f32 (*pOut)[4], const f32 (*pProjection)[4], f32 x, f32 y, f32 width, f32 height) {
     // GX: frame buffer x = x + (ndc.x + 1) / 2 * width, y = y + (1 - ndc.y) / 2 * height.
     const f32 sx = width / 640.0f, ox = (2.0f * x + width) / 640.0f - 1.0f;

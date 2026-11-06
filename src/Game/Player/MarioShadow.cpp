@@ -16,6 +16,8 @@
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <cstring>
 #include <revolution/gd.h>
+// 3DS: GXDelta3DS.hpp, GX state changes as data; GXToCitro3D.hpp, GX values as 3DS GPU values;
+// JUTTexture3DS.hpp, GPU textures for JUTTextures; host.h, the port's host interface.
 #ifdef __3DS__
 #include "GXDelta3DS.hpp"
 #include "GXToCitro3D.hpp"
@@ -742,6 +744,7 @@ void CollisionShadow::drawVolumeBox(const TVec3f& rPosition, const TVec3f& rDept
 }
 
 void CollisionShadow::draw() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     switch (_C) {
     case 0:
@@ -951,6 +954,8 @@ void CollisionShadow::drawVolume() const {
     _340->mFlags.clear();
     _340->mFlags._15 = true;
     _340->directDraw(nullptr);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetDstAlpha(GX_FALSE, 0);
 #endif

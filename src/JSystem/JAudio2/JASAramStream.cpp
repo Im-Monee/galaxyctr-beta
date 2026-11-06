@@ -201,6 +201,7 @@ void JASAramStream::firstLoadTask(void* i_data) {
         if (data->_8 == 0) {
             if (!sLoadThread->sendCmdMsg(prepareFinishTask, _this)) {
                 UNK_BOOL_B = true;
+                // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
                 report3DSStreamStop(0, "prepare-finish task not queued", 0, 0, 0);
 #endif
@@ -212,6 +213,7 @@ void JASAramStream::firstLoadTask(void* i_data) {
         data->_4--;
         if (!sLoadThread->sendCmdMsg(firstLoadTask, data, 0xc)) {
             UNK_BOOL_B = true;
+            // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
             report3DSStreamStop(1, "first load task not queued", data->_4, 0, 0);
 #endif
@@ -256,6 +258,7 @@ bool JASAramStream::headerLoad(u32 param_0, int param_1) {
 
     if (DVDReadPrio(&mDvdFileInfo, sReadBuffer, sizeof(Header), 0, 1) < 0) {
         UNK_BOOL_B = true;
+        // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
         report3DSStreamStop(2, "header read failed", mDvdFileInfo.startAddr, mDvdFileInfo.length, 0);
 #endif
@@ -296,6 +299,7 @@ bool JASAramStream::headerLoad(u32 param_0, int param_1) {
     data._8 = param_1;
     if (!sLoadThread->sendCmdMsg(firstLoadTask, &data, 0xc)) {
         UNK_BOOL_B = true;
+        // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
         report3DSStreamStop(3, "first load task not queued (header)", _108, 0, 0);
 #endif
@@ -335,6 +339,7 @@ bool JASAramStream::load() {
 
     if (DVDReadPrio(&mDvdFileInfo, sReadBuffer, size, offset, 1) < 0) {
         UNK_BOOL_B = true;
+        // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
         report3DSStreamStop(4, "block read failed", mBlock, offset, size);
 #endif
@@ -352,6 +357,7 @@ bool JASAramStream::load() {
         if (!JKRAram::mainRamToAram(sReadBuffer + sizeof(BlockHeader) + bhead->_4 * i, sp08 + sBlockSize * _160 * i, bhead->_4,
                                     EXPAND_SWITCH_UNKNOWN0, 0, nullptr, -1, nullptr)) {
             UNK_BOOL_B = 1;
+            // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
             report3DSStreamStop(5, "ARAM copy failed", mBlock, bhead->_4, i);
 #endif
@@ -471,6 +477,8 @@ void JASAramStream::updateChannel(u32 i_callbackType, JASChannel* i_channel, JAS
 
                 if (_0B8 > mLoopEnd) {
                     UNK_BOOL_B = true;
+                    // 3DS: logs which place stopped the streamed music (report3DSStreamStop,
+                    // above).
 #ifdef __3DS__
                     report3DSStreamStop(6, "position past the loop end", _0B8, mLoopEnd, sp28);
 #endif
@@ -519,6 +527,8 @@ void JASAramStream::updateChannel(u32 i_callbackType, JASChannel* i_channel, JAS
                     while (sp18 != _0B0) {
                         if (!sLoadThread->sendCmdMsg(loadToAramTask, this)) {
                             UNK_BOOL_B = true;
+                            // 3DS: logs which place stopped the streamed music
+                            // (report3DSStreamStop, above).
 #ifdef __3DS__
                             report3DSStreamStop(7, "load task not queued", sp18, _0B0, _118);
 #endif
@@ -619,6 +629,7 @@ void JASAramStream::updateChannel(u32 i_callbackType, JASChannel* i_channel, JAS
             _114 = 1;
             if (!sLoadThread->sendCmdMsg(finishTask, this)) {
                 UNK_BOOL_B = true;
+                // 3DS: logs which place stopped the streamed music (report3DSStreamStop, above).
 #ifdef __3DS__
                 report3DSStreamStop(8, "finish task not queued", 0, 0, 0);
 #endif

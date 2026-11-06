@@ -320,6 +320,7 @@ void MiiSelect::updateButtons() {
 }
 
 void MiiSelect::collectValidMiiIndex() {
+    // 3DS: the counts start from zero each time the list is collected.
 #ifdef __3DS__
     mFavoriteMiiNum = 0;
     mMiiNum = 0;

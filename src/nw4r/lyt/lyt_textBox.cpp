@@ -5,6 +5,7 @@
 #include "nw4r/ut/Font.h"
 #include "nw4r/ut/ResFont.h"
 #include "nw4r/ut/WideTextWriter.h"
+// 3DS: DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
@@ -30,6 +31,7 @@ namespace {
         return ut::Color(dst);
     }
 };  // namespace
+// 3DS: a text box's glyphs drawn in batches through Citro3D.
 #ifdef __3DS__
 void rvl3DSGlyphBatch(bool on);
 #endif
@@ -175,16 +177,19 @@ namespace nw4r {
             writer.SetColorMapping(minCol, maxCol);
             writer.SetupGX();
 
+            // 3DS: no alpha test for the text, as GX_ALWAYS.
 #ifndef __3DS__
             GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
 #else
             TDDraw::setDirectAlphaTest(GXToCitro3D::alphaTest(GX_ALWAYS), 0);
 #endif
             writer.SetCursor(textRect.left, textRect.top);
+            // 3DS: the text's glyphs are batched from here...
 #ifdef __3DS__
             rvl3DSGlyphBatch(true);
 #endif
             writer.Print(mTextBuf, mTextLen);
+            // 3DS: ...to here, and sent as one draw.
 #ifdef __3DS__
             rvl3DSGlyphBatch(false);
 #endif

@@ -40,11 +40,13 @@ void SceneFunction::executeMovementList() {
     }
 
     SYS_TIMER(1);  // the whole movement list
+    // 3DS: the same calls, timed for the profile log (SYS_TIMER).
 #ifdef __3DS__
     {
         SYS_TIMER(2);
 #endif
         MR::getSceneNameObjMovementController()->movement();
+    // 3DS: ends the timed part above.
 #ifdef __3DS__
     }
 #endif
@@ -55,6 +57,7 @@ void SceneFunction::executeMovementList() {
     MR::setStarPointerCameraMtxAtGameScene();
     MR::loadViewMtx();
     CategoryList::execute(MR::MovementType_ClippingDirector);
+    // 3DS: the same calls, timed for the profile log (SYS_TIMER).
 #ifdef __3DS__
     {
         SYS_TIMER(3);
@@ -63,6 +66,7 @@ void SceneFunction::executeMovementList() {
         MR::executeRequirementConnectDraw();
         MR::executeRequirementDisconnectMovement();
         MR::executeRequirementDisconnectDraw();
+    // 3DS: ends the timed part above.
 #ifdef __3DS__
     }
 #endif
@@ -256,6 +260,8 @@ void SceneFunction::executeDrawListOpa() {
     CategoryList::execute(MR::DrawType_SpaceCocoon);
     CategoryList::execute(MR::DrawType_0x17);
     CategoryList::execute(MR::DrawType_WarpPodPath);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetTevDirect(GX_TEVSTAGE0);
     GXSetTevDirect(GX_TEVSTAGE1);

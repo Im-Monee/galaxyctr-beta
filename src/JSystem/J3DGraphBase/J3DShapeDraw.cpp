@@ -84,6 +84,8 @@ J3DShapeDraw::J3DShapeDraw(const u8* displayList, u32 displayListSize) {
 }
 
 void J3DShapeDraw::draw() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXCallDisplayList(mDisplayList, mDisplayListSize);
 #endif

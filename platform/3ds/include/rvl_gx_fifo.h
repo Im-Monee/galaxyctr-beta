@@ -1,12 +1,15 @@
 #pragma once
 
-// Capture of the GX command stream on the 3DS.
-//
-// On the Wii, GX commands are written to the write-gather pipe at 0xCC008000. The 3DS build
-// redirects those writes (GX_WRITE_* in GXRegs.h and the vertex functions in GXVert.h) to
-// the current FIFO buffer, stored big-endian like the real stream so that it has the same
-// format as the display lists in the game files. platform/3ds/gx interprets the stream.
-
+// ##############################################################################################
+// # The GX write pipe (no longer used)                                                         #
+// #                                                                                            #
+// # On the Wii, GX commands are written to the write-gather pipe at 0xCC008000. Early 3DS      #
+// # builds captured that stream here and interpreted it; the 3DS build now draws through       #
+// # Citro3D only and writes no GX stream at all (DETAILS.md, section 5). This header stays     #
+// # because the Wii's GX headers (libs/RVL_SDK GXRegs.h and GXVert.h) include it under         #
+// # __3DS__. Its functions are declared but defined nowhere: any code that still wrote GX      #
+// # commands would fail to link, which keeps GX out of the 3DS build.                          #
+// ##############################################################################################
 #include <revolution/types.h>
 #include <string.h>
 

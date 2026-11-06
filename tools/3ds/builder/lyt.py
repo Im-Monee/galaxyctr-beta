@@ -15,6 +15,12 @@ PANE_SIZE = 0x4C
 PANE_FLOATS = 0x24
 
 
+# ##############################################################################################
+# # Layouts (.brlyt)                                                                           #
+# #                                                                                            #
+# # A layout is a header and a list of blocks (panes, pictures, text boxes, materials...);     #
+# # each block's fields the game reads are swapped.                                            #
+# ##############################################################################################
 def convert_file_header(buf):
     """BinaryFileHeader: signature, u16 byteOrder, u16 version, u32 fileSize, u16 headerSize, u16 dataBlocks."""
     swap32(buf, 0)
@@ -146,6 +152,12 @@ def convert_layout(data):
     return bytes(buf)
 
 
+# ##############################################################################################
+# # Layout animations (.brlan)                                                                 #
+# #                                                                                            #
+# # Animation blocks hold curves of keys; visibility and texture pattern keys are steps, the   #
+# # others float keys with slopes.                                                             #
+# ##############################################################################################
 STEP_KEY_KINDS = {"RLVI", "RLTP"}
 
 

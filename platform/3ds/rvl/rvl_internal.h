@@ -1,7 +1,11 @@
 #pragma once
 
-// Shared between the files of the Wii SDK replacement layer (game world only).
-
+// ##############################################################################################
+// # Shared by the Wii SDK replacements                                                         #
+// #                                                                                            #
+// # Declarations shared between the files of this folder (game world only): time conversion,   #
+// # interrupt delivery, and the interrupt handlers that os_thread.cpp dispatches.              #
+// ##############################################################################################
 #include <revolution/types.h>
 #include <revolution/os/OSTime.h>
 

@@ -1,6 +1,7 @@
 #include "Game/NameObj/NameObjCategoryList.hpp"
 #include <algorithm>
 
+// 3DS: the object timing of the profile log (native_submit.cpp).
 #ifdef __3DS__
 extern "C" bool rvlGXObjectProfileOn(void);
 extern "C" unsigned long long rvlGXObjectMark(void);

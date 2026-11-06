@@ -2,6 +2,7 @@
 
 #include <JSystem/JGeometry/TMatrix.hpp>
 #include <revolution/gx.h>
+// 3DS: host.h for the Citro3D draws below.
 #ifdef __3DS__
 #include "host.h"
 class J3DModelData;
@@ -123,6 +124,7 @@ namespace TDDraw {
     void sendPoint(const TVec3f&, u32) NO_INLINE;
     void sendPoint(const TVec3f&) NO_INLINE;
     void drawLine(const TVec3f&, const TVec3f&, u32);
+    // 3DS: a line with a width (the PICA draws no lines: a thin quad).
 #ifdef __3DS__
     void drawLineWidth(const TVec3f&, const TVec3f&, u32, u8);
 #endif

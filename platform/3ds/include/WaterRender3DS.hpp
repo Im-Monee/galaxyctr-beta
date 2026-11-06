@@ -9,6 +9,13 @@
 #include <cmath>
 #include <cstring>
 
+// ##############################################################################################
+// # Water surfaces through Citro3D                                                             #
+// #                                                                                            #
+// # For OceanBowl and similar water: GX fog in the register form HostGfxState carries (gfx.c   #
+// # builds the table from it), camera-space vertices put into clip space, the water's pixel    #
+// # state, and its draws through host.h.                                                       #
+// ##############################################################################################
 namespace WaterRender3DS {
     inline unsigned int packFogFloat(float value) {
         unsigned int bits;

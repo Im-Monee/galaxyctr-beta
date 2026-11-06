@@ -1,3 +1,11 @@
+// ##############################################################################################
+// # The 3DS program: start, log, quit                                                          #
+// #                                                                                            #
+// # main() checks the console, starts the screens, the log and the debug options, sets up the  #
+// # emulated Wii OS (platform/3ds/rvl) and the game data, then hands over to the game          #
+// # (smgMain), which never returns. This file also holds the log, fatal errors, the per-frame  #
+// # main loop, the controls and quitting.                                                      #
+// ##############################################################################################
 #include "host.h"
 #include "showcase.h"
 #include "build_version.h"
@@ -25,6 +33,12 @@ static FILE* sLogFile;
 static bool sConsoleLog = !SMG_SHOWCASE;  // log lines also on the bottom screen
 static bool sCstick;  // irrst (C-Stick, ZL/ZR) available
 
+// ##############################################################################################
+// # The log over the network                                                                   #
+// #                                                                                            #
+// # Only for a .3dsx started from the PC with 3dslink (development): the CIA never has a       #
+// # 3dslink host and skips this.                                                               #
+// ##############################################################################################
 // Started from the PC with 3dslink: the log also goes to the PC (stderr over the network,
 // shown by "3dslink -s"); the bottom screen keeps its own copy on stdout.
 static bool sLinked;
@@ -77,6 +91,14 @@ static void connectToPc(void) {
     }
 }
 
+// ##############################################################################################
+// # The log file                                                                               #
+// #                                                                                            #
+// # sdmc:/smg/log.txt, overwritten at every start. Lines collect in a buffer in memory; a      #
+// # thread of its own writes them to the card every quarter second, so the game does not wait  #
+// # for the card on every line and the log still reaches the card while the game hangs. In     #
+// # development builds the lines also show on the bottom screen.                               #
+// ##############################################################################################
 static void logFlushThread(void* arg);
 static LightLock sLogLock;
 static Thread sLogThread;
@@ -193,6 +215,13 @@ void hostLog(const char* fmt, ...) {
     va_end(args);
 }
 
+// ##############################################################################################
+// # Mii data from the console                                                                  #
+// #                                                                                            #
+// # The game shows the player's Miis (rvl/rfl.cpp). The 3DS keeps them in Mii Maker's          #
+// # database, CFL_DB.dat in the shared extdata, and their face parts in CFL_Res.dat inside a   #
+// # system title; both are read from the console itself, never shipped with the port.          #
+// ##############################################################################################
 int hostMiiDatabase(void* pData, unsigned long capacity, unsigned long* pSize) {
     if (pSize != NULL) {
         *pSize = 0;
@@ -272,6 +301,14 @@ int hostCflResource(const void** data, unsigned long* size) {
     return resource != NULL;
 }
 
+// ##############################################################################################
+// # Fatal errors, the main loop and quitting                                                   #
+// #                                                                                            #
+// # hostFatal shows its message on the bottom screen even in a showcase build, and waits for   #
+// # START. hostMainLoop runs once per game frame: it reads the controls and ends the game when #
+// # START and SELECT are held together; hostQuit then runs the Wii shutdown callbacks and      #
+// # stops the host threads before exit frees the heap their stacks are on.                     #
+// ##############################################################################################
 void hostFatal(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -341,6 +378,13 @@ unsigned long long hostGetTickFrequency(void) {
     return SYSCLOCK_ARM11;
 }
 
+// ##############################################################################################
+// # The main thread's stack                                                                    #
+// #                                                                                            #
+// # Its size, and how much of it the game has used: the free part is painted with a pattern at #
+// # the start, and the lowest word no longer holding it is the deepest point reached (logged   #
+// # with the memory line of gfx.c).                                                            #
+// ##############################################################################################
 // The game runs on the main thread. libctru gives it a stack of __stacksize__ bytes at the start of
 // the heap (system/stack_adjust.s), not the rsf's StackSize; its default of 32 KB overflowed after
 // falling off the Observatory (Luma dump in CIA 0.19.13: sp 0x08000000, write at 0x07FFFFD8).
@@ -372,17 +416,16 @@ unsigned long hostMainStackUsed(void) {
     return (unsigned long)((char*)top - (char*)word);
 }
 
-// ############################################################################
-// # New 3DS family only                                                      #
-// #                                                                          #
-// # The game needs the New 3DS's memory and CPU: on an original 3DS it does  #
-// # not fit in memory and runs far below game speed (DETAILS.md, section 10). #
-// # A CIA installer cannot refuse a console model, so the check happens      #
-// # here, before anything else: the bottom screen explains why and the app   #
-// # closes on START. The low-memory mode (hostLowMemory) is separate: it is  #
-// # the memory layout the app was started with, while this checks the       #
-// # console itself, so the Old 3DS test build still runs on a New model.     #
-// ############################################################################
+// ##############################################################################################
+// # New 3DS family only                                                                        #
+// #                                                                                            #
+// # The game needs the New 3DS's memory and CPU: on an original 3DS it does not fit in memory  #
+// # and runs far below game speed (DETAILS.md, section 10). A CIA installer cannot refuse a    #
+// # console model, so the check happens here, before anything else: the bottom screen explains #
+// # why and the app closes on START. The low-memory mode (hostLowMemory) is separate: it is    #
+// # the memory layout the app was started with, while this checks the console itself, so the   #
+// # Old 3DS test build still runs on a New model.                                              #
+// ##############################################################################################
 static void refuseOriginal3DS(void) {
     bool isNew = false;
     // A failed query is treated as a New model: refusing a console by mistake is worse.
@@ -407,6 +450,14 @@ static void refuseOriginal3DS(void) {
     exit(0);
 }
 
+// ##############################################################################################
+// # main                                                                                       #
+// #                                                                                            #
+// # The order matters: the console check before the screens are set up, the CPU speed before   #
+// # the work starts, the screens before the log (which writes to the bottom screen), the       #
+// # renderer before the game world, and the game data (rvl/port_data.cpp) after the emulated   #
+// # Wii OS and before the game.                                                                #
+// ##############################################################################################
 int main(void) {
     refuseOriginal3DS();
     paintMainStack();
@@ -420,15 +471,15 @@ int main(void) {
 
     gfxInitDefault();
     consoleInit(GFX_BOTTOM, NULL);
-    // ############################################################################
-    // # Bottom screen text of the showcase and public beta builds              #
-    // #                                                                        #
-    // # These builds show a fixed text instead of the log (showcase.h); the    #
-    // # log still goes to sdmc:/smg/log.txt, which the next start overwrites:  #
-    // # hence the beta's request to send it, with any crash dump, first.       #
-    // # The console is 40 x 30 characters; "\x1b[row;columnH" places a line,   #
-    // # 1-based, and each line is centred by its column.                       #
-    // ############################################################################
+
+    // ##############################################################################################
+    // # Bottom screen text of the showcase and public beta builds                                  #
+    // #                                                                                            #
+    // # These builds show a fixed text instead of the log (showcase.h); the log still goes to      #
+    // # sdmc:/smg/log.txt, which the next start overwrites: hence the beta's request to send it,   #
+    // # with any crash dump, first. The console is 40 x 30 characters; "\x1b[row;columnH" places a #
+    // # line, 1-based, and each line is centred by its column.                                     #
+    // ##############################################################################################
     if (SMG_PUBLIC_BETA) {
         printf("\x1b[12;6HGalaxyCTR - First Public Beta");    // 29 characters
         printf("\x1b[15;9HREPORT CRASH FILE + LOGS");         // 24 characters
@@ -465,6 +516,12 @@ int main(void) {
     hostFatal("smgMain returned");
 }
 
+// ##############################################################################################
+// # Controls                                                                                   #
+// #                                                                                            #
+// # The 3DS's buttons, circle pad, C-Stick (New 3DS, through irrst) and touch screen, once per #
+// # frame for rvl/kpad.cpp; debug.txt press= adds simulated buttons.                           #
+// ##############################################################################################
 void hostInputGet(HostInput* pInput) {
     circlePosition circle;
     touchPosition touch;
@@ -486,6 +543,11 @@ void hostInputGet(HostInput* pInput) {
     pInput->touchY = touch.py;
 }
 
+// ##############################################################################################
+// # Loading profile                                                                            #
+// #                                                                                            #
+// # Logged at the first scene frame (debug.c): where the seconds since the start went.         #
+// ##############################################################################################
 // Where the time before the first scene frame went: game file opens and reads, and log writes.
 void hostLogLoadProfile(void) {
     unsigned long opens, reads;

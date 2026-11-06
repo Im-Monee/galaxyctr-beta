@@ -6,12 +6,10 @@
 #include "Game/Util/ObjUtil.hpp"
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: JUTTexture3DS.hpp, GPU textures for JUTTextures; host.h, the port's host interface.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #include "host.h"
-#endif
-#ifdef __3DS__
-
 #endif
 #ifdef __3DS__
 namespace {

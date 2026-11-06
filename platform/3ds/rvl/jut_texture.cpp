@@ -1,5 +1,16 @@
-// Citro3D texture upload for JUTTexture resources used by direct 3DS renderers.
-// Pixel decoding/upload is direct; EFB-copy classification temporarily queries the GX cache.
+// ##############################################################################################
+// # Textures for the GPU                                                                       #
+// #                                                                                            #
+// # Every Wii texture the port draws becomes a GPU texture here: the JUTTextures of layouts,   #
+// # particles and effects (rvl3DSGetJUTTexture), the textures of native materials              #
+// # (rvl3DSGetNativeTIMGTexture), and images by address. A Wii texture is decoded from its GX  #
+// # format into RGBA8 and uploaded (host/gfx.c picks the smallest GPU format for it); model    #
+// # textures the converter already wrote in the GPU's layout are copied as they are.           #
+// #                                                                                            #
+// # The results are cached by image, palette and mode, and released least recently used first, #
+// # but only once the GPU has finished every frame that reads them. Screen captures (EFB       #
+// # copies) are textures made by the GPU, kept apart: their image is not texture data.         #
+// ##############################################################################################
 
 #include "JUTTexture3DS.hpp"
 #include "host.h"
@@ -34,6 +45,12 @@ namespace {
         void* handle;
     };
 
+    // ##############################################################################################
+    // # The texture cache                                                                          #
+    // #                                                                                            #
+    // # The cache entries, a hash of them for quick lookups, and the last textures used: most      #
+    // # draws ask for the texture the draw before them used.                                       #
+    // ##############################################################################################
     // Native model loading can expose well over 64 distinct materials before the first
     // complete frame. Keeping the cache large enough avoids repeated decode/upload churn
     // while the scene is still being assembled. 256 were too few for the Comet Observatory after
@@ -120,6 +137,12 @@ namespace {
         slot.epoch = sCaptureEpoch;
     }
 
+    // ##############################################################################################
+    // # Memory limits                                                                              #
+    // #                                                                                            #
+    // # How much linear memory the cache leaves free, and how large a texture may be: smaller in   #
+    // # the 96 MB of an Old 3DS.                                                                   #
+    // ##############################################################################################
     // Linear memory left free for the frame's EFB copies and new textures. Without a bound the
     // cache filled the linear heap within a few seconds of Good Egg (CIA 0.10.14) and textures
     // made later failed: HUD parts and others drawn white, black or not at all.
@@ -151,6 +174,13 @@ namespace {
         return true;
     }
 
+    // ##############################################################################################
+    // # Decoding the GX texture formats                                                            #
+    // #                                                                                            #
+    // # The Wii's formats (I4, I8, IA4, IA8, RGB565, RGB5A3, RGBA8, CMPR and the palette formats   #
+    // # C4, C8, C14X2), stored big-endian in tiles, decoded into RGBA8 rows; an image too large    #
+    // # for the scratch is decoded at half size, then fitted to the GPU's power-of-two sizes.      #
+    // ##############################################################################################
     inline u16 readBE16(const u8* p) {
         return static_cast<u16>((static_cast<u16>(p[0]) << 8) | p[1]);
     }
@@ -335,6 +365,12 @@ namespace {
     }
 }
 
+// ##############################################################################################
+// # For other users                                                                            #
+// #                                                                                            #
+// # The decoding scratch for other code, and freeing cached textures for the movie decoder     #
+// # (host/movie.c).                                                                            #
+// ##############################################################################################
 u32* rvl3DSTextureScratch() {
     return sDecoded;
 }
@@ -395,6 +431,12 @@ namespace {
     }
 }  // namespace
 
+// ##############################################################################################
+// # GX texture objects                                                                         #
+// #                                                                                            #
+// # GXTexObj kept as data (the image, size, format and sampling), since GX itself is not part  #
+// # of the 3DS build, and the texture buffer sizes the game computes.                          #
+// ##############################################################################################
 void rvl3DSInitTexObj(GXTexObj* obj, void* image, u16 width, u16 height, u32 format, u32 wrapS, u32 wrapT, bool mipmap, u32 tlut) {
     TexObj3DS* t = reinterpret_cast< TexObj3DS* >(obj);
     memset(obj, 0, sizeof(GXTexObj));
@@ -477,6 +519,13 @@ u32 rvl3DSTexBufferSize(u16 width, u16 height, u32 format) {
 }
 
 // A texture captured from the screen (rvl3DSCaptureJUTTexture): its image is not texture data.
+
+// ##############################################################################################
+// # Looking up textures                                                                        #
+// #                                                                                            #
+// # A JUTTexture's GPU texture: a capture's when it is one, else the cached one, decoded and   #
+// # uploaded on first use. A texture whose image changes is invalidated.                       #
+// ##############################################################################################
 bool rvl3DSIsEfbCopy(const JUTTexture* texture) {
     if (texture == nullptr) return false;
     for (const CaptureEntry& capture : sCaptures) {
@@ -624,6 +673,13 @@ void* rvl3DSGetJUTTexture(const JUTTexture* texture) {
     return handle;
 }
 
+// ##############################################################################################
+// # Screen captures                                                                            #
+// #                                                                                            #
+// # JUTTexture::capture on the Wii copies the frame buffer into the texture; here the GPU      #
+// # copies its render target (host/gfx.c, hostGfxCopyToTexture), and texture coordinates over  #
+// # the capture are mapped onto the copy, which is stored on its side.                         #
+// ##############################################################################################
 void rvl3DSCaptureJUTTexture(JUTTexture* texture) {
     rvl3DSCaptureJUTTextureRegion(texture, 0.0f, 0.0f, 640.0f, 456.0f);
 }
@@ -810,6 +866,12 @@ void* rvl3DSGetNativeTexture(const void* image, u16 width, u16 height, u32 forma
     return handle;
 }
 
+// ##############################################################################################
+// # Statistics                                                                                 #
+// #                                                                                            #
+// # Images decoded, time spent, and textures replaced because the cache was full, for the      #
+// # periodic log (native.cpp).                                                                 #
+// ##############################################################################################
 void rvl3DSLogTextureStats() {
     const unsigned long long ms = hostGetTickFrequency() / 1000;
     hostLog("textures: %lu decoded (%lu ms), %lu replaced in the full cache\n", static_cast< unsigned long >(sDecodes),

@@ -7,9 +7,15 @@
 class JUTTexture;
 struct ResTIMG;
 
+// ##############################################################################################
+// # Textures for the GPU                                                                       #
+// #                                                                                            #
+// # The interface of platform/3ds/rvl/jut_texture.cpp: GPU textures for JUTTextures, native    #
+// # model textures and images, screen captures, and GXTexObj kept as data.                     #
+// ##############################################################################################
 // Direct Citro3D conversion of a JUTTexture, and shared CPU scratch space for texture decode.
 void* rvl3DSGetJUTTexture(const JUTTexture* texture);
-// Model renderer path: convert a J3D ResTIMG directly, without consulting the emulated GX cache.
+// The texture of a J3D ResTIMG, for the native model renderer (platform/3ds/gx/native.cpp).
 void* rvl3DSGetNativeTIMGTexture(const ResTIMG* timg);
 // The screen capture whose JUTTexture image the ResTIMG names (a model texture replaced with a
 // capture's, as ShadowProjDummy with Mario's shadow), with its coordinate mapping (u = c0 + c1 t,

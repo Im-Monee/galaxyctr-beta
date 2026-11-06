@@ -1,3 +1,4 @@
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include <host.h>
 #endif

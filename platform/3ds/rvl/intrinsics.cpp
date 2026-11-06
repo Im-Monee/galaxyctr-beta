@@ -1,5 +1,9 @@
-// Portable versions of the Metrowerks PowerPC intrinsics declared in revolution/types.h.
-
+// ##############################################################################################
+// # PowerPC intrinsics                                                                         #
+// #                                                                                            #
+// # The Wii's compiler (Metrowerks) has built-in functions for PowerPC instructions, which the #
+// # game calls by name (revolution/types.h): portable versions for the ARM CPU.                #
+// ##############################################################################################
 #include <revolution/types.h>
 #include <math.h>
 #include <string.h>

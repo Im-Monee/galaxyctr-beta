@@ -15,6 +15,7 @@
 #include <JSystem/J3DGraphBase/J3DMaterial.hpp>
 #include <JSystem/J3DGraphBase/J3DShapeDraw.hpp>
 #include <JSystem/J3DGraphBase/J3DTransform.hpp>
+// 3DS: headers the 3DS code of this file uses (ActorLightCtrl.hpp).
 #ifdef __3DS__
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #endif
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <revolution/gx/GXEnum.h>
 #include <revolution/gx/GXGeometry.h>
+// 3DS: the native renderer's material and packet calls, for the 3DS draw below.
 #ifdef __3DS__
 #include "host.h"
 struct ActorLightInfo;
@@ -177,6 +179,8 @@ void NormalMapBase::loadTexMtxBtk(J3DMaterial* pMaterial) const {
 }
 
 void NormalMapBase::draw() const {
+    // 3DS: the model drawn by the native renderer; its indirect normal mapping is not available on
+    // the PICA.
 #ifdef __3DS__
     if (MR::isDead(this)) {
         return;
@@ -411,6 +415,8 @@ void NormalMapBase::shapeAnalyzeDraw(J3DModel* pModel) const {
 }
 
 void NormalMapBase::drawShape(J3DModel* pModel, J3DShape* pShape) const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)pModel;
     (void)pShape;

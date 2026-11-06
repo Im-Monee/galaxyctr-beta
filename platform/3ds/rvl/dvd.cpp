@@ -1,12 +1,14 @@
-// The Wii disc file system, backed by the game files on the SD card.
-//
-// At startup the folder returned by hostFilesRoot() is scanned into a table laid out like
-// the disc's FST: entry 0 is the root and each directory is followed by its contents, so
-// entry numbers and directory iteration behave like on the Wii. Names are compared without
-// case, as on the disc.
-//
-// Reads are performed immediately. Asynchronous reads report completion through the I/O
-// interrupt, so their callbacks run from the interrupt dispatcher like on the Wii.
+// ##############################################################################################
+// # The Wii disc file system (DVD)                                                             #
+// #                                                                                            #
+// # Backed by the converted game files on the SD card (sdmc:/smg/files, host/fs.c). At startup #
+// # the folder is scanned into a table laid out like the disc's FST: entry 0 is the root and   #
+// # each directory is followed by its contents, so entry numbers and directory iteration       #
+// # behave like on the Wii. Names are compared without case, as on the disc.                   #
+// #                                                                                            #
+// # Reads are performed at once. Asynchronous reads report their completion through the I/O    #
+// # interrupt, so their callbacks run from the interrupt dispatcher like on the Wii.           #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
@@ -18,6 +20,13 @@ static const bool kLogMissingFiles = false;
 // Set to log every path the game looks up.
 static const bool kLogLookups = false;
 
+// ##############################################################################################
+// # The file table                                                                             #
+// #                                                                                            #
+// # One entry per file or directory, sorted by name inside each directory as on the disc; a    #
+// # directory's entry holds the index after its last child, a file's its size (read when the   #
+// # file is first opened).                                                                     #
+// ##############################################################################################
 struct FstEntry {
     char* mName;
     bool mIsDir;
@@ -121,6 +130,13 @@ static s32 findChild(u32 dir, const char* pName, size_t nameLen) {
     return -1;
 }
 
+// ##############################################################################################
+// # Open files and reads                                                                       #
+// #                                                                                            #
+// # A few files stay open, the oldest closed first: an archive is read in many pieces, and     #
+// # opening a file on the card is slow (the file cache pack, host/fs.c, makes most opens       #
+// # cheap).                                                                                    #
+// ##############################################################################################
 // Open file handles, cached by entry number: the game reads archives in many pieces.
 struct OpenFile {
     u32 mEntry;
@@ -170,6 +186,12 @@ static s32 readFile(DVDFileInfo* pInfo, void* pDst, s32 length, s32 offset) {
     return hostFileRead(handle, pDst, length, offset);
 }
 
+// ##############################################################################################
+// # Asynchronous completions                                                                   #
+// #                                                                                            #
+// # An asynchronous read is done at once and queued here; the I/O interrupt then runs its      #
+// # callback, in order, as the Wii's drive interrupt would.                                    #
+// ##############################################################################################
 // Completed asynchronous commands, delivered by the I/O interrupt in order.
 struct Completion {
     DVDCommandBlock* mBlock;
@@ -217,6 +239,12 @@ void rvlIOInterrupt() {
 
 extern "C" {
 
+// ##############################################################################################
+// # The DVD functions                                                                          #
+// #                                                                                            #
+// # Paths to entry numbers, opens and reads, directories. The drive is always ready: no cover, #
+// # no disc errors.                                                                            #
+// ##############################################################################################
 void DVDInit(void) {
     if (sEntries != nullptr) {
         return;

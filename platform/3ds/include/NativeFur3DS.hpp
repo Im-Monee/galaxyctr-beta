@@ -1,8 +1,12 @@
 #pragma once
 
-// 3DS fur (FurCtrl / FurDrawer): each layer model's shape drawn by the native J3D renderer
-// (platform/3ds/gx/native.cpp) with the layer's CPU-made positions (CShader) and the fur's own
-// material instead of the model's, as FurDrawer::setupMaterial sets it on the Wii.
+// ##############################################################################################
+// # Fur on the 3DS                                                                             #
+// #                                                                                            #
+// # FurCtrl and FurDrawer: each layer model's shape is drawn by the native J3D renderer        #
+// # (platform/3ds/gx/native.cpp) with the layer's CPU-made positions (CShader) and the fur's   #
+// # own material instead of the model's, as FurDrawer::setupMaterial sets it on the Wii.       #
+// ##############################################################################################
 
 #include "host.h"
 #include <revolution/mtx.h>

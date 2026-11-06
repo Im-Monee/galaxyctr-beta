@@ -1,4 +1,5 @@
 #include "Game/System/GameSystemSceneController.hpp"
+// 3DS: a smaller file cache with the 96 MB of an Old 3DS.
 #ifdef __3DS__
 extern "C" int hostLowMemory(void);
 #endif

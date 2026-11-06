@@ -595,10 +595,13 @@ void GhostPlayer::draw() const {
 
     J3DModelX* model = reinterpret_cast< J3DModelX* >(MR::getJ3DModel(this));
     model->viewCalc2();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXInvalidateVtxCache();
 #endif
     model->mFlags.clear();
+    // 3DS: the model's own packets drawn by the native renderer (J3DModelXVisibleDraw).
 #ifdef __3DS__
     {
         J3DModelXVisibleDraw visible;
@@ -611,6 +614,8 @@ void GhostPlayer::draw() const {
         mJetTurtleShadow->drawType1();
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetAlphaUpdate(GX_FALSE);
     GXSetColorUpdate(GX_TRUE);

@@ -5,6 +5,7 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/Color.hpp"
 #include "Game/Util/DemoUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -16,6 +17,7 @@
 #include "Game/Util/StringUtil.hpp"
 #include <JSystem/JMath/JMATrigonometric.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// Wii only: the GX headers of the Wii's drawing code.
 #ifndef __3DS__
 #include <revolution/gx/GXBump.h>
 #include <revolution/gx/GXCull.h>
@@ -58,6 +60,8 @@ namespace {
 };  // namespace
 
 namespace {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXColor sStickColors[] = {{0x00, 0xC8, 0x00, 0x00}, {0x00, 0xDC, 0x00, 0x00}, {0x00, 0xB4, 0x00, 0x00}, {0x00, 0xC8, 0x00, 0x00}};
 #endif
@@ -550,6 +554,8 @@ void Flag::draw() const {
 #endif
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 void Flag::loadMaterial() const {
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);

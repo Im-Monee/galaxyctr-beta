@@ -5,6 +5,7 @@
 
 class SpiderThreadMainPoint;
 class SpiderThreadPoint;
+// 3DS: the thread's texture is passed to the Citro3D draw.
 #ifdef __3DS__
 class JUTTexture;
 #endif
@@ -16,6 +17,7 @@ public:
     void cut(SpiderThreadMainPoint*, SpiderThreadMainPoint*);
     void updatePointerPos();
     void update();
+    // 3DS: the draw takes the thread's texture, which the Citro3D draw binds itself.
 #ifdef __3DS__
     void draw(JUTTexture*) const;
 #else
@@ -41,6 +43,7 @@ public:
 
     void drawLine() const;
     void drawPoints() const;
+    // 3DS: the thread's lines and points through DirectDraw.
 #ifdef __3DS__
     void drawLineDirect(JUTTexture*) const;
     void drawPointsDirect(JUTTexture*) const;

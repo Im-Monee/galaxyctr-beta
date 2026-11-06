@@ -35,6 +35,7 @@ bool ClippingActorInfo::isJudgedToClip() const {
 
     f32 val = _8;
     ClippingJudge* judge = MR::getClippingJudge();
+    // 3DS: the clipping test with the frustums scaled for the lowered detail (hostPerfDetail).
 #ifdef __3DS__
     return judge->isJudgedToClipActor(*_4, val, farClipLevel);
 #else

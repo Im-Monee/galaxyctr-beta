@@ -1,15 +1,19 @@
-// Native J3D drawing (block N).
-//
-// The PC converter (tools/3ds/native) writes, next to every J3D model of the game, an .n3d file:
-// its shapes' vertices already decoded, triangle lists, matrix tables and its materials compiled
-// into 3DS texture combiner stages (tools/3ds/native/n3d.py and mat.py describe the format).
-// ResourceHolder registers each model's .n3d when it creates the model, and
-// DrawBufferShapeDrawer draws the model's packets from it: no display list and no GX command
-// of the model is read. Colours, texture numbers, texture matrices and position
-// matrices come from the J3D objects at draw time. Deferred per-joint texture matrices are
-// calculated on the CPU and uploaded as transient Citro3D vertices. CPU skinning remains
-// dependent on source vertex mappings being present in the file; unsupported packets are
-// counted and reported instead of being silently discarded.
+// ##############################################################################################
+// # Native J3D drawing                                                                         #
+// #                                                                                            #
+// # The PC converter (tools/3ds/native) writes, next to every J3D model of the game, an .n3d   #
+// # file: its shapes' vertices already decoded, triangle lists, matrix tables and its          #
+// # materials compiled into 3DS texture combiner stages (tools/3ds/native/n3d.py and mat.py    #
+// # describe the format). ResourceHolder registers each model's .n3d when it creates the       #
+// # model, and DrawBufferShapeDrawer draws the model's packets from it: no display list and no #
+// # GX command of the model is read (DETAILS.md, section 5).                                   #
+// #                                                                                            #
+// # Colours, texture numbers, texture matrices and position matrices come from the J3D objects #
+// # at draw time, so the game's animations work as on the Wii. Groups of vertices are uploaded #
+// # to the GPU's arena once and drawn from there; deferred per-joint texture matrices and CPU  #
+// # skinning are computed on the CPU and uploaded for the frame. Packets the renderer cannot   #
+// # draw are counted by reason and reported in the log, never dropped silently.                #
+// ##############################################################################################
 
 #include "gx_internal.h"
 #include "gx_state.h"
@@ -44,6 +48,12 @@ extern "C" int rvlDVDEntryRelPath(s32 entry, char* pDst, u32 size);  // dvd.cpp
 
 namespace {
 
+    // ##############################################################################################
+    // # The .n3d file in memory                                                                    #
+    // #                                                                                            #
+    // # A shape's vertex format and groups as the file stores them, the format's constants (which  #
+    // # must match n3d.py and mat.py), and the reasons a packet falls back.                        #
+    // ##############################################################################################
     struct N3DShape {
         u8 mode, pad;
         u16 groupCount;
@@ -91,6 +101,13 @@ namespace {
         FB_SUBMIT,       // host rejected a native draw submission
     };
 
+    // ##############################################################################################
+    // # Uploaded groups                                                                            #
+    // #                                                                                            #
+    // # A group's vertices and indices once in the arena (gfx.c), keyed by what the decoding       #
+    // # depended on; a few ways per group, since one group can be drawn with different vertex      #
+    // # colour sets or unit sources. The arena's epoch tells when the upload is gone.              #
+    // ##############################################################################################
     struct Upload {
         u32 epoch;
         u32 key;  // what the vertices depend on besides the file: sources of the units, channel
@@ -121,6 +138,12 @@ namespace {
     };
     FurUpload sFurUploads[256];
 
+    // ##############################################################################################
+    // # Bounds and runs for the clipper                                                            #
+    // #                                                                                            #
+    // # Computed once per upload for native_clip.cpp: a sphere per matrix slot, and for large      #
+    // # groups a sphere per run of triangles.                                                      #
+    // ##############################################################################################
     // Model-space bounding spheres of an uploaded group's vertices, one per matrix slot, for the
     // clipping test of native_clip.cpp. Persistent uploads keep theirs until the arena is emptied;
     // transient ones (skinned, deferred texture matrices) for the frame.
@@ -293,6 +316,13 @@ namespace {
     // A registered model. Its tables live in one block of the heap the model was created in
     // (freed with it); the block starts with the model's address, checked on every lookup so
     // that a freed block is never used. Vertices and indices stay in the file until uploaded.
+
+    // ##############################################################################################
+    // # Registered models                                                                          #
+    // #                                                                                            #
+    // # One per J3D model data with an .n3d: the file's tables, its uploads, its far model. Models #
+    // # are found by their J3DModelData, materials lent between models by their owner.             #
+    // ##############################################################################################
     struct NativeModel {
         J3DModelData* model;
         u8* block;
@@ -321,6 +351,13 @@ namespace {
         HostGfxState farState;
     };
 
+    // ##############################################################################################
+    // # Reading the files                                                                          #
+    // #                                                                                            #
+    // # The SD card is slow to seek: a raw copy of a model's file in memory serves its transient   #
+    // # uploads, and an upload cache keeps whole small files for a scene's first frames, which     #
+    // # upload hundreds of groups. Both have a budget and give their memory back.                  #
+    // ##############################################################################################
     // Memory the raw .n3d copies may take (malloc). Past it, transient uploads read the card.
     const u32 kRawBudget = 1536 * 1024;
     u32 sRawBytes;
@@ -454,6 +491,11 @@ namespace {
     u32 sModelCount, sModelCapacity;
     u32 sLoaded, sMissing;
 
+    // ##############################################################################################
+    // # Small helpers                                                                              #
+    // #                                                                                            #
+    // # Reading the file's little-endian fields, finding models and materials, vertex strides.     #
+    // ##############################################################################################
     inline u16 rd16(const u8* p) {
         u16 v;
         memcpy(&v, p, 2);
@@ -529,6 +571,12 @@ namespace {
         return type == GX_F32 || type == GX_U8 || type == GX_S8 || type == GX_U16 || type == GX_S16;
     }
 
+    // ##############################################################################################
+    // # Far model files                                                                            #
+    // #                                                                                            #
+    // # The converter's far.py writes for each model a single-draw stand-in for when it is far     #
+    // # away (see Far models below): its header and vertex layout.                                 #
+    // ##############################################################################################
     // Far models (far.py): the header, a vertex.
     struct FarHeader {
         char magic[4];
@@ -595,8 +643,13 @@ namespace {
 
 }  // namespace
 
-// Registration ---------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Registration                                                                               #
+// #                                                                                            #
+// # ResourceHolder calls rvlNativeRegister for every model it creates: the model's .n3d is     #
+// # found next to its archive (rvlNativeSetArchive), read and checked against the model, and   #
+// # its far model's header is loaded.                                                          #
+// ##############################################################################################
 namespace {
     const char* sArchivePath;  // set by ResourceHolderManager::createResourceHolder
 }
@@ -823,8 +876,15 @@ void rvlNativeRegister(J3DModelData* pModel, s32 entry, const char* pName) {
     sLoaded++;
 }
 
-// Drawing --------------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Material values and snapshots                                                              #
+// #                                                                                            #
+// # The values a material draws with that the game changes at run time (colours, constant      #
+// # colours, texture numbers, texture matrices), read from the J3D material at draw time.      #
+// # Instances that share model data but animate differently take a snapshot of their values    #
+// # (rvlNativeSnapshot) when the game calculates them, since on the Wii each instance records  #
+// # its own display list.                                                                      #
+// ##############################################################################################
 namespace {
 
     // The values of a material that change from one model instance to another (colour, texture
@@ -939,6 +999,12 @@ namespace {
 }  // namespace
 
 namespace {
+    // ##############################################################################################
+    // # Lower detail models                                                                        #
+    // #                                                                                            #
+    // # A lower detail model (Middle, Low) draws on the Wii with the display lists of the model it #
+    // # follows; here it takes that model's material values.                                       #
+    // ##############################################################################################
     // MR::syncMaterialAnimation: a lower detail model draws with the display lists of the model it
     // follows, here with its snapshots. Their own values are the file's (RosettaMiddle's A1 is 0).
     struct SnapshotSource {
@@ -1147,6 +1213,12 @@ bool rvlNativeDrawShape(J3DModel* pModel, u32 shapeIndex, const f32 (*pViewMtx)[
     return submitted;
 }
 
+// ##############################################################################################
+// # Frame end                                                                                  #
+// #                                                                                            #
+// # Called once per frame (native_submit.cpp, rvl3DSEndFrame): resets the frame's viewport and #
+// # ages the caches.                                                                           #
+// ##############################################################################################
 void rvlNativeEndFrame() {
     rvlNativeSetViewport(nullptr, nullptr, nullptr);  // MR::drawInitFor2DModel's lasts for the frame
     sFrame++;
@@ -1158,6 +1230,13 @@ void rvlNativeEndFrame() {
 
 namespace {
 
+    // ##############################################################################################
+    // # Fog, colours and vertex decoding                                                           #
+    // #                                                                                            #
+    // # The material's fog as GX registers (gfx.c builds the table from them), constant colours    #
+    // # and registers from the material record's references, and the decoding of one stored vertex #
+    // # into the GPU's vertex.                                                                     #
+    // ##############################################################################################
     // GXSetFog's register values (RVL_SDK GXPixel.c): the form HostGfxState carries fog in
     // (gfx.c applyFog decodes it). The range adjustment table is not represented.
     void encodeFog(const J3DFogInfo& f, HostGfxState& st) {
@@ -1571,6 +1650,14 @@ namespace {
         }
     }
 
+    // ##############################################################################################
+    // # Uploading a group                                                                          #
+    // #                                                                                            #
+    // # A group's vertices decoded into the arena: persistent for static groups, for the frame     #
+    // # when they depend on per-frame data (skinning, deferred texture matrices). When the arena   #
+    // # is full the upload fails, the arena is emptied at the next frame, and the group uploads    #
+    // # again then.                                                                                #
+    // ##############################################################################################
     // Whether an upload's vertices serve the current draw although its key differs: they differ
     // only in the colour set and the units' sources (decodeVertex), so the draw must not read
     // the vertex colours of another set, and each of its units must have the same source.
@@ -1777,6 +1864,11 @@ namespace {
         SHAPE_MISSING_MATRIX_TABLE,
     };
 
+    // ##############################################################################################
+    // # Fallbacks                                                                                  #
+    // #                                                                                            #
+    // # Counting why a packet or a shape was not drawn, for the log.                               #
+    // ##############################################################################################
     bool fallback(u32 reason) {
         gGXProfile.nativeFallbacks[reason]++;
         return false;
@@ -1797,6 +1889,13 @@ namespace {
     J3DTexture* sTextures;
     s8 sGenTexMtx[3];              // per unit: texture matrix 0-3, -1 identity
 
+    // ##############################################################################################
+    // # Material records into pixel state                                                          #
+    // #                                                                                            #
+    // # mat.py compiled each material into combiner stages, constants, blending and tests; here a  #
+    // # record becomes the draw's HostGfxState, with the run-time values of the material laid over #
+    // # it (applyValues). A material with more stages than the PICA has draws in several passes.   #
+    // ##############################################################################################
     // The combiner stages of a material record (mat.py), without their constants.
     void loadStages(const u8* m, HostGfxState& st) {
         st.stageCount = m[0] > HOST_GFX_STAGES ? HOST_GFX_STAGES : m[0];
@@ -2020,7 +2119,13 @@ void rvlNativeSetDelta(const RvlGXDelta* pDelta) {
     sDelta = pDelta != nullptr && pDelta->mask != 0 ? pDelta : nullptr;
 }
 
-// Texture units, GX changes ----------------------------------------------------------------------
+// ##############################################################################################
+// # Texture units and GX changes                                                               #
+// #                                                                                            #
+// # The textures of the material's units, and the GX changes some draws make after the         #
+// # material (an RvlGXDelta, gx_delta.cpp: Mario's silhouette, reflection, alpha...) applied   #
+// # over the translated state: blending, tests, channels and stage 0.                          #
+// ##############################################################################################
 namespace {
     // Texture coordinate generation of units 0..count-1 from the material record's texgen of each
     // unit's coordinate (coords), and the upload key their vertex inputs make.
@@ -2253,6 +2358,12 @@ namespace {
         }
     }
 
+    // ##############################################################################################
+    // # Indirect texturing                                                                         #
+    // #                                                                                            #
+    // # The approximation of indirect texturing (gx_state.h, RvlDistortion): which units take the  #
+    // # samples, and rvlDistortionPlan, where they sit.                                            #
+    // ##############################################################################################
     // A material whose stages displace its textures by an indirect texture (the game's 975 indirect
     // materials: water, crystals, ice, metal, lava), for native_submit.cpp: the indirect textures are
     // intensities, so the three inputs are one value. Two samples where they fit, else the
@@ -2389,7 +2500,7 @@ namespace {
 
 void rvlDistortionPlan(const ResTIMG* indirect, f32 rowS, f32 rowT, u32 width, u32 height, u32 halvings, u32 maxSamples, u32 samples, RvlDistortion& plan) {
     // Texels of the 3DS texture between two samples at most: near enough that the blend reads as a
-    // shift (measured on the game's materials: tools/3ds/audit/u3_structure.py indirect_error).
+    // shift (measured on the game's materials with a development audit, not published).
     const f32 kMaxApart = 3.0f, kMaxApartOfMany = 4.0f;
     u32 low = 0, high = 255;
     if ((indirect->_19 & 0x80) != 0) {
@@ -2450,6 +2561,13 @@ void rvlDistortionPlan(const ResTIMG* indirect, f32 rowS, f32 rowT, u32 width, u
     }
 }
 
+// ##############################################################################################
+// # Beginning a material                                                                       #
+// #                                                                                            #
+// # Called when a material starts drawing its packets: finds the model's .n3d and the          #
+// # material's record (from the model that owns the material when it is lent), and builds the  #
+// # draw's state and units. False when the material cannot be drawn: the reason is counted.    #
+// ##############################################################################################
 bool rvlNativeBegin(J3DMaterial* pMat, J3DShapePacket* pFirst, bool userData) {
     if (pMat == nullptr || pFirst == nullptr || pFirst->mpModel == nullptr) {
         return fallback(FB_USER_DATA);
@@ -2683,6 +2801,12 @@ namespace {
     const ActorLightInfo* sLoadedLight;
 }  // namespace
 
+// ##############################################################################################
+// # Lights                                                                                     #
+// #                                                                                            #
+// # The actor light the game loaded for the next draws (ActorLightCtrl), and the player's      #
+// # point light (GX_LIGHT4).                                                                   #
+// ##############################################################################################
 void rvlNativeLoadLight(const ActorLightInfo* pInfo) {
     sLoadedLight = pInfo;
 }
@@ -2755,6 +2879,13 @@ namespace {
     }
 }  // namespace
 
+// ##############################################################################################
+// # Drawing a packet                                                                           #
+// #                                                                                            #
+// # One J3D packet: its shape's groups are uploaded if needed and drawn with the position      #
+// # matrices of the model's joints, each through native_submit.cpp. Materials that test alpha  #
+// # before depth (ZCompLoc) draw the depths first, then the colour on them.                    #
+// ##############################################################################################
 bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight, bool materialAmbient) {
     if (pPacket == nullptr || pPacket->mpShape == nullptr || pPacket->mpModel == nullptr ||
         pPacket->getBaseMtxPtr() == nullptr || sModel == nullptr ||
@@ -3040,6 +3171,12 @@ bool rvlNativeDrawFurLayer(J3DModel* pLayer, u32 shapeIndex, const RvlNativeFurM
     return submitted;
 }
 
+// ##############################################################################################
+// # For other drawers                                                                          #
+// #                                                                                            #
+// # The native material state for code that draws its own geometry with a model's material     #
+// # (ElectricRailHolder), and simple model draws with one colour (DirectDraw.cpp).             #
+// ##############################################################################################
 bool rvlNativeMaterialState(J3DMaterial* pMaterial, J3DShapePacket* pPacket, HostGfxState& rState, f32 (*pTexMtx)[3][4],
                             u32& rRasterColor) {
     if (pMaterial == nullptr || pPacket == nullptr || !rvlNativeBegin(pMaterial, pPacket, false)) {
@@ -3114,12 +3251,15 @@ bool rvlNativeDrawSimpleModelSlots(J3DModelData* pModelData, const f32 (*pViewMt
     return submitted;
 }
 
-// Far models ------------------------------------------------------------------------------------
-//
-// An instance whose far model's sphere is under kFarPixels pixels of radius on screen draws as
-// that one draw (far.py), in place of all its packets. The instance decides at its first packet of
-// the frame (DrawBufferShapeDrawer::draw), lit by the light loaded for that packet, and its other
-// packets then follow that decision. Back to the full model past kNearPixels.
+// ##############################################################################################
+// # Far models                                                                                 #
+// #                                                                                            #
+// # An instance whose far model's sphere is under kFarPixels pixels of radius on screen draws  #
+// # as that one draw (far.py), in place of all its packets. The instance decides at its first  #
+// # packet of the frame (DrawBufferShapeDrawer::draw), lit by the light loaded for that        #
+// # packet, and its other packets then follow that decision. Back to the full model past       #
+// # kNearPixels.                                                                               #
+// ##############################################################################################
 
 namespace {
     const f32 kFarPixels = 16.0f;
@@ -3313,6 +3453,12 @@ bool rvlNativeFarPacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLig
     return e.far;
 }
 
+// ##############################################################################################
+// # The periodic log                                                                           #
+// #                                                                                            #
+// # The native renderer's lines in the log: draws, fallbacks by reason, uploads, far models    #
+// # and texture statistics.                                                                    #
+// ##############################################################################################
 void rvl3DSLogTextureStats();  // jut_texture.cpp
 
 void rvlNativeLogFrame() {

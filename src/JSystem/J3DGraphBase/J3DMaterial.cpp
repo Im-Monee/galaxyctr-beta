@@ -230,6 +230,8 @@ void J3DMaterial::loadSharedDL() {
 
 void J3DMaterial::patch() {
     j3dSys.getMatPacket()->mDiffFlag = mDiffFlag;
+    // 3DS: nothing to patch: the material's display list is GX data the native renderer does not
+    // read.
 #ifdef __3DS__
     return;
 #endif

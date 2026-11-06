@@ -15,6 +15,7 @@
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
 #include "Game/Util/StringUtil.hpp"
+// 3DS: whether a movie can play (a New 3DS with the video decoder, THPDrawNative.cpp).
 #ifdef __3DS__
 extern "C" BOOL THPNativeIsMoviePlayable(const char* pPath);
 #endif
@@ -311,6 +312,7 @@ void MoviePlayingSequence::exePlayStart() {
     }
 #endif
     if (MR::isFirstStep(this)) {
+        // 3DS: the subtitles start from the movie's first frame again.
 #ifdef __3DS__
         sSubtitlesFrame = -1;
 #endif

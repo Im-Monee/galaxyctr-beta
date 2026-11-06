@@ -20,6 +20,7 @@ LogoFader::LogoFader(const char* pName) : LayoutActor(pName, true), _20(true), m
 
 void LogoFader::draw() const {
     if (mRate > RATE_MIN) {
+        // 3DS: a fill that blends by its alpha, in one DirectDraw call.
 #ifdef __3DS__
         GXColor fillColor = {0, 0, 0, static_cast<u8>(mRate * 255.0f)};
         MR::fillScreenAlpha(fillColor);

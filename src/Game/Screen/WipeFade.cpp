@@ -35,6 +35,8 @@ void WipeFade::draw() const {
         alpha = 1.0f - alpha;
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetColorUpdate(GX_TRUE);
     GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_NOOP);
@@ -44,14 +46,12 @@ void WipeFade::draw() const {
     fillColor.r = mFillColor.r;
     fillColor.g = mFillColor.g;
     fillColor.b = mFillColor.b;
+    // 3DS: a fill that blends by its alpha, in one DirectDraw call (the Wii's GX state is above,
+    // Wii only).
 #ifdef __3DS__
     fillColor.a = static_cast<u8>(255.0f * alpha);
     MR::fillScreenAlpha(fillColor);
 #else
-#ifdef __3DS__
-    GXSetColorUpdate(GX_TRUE);
-    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_NOOP);
-#endif
     fillColor.a = 255.0f * alpha;
     MR::fillScreen(fillColor);
 #endif

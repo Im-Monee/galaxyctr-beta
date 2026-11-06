@@ -79,6 +79,7 @@ void JPAEmitterManager::draw(JPADrawInfo const* drawInfo, u8 group_id) {
     drawInfo->getCamMtx(pWd->mPosCamMtx);
     drawInfo->getPrjMtx(pWd->mPrjMtx);
     calcYBBCam();
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     Mtx identity;
     PSMTXIdentity(identity);
@@ -118,12 +119,14 @@ void JPAEmitterManager::draw(JPADrawInfo const* drawInfo, u8 group_id) {
             emtr->mpRes->draw(pWd, emtr);
         }
     }
+    // 3DS: the particles batched so far are drawn, and the DirectDraw state ends.
 #ifdef __3DS__
     JPA3DS::flush();
     TDDraw::closeDirect();
 #endif
 }
 
+// 3DS: the projection of 2D particles (ParticleDrawExecutor.cpp); null for the camera's.
 #ifdef __3DS__
 void JPASetDirectProjection(const Mtx44* pProjection) {
     sDirectProjection = pProjection;

@@ -4,6 +4,7 @@
 #include <revolution/gx/GXGet.h>
 #include <revolution/gx/GXStruct.h>
 #include <revolution/tpl.h>
+// 3DS: JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #endif
@@ -11,6 +12,7 @@
 namespace nw4r {
     namespace lyt {
         void TexMap::Get(_GXTexObj* pTexObj) const {
+            // 3DS: the texture object kept as data for the Citro3D draws (rvl/jut_texture.cpp).
 #ifdef __3DS__
             rvl3DSInitTexObj(pTexObj, mImage, mWidth, mHeight, GetTexelFormat(), GetWrapModeS(), GetWrapModeT(), IsMipMap(),
                              detail::IsCITexelFormat(GetTexelFormat()) ? GX_TLUT0 : 0xFF);
@@ -43,6 +45,7 @@ namespace nw4r {
             GXTexWrapMode wrapS, wrapT;
             GXBool mipmap;
 
+            // 3DS: the texture object read back from its data (rvl/jut_texture.cpp).
 #ifdef __3DS__
             rvl3DSGetTexObjAll(&texObj, &image, &width, &height, &format, &wrapS, &wrapT, &mipmap);
 #else
@@ -59,6 +62,7 @@ namespace nw4r {
             f32 minLOD, maxLOD, lodBias;
             GXBool biasCLampEnable, edgeLODEnable;
             GXAnisotropy aniso;
+            // 3DS: the texture object read back from its data (rvl/jut_texture.cpp).
 #ifdef __3DS__
             rvl3DSGetTexObjLODAll(&texObj, &minFilter, &magFilter, &minLOD, &maxLOD, &lodBias, &biasCLampEnable, &edgeLODEnable, &aniso);
 #else

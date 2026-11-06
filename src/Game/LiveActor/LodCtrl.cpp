@@ -44,6 +44,7 @@ LodCtrl::LodCtrl(LiveActor* pActor, const JMapInfoIter& rIter) {
     _28 = &def;
     MR::getClippingDirector()->entryLodCtrl(this, rIter);
     mActorLightCtrl = mActor->mActorLightCtrl;
+    // 3DS: the model's radius, measured on first use, for the lower detail choice.
 #ifdef __3DS__
     mRadius3DS = -1.0f;
 #endif

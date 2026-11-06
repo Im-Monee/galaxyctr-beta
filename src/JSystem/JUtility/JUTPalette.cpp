@@ -10,6 +10,8 @@ void JUTPalette::storeTLUT(_GXTlut param_0, ResTLUT* tlut) {
     mTransparency = tlut->mTransparency;
     mLutNum = tlut->mLutNum;
     mColorTable = tlut + 8;
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXInitTlutObj(&mObj, mColorTable, static_cast< GXTlutFmt >(mFormat), mLutNum);
 #endif
@@ -21,6 +23,8 @@ void JUTPalette::storeTLUT(_GXTlut param_0, _GXTlutFmt param_1, JUTTransparency 
     mTransparency = param_2;
     mLutNum = param_3;
     mColorTable = static_cast< ResTLUT* >(param_4);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXInitTlutObj(&mObj, mColorTable, static_cast< GXTlutFmt >(mFormat), mLutNum);
 #endif
@@ -28,6 +32,7 @@ void JUTPalette::storeTLUT(_GXTlut param_0, _GXTlutFmt param_1, JUTTransparency 
 
 bool JUTPalette::load() {
     bool check = mLutNum != 0;
+    // 3DS: no GX palette to load: palettes are decoded with their textures (rvl/jut_texture.cpp).
 #ifdef __3DS__
     return check;
 #else

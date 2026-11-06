@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -553,6 +554,7 @@ void Mario::setCameraPolygon(const Triangle* pTriangle) {
 }
 
 void Mario::checkAllWall(const TVec3f& rPosition, f32 radius) {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 31).
 #ifdef __3DS__
     SysTimer3DS timer3DS(31);
 #endif

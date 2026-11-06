@@ -88,6 +88,8 @@ void* DrawSyncManager::threadFunc(void* pArg) {
             const bool aborted = pManager->mAborted;
 
             if (pManager->mFifo->getCount() == 2) {
+                // Wii only: GX state, display lists and material setup; the 3DS draws this through
+                // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
                 GXEnableBreakPt(message);
 #endif
@@ -99,10 +101,14 @@ void* DrawSyncManager::threadFunc(void* pArg) {
             u32 count = pManager->mFifo->getCount();
             if (count != 0) {
                 if (count == 1) {
+                    // Wii only: GX state, display lists and material setup; the 3DS draws this
+                    // through Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
                     GXDisableBreakPt();
 #endif
                 } else if (count >= 2) {
+                    // Wii only: GX state, display lists and material setup; the 3DS draws this
+                    // through Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
                     GXEnableBreakPt(pManager->mFifo->peek(1));
 #endif
@@ -131,12 +137,16 @@ DrawSyncManager::DrawSyncManager(u32 capacity, s32 priority) {
     OSInitMessageQueue(&mQueue, mMessageBuffer, 20);
     mFifo = new Fifo(capacity);
     OSResumeThread(&mThread);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetDrawSyncCallback(drawSyncCallback);
 #endif
 }
 
 DrawSyncManager::~DrawSyncManager() {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetDrawSyncCallback(nullptr);
     GXDisableBreakPt();
@@ -160,6 +170,7 @@ u16 DrawSyncManager::setCallback(u32 index, u16 count, DrawSyncCallback* pCallba
 }
 
 void DrawSyncManager::reset(bool preparing) {
+    // 3DS: nothing waits on GX draw syncs, so a reset needs no preparation.
 #ifdef __3DS__
     mPreparingReset = false;
     mAborted = false;

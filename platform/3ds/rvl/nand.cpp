@@ -1,8 +1,11 @@
-// The Wii's internal memory (NAND), backed by a folder on the SD card.
-//
-// Absolute NAND paths map to sdmc:/smg/nand/<path>; relative ones are relative to the game's
-// home directory, as on the Wii. Save files keep their Wii layout byte for byte. Calls complete
-// immediately; the game makes them from its own NAND thread.
+// ##############################################################################################
+// # The Wii's internal memory (NAND)                                                           #
+// #                                                                                            #
+// # Backed by a folder on the SD card. Absolute NAND paths map to sdmc:/smg/nand/<path>;       #
+// # relative ones are relative to the game's home directory, as on the Wii. Save files keep    #
+// # their Wii layout byte for byte. Calls complete immediately; the game makes them from its   #
+// # own NAND thread. The builder never touches this folder: saves survive a new build.         #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
@@ -16,6 +19,12 @@ static const char kHomeDir[] = "/title/00010000/524d4745/data";  // RMGE
 static const int kMaxOpenFiles = 8;
 static void* sOpenFiles[kMaxOpenFiles];
 
+// ##############################################################################################
+// # Paths and open files                                                                       #
+// #                                                                                            #
+// # A NAND path into an SD path, and the NAND file info's handle (a few files are open at once #
+// # at most).                                                                                  #
+// ##############################################################################################
 static void hostPath(const char* nandPath, char* out, u32 size) {
     if (nandPath[0] == '/') {
         snprintf(out, size, "%s%s", kRoot, nandPath);
@@ -141,6 +150,12 @@ s32 NANDGetHomeDir(char path[NAND_MAX_PATH]) {
     return NAND_RESULT_OK;
 }
 
+// ##############################################################################################
+// # Save banner                                                                                #
+// #                                                                                            #
+// # The banner the Wii shows for the save in its data management: filled as the SDK does,      #
+// # though nothing on the 3DS shows it.                                                        #
+// ##############################################################################################
 static void copyBannerText(u16* dst, const u16* src) {
     for (int i = 0; i < NAND_BANNER_COMMENT_SIZE; i++) {
         dst[i] = src != nullptr ? src[i] : 0;

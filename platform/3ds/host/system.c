@@ -1,3 +1,10 @@
+// ##############################################################################################
+// # Memory, time and system settings                                                           #
+// #                                                                                            #
+// # Small services for the game half: the size of the console's memory, the heaps libctru sets #
+// # up, the clock in the Wii's terms, the system language, and address checks for the debug    #
+// # tools.                                                                                     #
+// ##############################################################################################
 #include "host.h"
 
 #include <3ds.h>
@@ -5,6 +12,16 @@
 #include <time.h>
 #include <unistd.h>
 
+// ##############################################################################################
+// # Memory                                                                                     #
+// #                                                                                            #
+// # libctru splits the application's memory into the normal heap (malloc, the game's Wii       #
+// # heaps) and the linear heap (memory the GPU and DSP can read: textures, vertex buffers,     #
+// # audio). With 96 MB or less (an Old 3DS) the linear heap is made smaller than libctru's 32  #
+// # MB, because its textures can be dropped and made again (rvl/jut_texture.cpp) while the     #
+// # game's heaps cannot. __wrap___system_allocateHeaps replaces libctru's own function at link #
+// # time (tools/3ds/configure.py, --wrap).                                                     #
+// ##############################################################################################
 // Bounds of the application heap that libctru sets up for malloc.
 extern u32 __ctru_heap;
 extern u32 __ctru_heap_size;
@@ -49,6 +66,13 @@ void* hostAllocAligned(unsigned long size, unsigned long alignment) {
     return memalign(alignment, size);
 }
 
+// ##############################################################################################
+// # Clock and language                                                                         #
+// #                                                                                            #
+// # The Wii's OS counts time from 2000-01-01 and gives the calendar with months from 0         #
+// # (rvl/os_core.cpp converts it into OSCalendarTime). The language comes from the console's   #
+// # settings.                                                                                  #
+// ##############################################################################################
 // osGetTime() counts milliseconds from 1900-01-01; the Wii counts from 2000-01-01.
 #define MS_FROM_1900_TO_2000 3155673600000ULL
 #define SECONDS_FROM_1970_TO_2000 946684800LL
@@ -85,6 +109,13 @@ int hostGetSystemLanguage(void) {
     return language;
 }
 
+// ##############################################################################################
+// # Address checks                                                                             #
+// #                                                                                            #
+// # For code that follows a pointer it cannot trust (the texture lookups of                    #
+// # rvl/jut_texture.cpp read game structures that may be stale): true when the range lies in   #
+// # the program or the heap, so reading it cannot fault.                                       #
+// ##############################################################################################
 int hostIsValidRange(unsigned long address, unsigned long size) {
     // The program (from 0x00100000) and the heap that holds the game's memory.
     unsigned long heapEnd = __ctru_heap + __ctru_heap_size;

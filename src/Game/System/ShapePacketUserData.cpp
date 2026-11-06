@@ -65,6 +65,8 @@ void ShapePacketUserData::init(J3DMaterial* pMaterial) {
 }
 
 void ShapePacketUserData::callDL() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXCallDisplayList(mDisplayList, mDisplayListSize);
 #endif
@@ -99,6 +101,8 @@ namespace MR {
     }
 
     void initJ3DShapePacketUserData(J3DModel* pModel) {
+        // 3DS: nothing to make: the user data's display lists are GX data the native renderer does
+        // not read.
 #ifdef __3DS__
         (void)pModel;
         return;

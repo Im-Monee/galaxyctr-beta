@@ -158,6 +158,7 @@ CustomTagProcessor::Impl::GroupFunctionInfo* CustomTagProcessor::Impl::findGroup
     return nullptr;
 }
 
+// 3DS: the glyphs of a text are drawn in batches; a batch is sent before the tag changes the state.
 #ifdef __3DS__
 void rvl3DSGlyphBatchFlush();
 #endif
@@ -235,6 +236,7 @@ namespace nw4r {
                     rvl3DSGlyphBatchFlush();
 #endif
                     operation = mTagProcessor->Process(code, &context);
+                    // 3DS: sends the glyphs batched so far.
 #ifdef __3DS__
                     rvl3DSGlyphBatchFlush();
 #endif

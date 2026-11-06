@@ -1,14 +1,17 @@
-// Wii OS threads, alarms and interrupt delivery on top of 3DS threads.
-//
-// The scheduling logic is Nintendo's (adapted from src/RVL_SDK/os/OSThread.c): run queues
-// per priority, wait queues, suspension and priority inheritance through mutexes. Only the
-// context switch is different. Each OSThread runs on its own 3DS thread, and switching
-// hands a "baton" to the next thread's semaphore while the previous one waits on its own.
-// So exactly one game thread runs at any time, like on the Wii's single core.
-//
-// Interrupts (alarms, the video retrace, I/O completion) are raised by host threads and
-// handled here whenever the running thread re-enables interrupts, or when no thread is
-// ready to run. Handlers therefore run with the same guarantees as on the Wii.
+// ##############################################################################################
+// # Wii OS threads, alarms and interrupt delivery                                              #
+// #                                                                                            #
+// # On top of 3DS threads. The scheduling logic is Nintendo's (adapted from                    #
+// # src/RVL_SDK/os/OSThread.c): run queues per priority, wait queues, suspension and priority  #
+// # inheritance through mutexes. Only the context switch is different. Each OSThread runs on   #
+// # its own 3DS thread, and switching hands a "baton" to the next thread's semaphore while the #
+// # previous one waits on its own. So exactly one game thread runs at any time, like on the    #
+// # Wii's single core.                                                                         #
+// #                                                                                            #
+// # Interrupts (alarms, the video retrace, I/O completion, audio) are raised by host threads   #
+// # and handled here whenever the running thread re-enables interrupts, or when no thread is   #
+// # ready to run. Handlers therefore run with the same guarantees as on the Wii.               #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
@@ -77,8 +80,12 @@
 
 extern "C" void __OSUnlockAllMutex(OSThread* thread);
 
-// Host side of a game thread --------------------------------------------------------------
-
+// ##############################################################################################
+// # The host side of a game thread                                                             #
+// #                                                                                            #
+// # Each OSThread has a HostThread: its 3DS thread and the semaphore it waits on for the       #
+// # baton. A thread cancelled while it waits ends its 3DS thread when it wakes.                #
+// ##############################################################################################
 struct HostThread {
     OSThread* mThread;
     void* mSemaphore;
@@ -150,8 +157,13 @@ static void threadMain(void* param) {
     OSExitThread(result);
 }
 
-// Scheduler (adapted from OSThread.c) ---------------------------------------------------
-
+// ##############################################################################################
+// # The scheduler                                                                              #
+// #                                                                                            #
+// # Adapted from OSThread.c: the same queues, priorities and states. SelectThread picks the    #
+// # next thread; switching to it signals its semaphore and waits on our own (the "context      #
+// # switch"). With no thread ready, the CPU waits for an interrupt and dispatches it.          #
+// ##############################################################################################
 static volatile u32 RunQueueBits;
 static OSThreadQueue RunQueue[32];
 static volatile BOOL RunQueueHint;
@@ -647,8 +659,13 @@ OSContext* OSGetCurrentContext(void) {
 
 }  // extern "C"
 
-// Alarms ----------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Alarms                                                                                     #
+// #                                                                                            #
+// # OS alarms in one list sorted by their time; the host timer thread (host/thread.c) is set   #
+// # to the first one and raises HOST_IRQ_TIMER, and fireAlarms runs the handlers that are due, #
+// # setting periodic alarms again.                                                             #
+// ##############################################################################################
 static OSAlarm* sAlarmHead;
 
 static void updateTimer() {
@@ -765,8 +782,12 @@ void* OSGetAlarmUserData(const OSAlarm* alarm) {
 
 }  // extern "C"
 
-// Interrupt delivery ----------------------------------------------------------------------
-
+// ##############################################################################################
+// # Interrupt delivery                                                                         #
+// #                                                                                            #
+// # dispatchInterrupts runs the handler of every pending interrupt, with interrupts disabled,  #
+// # never nested; rvlInterruptsEnabled calls it when the game enables interrupts again.        #
+// ##############################################################################################
 static bool sInInterrupt;
 
 // Runs the handlers of every pending interrupt. Called with interrupts disabled.
@@ -823,6 +844,12 @@ void rvlInterruptsEnabled() {
     OSRestoreInterrupts(inner);
 }
 
+// ##############################################################################################
+// # Stall report and startup                                                                   #
+// #                                                                                            #
+// # What every game thread is doing, for debug.c's stall report; rvlInit makes the thread the  #
+// # program started on the Wii's default thread and starts the host's interrupt threads.       #
+// ##############################################################################################
 // For the stall report (debug.c, on the retrace thread): what every game thread is doing.
 extern "C" void rvlDebugLogThreads(void) {
     hostLog("threads: current %p, scheduler off %ld, run bits %08lX, interrupts %d, in interrupt %d, idle %d\n",

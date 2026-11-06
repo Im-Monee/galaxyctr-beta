@@ -33,8 +33,8 @@ TOOLS = ("nodtool", "bannertool", "makerom")
 # ############################################################################
 # # The public beta's program                                              #
 # #                                                                         #
-# # The same switches tools/3ds/build_cia_showcase.ps1 sets for the owner's #
-# # title-screen CIAs (platform/3ds/host/showcase.h), plus SMG_PUBLIC_BETA  #
+# # The same switches the developer's CIA script sets for the title-screen #
+# # CIAs (platform/3ds/host/showcase.h), plus SMG_PUBLIC_BETA              #
 # # for the beta's bottom screen text (main.c). The header is put back as  #
 # # it was afterwards, and the normal build rebuilt.                        #
 # ############################################################################
@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--elf", help="the port's program; by default the public beta's, built now")
     parser.add_argument("--tools", help="folder with this system's helper programs")
     parser.add_argument("--elf-only", action="store_true",
-                        help="only build the public beta's program, for a release (see tools/beta/github/builder.yml)")
+                        help="only build the public beta's program, for a release (see .github/workflows/builder.yml)")
     args = parser.parse_args()
     if args.elf_only:
         print(build_release_elf())

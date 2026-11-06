@@ -29,6 +29,7 @@ struct SoundList {
 // The first flag byte: the top byte of the word the table gives (the first byte in memory on
 // the Wii; on the 3DS, a little-endian CPU, the last).
 static inline u8 soundFlagsTopByte(const SoundList::SoundFlags& rFlags) {
+    // 3DS: the first flag byte is the top byte of the table's little-endian word.
 #ifdef __3DS__
     return static_cast< u8 >(rFlags._0 >> 24);
 #else

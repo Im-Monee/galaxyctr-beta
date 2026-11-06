@@ -1,5 +1,9 @@
-// Wii system settings, answered from the 3DS settings where they make sense.
-
+// ##############################################################################################
+// # Wii system settings (SC)                                                                   #
+// #                                                                                            #
+// # Answered from the 3DS settings where they make sense, with fixed answers for what the 3DS  #
+// # does not have (progressive scan, PAL 60 Hz).                                               #
+// ##############################################################################################
 #include "host.h"
 #include <revolution/sc.h>
 

@@ -3,6 +3,7 @@
 #include "Game/LiveActor/ShadowController.hpp"
 #include "Game/LiveActor/ShadowDrawer.hpp"
 #include "Game/Util/CameraUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws; DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "Game/Util/DirectDraw.hpp"
@@ -24,6 +25,7 @@ void ShadowVolumeBox::setSize(const TVec3f& rSize) {
 }
 
 void ShadowVolumeBox::loadModelDrawMtx() const {
+    // 3DS: the box's vertices are made here and drawn through DirectDraw.
 #ifdef __3DS__
     makeVertexBuffer();
 #else
@@ -145,6 +147,7 @@ void ShadowVolumeBox::makeVertexBuffer() const {
 }
 
 void ShadowVolumeBox::drawShape() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TVec3f triangles[72];
     u32 colors[72];

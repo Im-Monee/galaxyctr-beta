@@ -45,6 +45,7 @@ namespace JGeometry {
                 return val;
             }
 
+            // 3DS: the ARM's square root is exact; the Wii refines an estimate (frsqrte) instead.
 #ifdef __3DS__
             return __builtin_sqrtf(val);
 #endif
@@ -92,6 +93,7 @@ namespace JGeometry {
             if (val <= 0.0f) {
                 return val;
             }
+            // 3DS: the ARM's square root is exact; the Wii refines an estimate (frsqrte) instead.
 #ifdef __3DS__
             return 1.0f / __builtin_sqrtf(val);
 #endif

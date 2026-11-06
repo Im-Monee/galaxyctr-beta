@@ -1,9 +1,13 @@
-// RVLFaceLib on the 3DS: the Miis of Mii Maker in place of the Wii's Mii Channel.
-//
-// The official database is Mii Maker's CFL_DB.dat (shared extdata 0xF000000B), read once: the
-// file select's Mii page lists its Miis as the Wii's lists the Mii Channel's. Heads are drawn
-// from the console's CFL_Res.dat (below), icons by a small CPU rasteriser from the same parts.
-//
+// ##############################################################################################
+// # Miis (RVLFaceLib) on the 3DS                                                               #
+// #                                                                                            #
+// # The Miis of the console's Mii Maker in place of the Wii's Mii Channel. The official        #
+// # database is Mii Maker's CFL_DB.dat (shared extdata 0xF000000B, read by host/main.c), read  #
+// # once: the file select's Mii page lists its Miis as the Wii's lists the Mii Channel's.      #
+// # Heads are drawn from the console's own face parts, CFL_Res.dat (below), and icons by a     #
+// # small CPU rasteriser from the same parts. Nothing of the Mii data is shipped with the      #
+// # port.                                                                                      #
+// ##############################################################################################
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
@@ -21,6 +25,12 @@ namespace {
 
 const u32 kMiiSize = 0x5c;  // a MiiData record (libctru mii.h)
 
+// ##############################################################################################
+// # The database                                                                               #
+// #                                                                                            #
+// # The records of Mii Maker's 100 slots, the placeholder Mii, and the record the helpers read #
+// # now; then the per-model state the game's RFLCharModel points to.                           #
+// ##############################################################################################
 // Mii Maker's database: the records of its 100 slots, loaded once.
 u8 sDatabase[RFL_DB_CHAR_MAX][kMiiSize];
 bool sDatabaseValid[RFL_DB_CHAR_MAX];
@@ -139,8 +149,14 @@ u8 miiSkinColor(u8 index, u8 channel) {
     return colors[index][channel < 3 ? channel : 0];
 }
 
+// ##############################################################################################
+// # Heads from the console's Mii parts                                                         #
+// #                                                                                            #
+// # How CFL_Res.dat is laid out and how a head is assembled from it, as worked out from a dump #
+// # of the file (details below).                                                               #
+// ##############################################################################################
 // The head from the console's own Mii parts, CFL_Res.dat (a system title's RomFS). Read offline
-// from a dump of that file, with _workspace/tools/mii/render.py as the reference picture:
+// from a dump of that file, with an offline render of the head as the reference picture:
 // - The file: u16 section count, then u32 section offsets. A section: u16 item count, u16 largest
 //   item size, a u32 per item (low 22 bits the offset after the table and a u32 data size, high
 //   bits not an index: items with the same offset share their data), then the data.
@@ -676,6 +692,13 @@ void appendCflShape(u32 partIndex, const u8* item, u32 prefix, f32 scale, f32 x,
     part.count = indexCount;
 }
 
+// ##############################################################################################
+// # Building and drawing a head                                                                #
+// #                                                                                            #
+// # A Mii's head is built once into a cache slot (shapes placed and coloured, the mask and     #
+// # faceline textures drawn on the CPU), then drawn each frame with a light from the front, as #
+// # the Mii's own shading, in the file select's 3D pass.                                       #
+// ##############################################################################################
 void releaseHead(CflHead& head) {
     for (u32 i = 0; i < kPartCount; i++) {
         if (head.parts[i].texture != nullptr) {
@@ -881,6 +904,11 @@ void drawHead(const MiiModelState& rState) {
     TDDraw::closeDirect();
 }
 
+// ##############################################################################################
+// # Icons                                                                                      #
+// #                                                                                            #
+// # The Mii icons of the file select (details below).                                          #
+// ##############################################################################################
 // Icons (RFLMakeIcon): the head from the front, drawn by the CPU into the caller's RGB5A3 picture.
 // The Wii renders them with the GPU into the frame buffer and copies them out; here a small
 // rasteriser draws the same parts as drawHead, with the same light, the head fitted to the picture.
@@ -1045,6 +1073,12 @@ void makeIcon(const u8* mii, u8* image, u32 width, u32 height, u32 background) {
 
 }
 
+// ##############################################################################################
+// # The RFL functions                                                                          #
+// #                                                                                            #
+// # The entry points the game calls: initialisation (always successful), the database's Miis,  #
+// # models, icons, expressions and drawing.                                                    #
+// ##############################################################################################
 u32 RFLGetWorkSize(BOOL) {
     return 32;
 }

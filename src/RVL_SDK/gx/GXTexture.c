@@ -472,6 +472,8 @@ void GXInitTlutObj(GXTlutObj* tlut_obj, void* lut, GXTlutFmt fmt, u16 n_entries)
 }
 
 void GXLoadTlut(const GXTlutObj* tlut_obj, u32 tlut_name) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)tlut_obj;
     (void)tlut_name;

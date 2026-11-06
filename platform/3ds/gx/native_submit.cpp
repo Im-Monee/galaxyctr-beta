@@ -1,11 +1,15 @@
-// Native J3D draws (block N): the GPU transform of a draw of .n3d vertices (native.cpp), built
-// from the J3D material's channels and coordinate generations, the model's position matrices and
-// the camera, then submitted with the shader shaders/gx.v.pica. Also the frame end of the 3DS
-// renderer: its counters, the frame phase and category timings, and the periodic log.
-//
-// Moved from draw.cpp and processor.cpp when the GX command interpreter left the 3DS target
-// (block 8): no GX register is read here.
-
+// ##############################################################################################
+// # Submitting native draws, and the renderer's frame end                                      #
+// #                                                                                            #
+// # A native draw (gx_state.h, from native.cpp) becomes the shader's transform here: the       #
+// # lighting channels and lights of the J3D material, the texture coordinate generations, the  #
+// # model's position matrices and the camera projection, then it goes to the GPU through       #
+// # host.h (shaders/gx.v.pica does the per-vertex work). No GX register is read: the GX        #
+// # command interpreter is not part of the 3DS build (DETAILS.md, section 5).                  #
+// #                                                                                            #
+// # The second half of the file is the 3DS renderer's frame end (rvl3DSEndFrame, called from   #
+// # MainLoopFramework::endRender): the counters and timings of the log.                        #
+// ##############################################################################################
 #include "gx_internal.h"
 #include "gx_state.h"
 #include "host.h"
@@ -22,6 +26,15 @@ bool gGXProfileOn;
 
 namespace {
 
+    // ##############################################################################################
+    // # Lighting channels                                                                          #
+    // #                                                                                            #
+    // # GX lights a vertex in up to two colour channels, each with its material and ambient colour #
+    // # (from a register or from the vertex) and a set of up to 8 lights. planChannel reads the    #
+    // # channel's control word; setLightList gathers its lights from the actor's light info        #
+    // # (ActorLightCtrl) in the form the shader takes. The shader holds 6 lights: a draw needing   #
+    // # more is refused.                                                                           #
+    // ##############################################################################################
     // One light of a lighting channel, as the shader takes it.
     struct LightTerm {
         f32 pos[3], dir[3];
@@ -127,6 +140,14 @@ namespace {
     }
 
     // rvlNativeSetViewport: a projection already folded with its viewport, and a scissor.
+
+    // ##############################################################################################
+    // # Projection and transform                                                                   #
+    // #                                                                                            #
+    // # The view-to-clip matrix (the camera's, or a viewport's, rvlNativeSetViewport) turned for   #
+    // # the top screen's sideways frame buffer, then everything else of HostGfxTransform: the      #
+    // # palette of position matrices, the texture matrices, colours and lights.                    #
+    // ##############################################################################################
     bool sViewportSet;
     f32 sViewportProjection[4][4];
     u16 sViewportScissor[4];  // x0, y0, x1, y1
@@ -266,6 +287,12 @@ namespace {
         return true;
     }
 
+    // ##############################################################################################
+    // # Indirect texturing stages                                                                  #
+    // #                                                                                            #
+    // # The combiner stages that blend the samples of an approximated indirect texture             #
+    // # (RvlDistortion, gx_state.h), in one draw or in two.                                        #
+    // ##############################################################################################
     // A displaced sample as a blend of two samples (RvlDistortion), the distortion texture's value
     // choosing between them. The material's own stages then take the result in place of its
     // texture, from the previous stage when only the first reads it, else from the combiner buffer
@@ -345,6 +372,15 @@ namespace {
 
 }  // namespace
 
+// ##############################################################################################
+// # Submitting a draw                                                                          #
+// #                                                                                            #
+// # The draw is culled when every slot's bounding sphere is outside the view (native_clip.cpp  #
+// # decides). Otherwise its lighting channel and lights are planned and its transform built;   #
+// # then it is clipped on the CPU when a sphere may reach behind the near plane or past the    #
+// # guard band, subdivided when a projected texture needs it, or sent as it is. A transform    #
+// # equal to the previous draw's keeps its version, so host.h does not compare it again.       #
+// ##############################################################################################
 bool rvlNativeDrawSubmit(const RvlNativeDraw& d) {
     const u64 prepareStart = gGXProfileOn ? hostGetTick() : 0;
     sState = *d.state;
@@ -434,6 +470,12 @@ bool rvlNativeDrawSubmit(const RvlNativeDraw& d) {
     return submitted;
 }
 
+// ##############################################################################################
+// # Viewports                                                                                  #
+// #                                                                                            #
+// # A draw into part of the frame buffer (GXSetViewport in the game's 3DS branches) folds the  #
+// # viewport into the projection (gx_delta.cpp, rvlViewportProjection) and keeps its scissor.  #
+// ##############################################################################################
 f32 rvlNativeProjectionScaleY() {
     if (sViewportSet) {
         return 0.0f;
@@ -457,8 +499,14 @@ void rvlNativeSetViewport(const f32 (*pProjection)[4], const f32* pViewport, con
     sViewportScissor[3] = pScissor != nullptr ? pScissor[1] + pScissor[3] : 456;
 }
 
-// Frame phases and categories -------------------------------------------------------------------
-
+// ##############################################################################################
+// # Frame phases and categories                                                                #
+// #                                                                                            #
+// # Timings for the log, mostly with debug.txt profile=1 or in a showcase build: the game      #
+// # frame's phases (GameSystem::frameLoop marks them), the scene's categories                  #
+// # (SceneFunction.cpp), and the costliest objects, timed one frame in eight (timing every     #
+// # object cost about a millisecond a frame).                                                  #
+// ##############################################################################################
 namespace {
     volatile int sDebugFramePhase;
 
@@ -628,6 +676,13 @@ extern "C" void rvlGXObjectEnd(const char* pName, unsigned long long start) {
     sObjectTimesLost++;
 }
 
+// ##############################################################################################
+// # The renderer's frame end                                                                   #
+// #                                                                                            #
+// # Ages the native renderer's caches, counts the frame, and every 100 frames (or 5 seconds)   #
+// # writes the profile lines of the log: draws, particles, clipping, subdivision, phase and    #
+// # category timings.                                                                          #
+// ##############################################################################################
 // The 3DS frame end (MainLoopFramework::endRender, before hostGfxEndFrame).
 void rvl3DSEndFrame() {
     static u32 sFrameCount, sLastLogFrame;

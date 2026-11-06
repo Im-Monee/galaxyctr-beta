@@ -6,9 +6,11 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/Color.hpp"
 #include "Game/Util/MathUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (ScreenUtil.hpp).
 #ifdef __3DS__
 #include "Game/Util/ScreenUtil.hpp"
 #endif
+// 3DS: DirectDraw, TDDraw's Citro3D draws; JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "JUTTexture3DS.hpp"
@@ -45,6 +47,7 @@ void ScreenBlurEffect::draw() const {
 }
 
 void ScreenBlurEffect::drawBlur() const {
+    // 3DS: no blur until its capture texture exists.
 #ifdef __3DS__
     if (_20 || rvl3DSGetJUTTexture(_14) == nullptr) {
         return;
@@ -135,6 +138,7 @@ void ScreenBlurEffect::drawBlur() const {
 }
 
 void ScreenBlurEffect::captureBlur() const {
+    // 3DS: the captures through the GPU's copy (rvl/jut_texture.cpp).
 #ifdef __3DS__
     _14->capture(0, 0, GX_TF_RGBA8, false, false);
     _18->capture(0, 0, GX_TF_Z8, true, false);

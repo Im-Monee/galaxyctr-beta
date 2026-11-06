@@ -5,6 +5,7 @@
 #include "Game/Util/MtxUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
 #include <JSystem/JGeometry/TPartition3.hpp>
+// 3DS: headers the 3DS code of this file uses (cstring).
 #ifdef __3DS__
 #include <cstring>
 #endif
@@ -67,6 +68,7 @@ void MirrorCamera::setMirrorMapInfo(J3DModelData* pModelData) {
     TVec3f normal;
     const GXVtxAttrFmtList* format = ::getVertexFormat(pModelData, GX_VA_POS);
     if (format->type == GX_S16) {
+        // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
         const void* data = pModelData->getVtxPosArray();
         TVec3s fixed(readMirrorS16(data, 0), readMirrorS16(data, 1), readMirrorS16(data, 2));
@@ -76,6 +78,7 @@ void MirrorCamera::setMirrorMapInfo(J3DModelData* pModelData) {
 #endif
         MR::fixed16ToFloat(&position, fixed, format->frac);
     } else {
+        // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
         const void* data = pModelData->getVtxPosArray();
         position.set< f32 >(readMirrorF32(data, 0), readMirrorF32(data, 1), readMirrorF32(data, 2));
@@ -87,6 +90,7 @@ void MirrorCamera::setMirrorMapInfo(J3DModelData* pModelData) {
 
     format = ::getVertexFormat(pModelData, GX_VA_NRM);
     if (format->type == GX_S16) {
+        // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
         const void* data = pModelData->getVtxNrmArray();
         TVec3s fixed(readMirrorS16(data, 0), readMirrorS16(data, 1), readMirrorS16(data, 2));
@@ -96,6 +100,7 @@ void MirrorCamera::setMirrorMapInfo(J3DModelData* pModelData) {
 #endif
         MR::fixed16ToFloat(&normal, fixed, format->frac);
     } else {
+        // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
         const void* data = pModelData->getVtxNrmArray();
         normal.set< f32 >(readMirrorF32(data, 0), readMirrorF32(data, 1), readMirrorF32(data, 2));

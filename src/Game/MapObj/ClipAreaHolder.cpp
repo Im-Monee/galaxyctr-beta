@@ -26,6 +26,8 @@ namespace {
 };  // namespace
 
 ClipAreaHolder::ClipAreaHolder(const char* pName) : DeriveActorGroup< ClipArea >(pName, ::sClipAreaMax), mIsActive(true) {
+    // 3DS: the frame buffer's alpha is cleared before the clip areas count into it
+    // (setupClipAreaDraw above).
 #ifdef __3DS__
     MR::registerPreDrawFunction(MR::Functor(&::setupClipAreaDraw), MR::DrawType_ClipArea);
 #else

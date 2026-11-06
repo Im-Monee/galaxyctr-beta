@@ -438,6 +438,7 @@ void MarioActor::updateAlphaDL(u8 alpha) {
 }
 
 void MarioActor::updateSimpleAlphaDL(u8 alpha) {
+    // 3DS: the same GX change as data (RvlGXDelta) instead of a display list.
 #ifdef __3DS__
     DLholder* holder = mDLchanger->swap();
     RvlGXDelta& d = *reinterpret_cast< RvlGXDelta* >(holder->mDL);
@@ -461,6 +462,7 @@ void MarioActor::updateSimpleAlphaDL(u8 alpha) {
 }
 
 void MarioActor::updateReflectAlphaDL(u8 alpha) {
+    // 3DS: the same GX change as data (RvlGXDelta) instead of a display list.
 #ifdef __3DS__
     DLholder* holder = mDLchanger->swap();
     RvlGXDelta& d = *reinterpret_cast< RvlGXDelta* >(holder->mDL);
@@ -541,6 +543,7 @@ void MarioActor::updateLightDL(const Color8& rAmbient, const Color8& rMaterial, 
 }
 
 void MarioActor::createRainbowDL() {
+    // 3DS: the same GX changes as data (RvlGXDelta) instead of display lists.
 #ifdef __3DS__
     for (u32 alpha = 0; alpha < 8; alpha++) {
         for (u32 index = 0; index < 8; index++) {
@@ -641,6 +644,7 @@ void MarioActor::drawScreenBlend() const {
 
         position = minimum + TVec2f(-10.0f, -10.0f);
         opposite = maximum + TVec2f(10.0f, 10.0f);
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         TDDraw::setupDirect(0, 0, 2);
         TDDraw::setDirectCullMode(0);
@@ -656,6 +660,8 @@ void MarioActor::drawScreenBlend() const {
         GXSetDstAlpha(GX_TRUE, 0);
 #endif
         TDDraw::drawFillBox(position, opposite, 0);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetAlphaUpdate(GX_FALSE);
 #endif
@@ -809,6 +815,7 @@ void MarioActor::drawSpinInhibit() const {
 }
 
 void MarioActor::drawColdWaterDamage() const {
+    // 3DS: the cold water's wavy screen through DirectDraw strips of the screen capture.
 #ifdef __3DS__
     f32 frequency = 89.0f * MR::sin((TWO_PI * mMario->mSwim->mColdWaterDamageInterval) / 120.0f);
     if (frequency > 0.0f) {
@@ -895,6 +902,7 @@ void MarioActor::updateRasterScroll() {
 }
 
 void MarioActor::drawRasterScroll(f32 amplitude, s16 period, f32 wavelength) const {
+    // 3DS: the same effect through DirectDraw.
 #ifdef __3DS__
     if (wavelength == 0.0f) {
         return;
@@ -1020,6 +1028,7 @@ void MarioActor::drawSpinEffect() const {
         return;
     }
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setupDirect(0, 1, 0);
     TDDraw::setDirectBlendState(GXToCitro3D::EQUATION_ADD, GXToCitro3D::FACTOR_SRC_ALPHA, GXToCitro3D::FACTOR_ONE);
@@ -1032,6 +1041,8 @@ void MarioActor::drawSpinEffect() const {
     TVec3f direction(mMario->mFrontVec);
     TVec3f previous;
     PSMTXRotAxisRad(rotation, &mMario->mHeadVec, 0.09817477f);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetLineWidth(36, GX_TO_ZERO);
 #endif
@@ -1053,6 +1064,8 @@ void MarioActor::drawSpinEffect() const {
         PSMTXMultVecSR(rotation, &direction, &direction);
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetLineWidth(18, GX_TO_ZERO);
 #endif
@@ -1077,6 +1090,7 @@ void MarioActor::drawSpinEffect() const {
         PSMTXMultVecSR(rotation, &direction, &direction);
     }
 
+    // 3DS: ends the DirectDraw state.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #else
@@ -1089,6 +1103,7 @@ void MarioActor::drawSphereMask() const {
         return;
     }
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setupDirect(0, 1, 0);
     TDDraw::setDirectDepthMode(true, GXToCitro3D::depthTest(GX_GREATER), true);
@@ -1104,6 +1119,7 @@ void MarioActor::drawSphereMask() const {
     TVec3f position;
     getRealPos("Spine1", &position);
     TDDraw::drawSphere3D(position, 180.0f, 0xFFFFFF30, 16);
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #else

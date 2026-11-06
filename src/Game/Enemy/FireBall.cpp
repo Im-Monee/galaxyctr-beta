@@ -27,6 +27,7 @@ namespace {
     const s32 cReflectInvalidFrame = 60;
     const f32 cReflectCursorSpeed = 30.0f;
     const f32 cReflectRandomVelocityY = 1.0f;
+    // 3DS: Color8 in place of the GX colour type; the same values.
 #ifdef __3DS__
     static const Color8 color(255, 192, 0, 255);
 #else

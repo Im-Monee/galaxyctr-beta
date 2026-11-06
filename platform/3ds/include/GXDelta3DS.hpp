@@ -1,10 +1,14 @@
 #pragma once
 
-// 3DS: GX state changes a J3D draw makes after loading its material, as data. On the Wii they
-// are small display lists called between the material and the shape: J3DModelX's sixteen mode
-// lists (shadow capture, silhouette, reflection, blur...) and Mario's dynamic lists (alpha,
-// light, rainbow colours, eye texture). The native renderer applies them over the material's
-// translated state (platform/3ds/gx/native.cpp). Values are the GX ones.
+// ##############################################################################################
+// # GX state changes as data                                                                   #
+// #                                                                                            #
+// # GX state changes a J3D draw makes after loading its material, as data. On the Wii they are #
+// # small display lists called between the material and the shape: J3DModelX's sixteen mode    #
+// # lists (shadow capture, silhouette, reflection, blur...) and Mario's dynamic lists (alpha,  #
+// # light, rainbow colours, eye texture). The native renderer applies them over the material's #
+// # translated state (platform/3ds/gx/native.cpp, gx_delta.cpp). Values are the GX ones.       #
+// ##############################################################################################
 
 #include <revolution/types.h>
 

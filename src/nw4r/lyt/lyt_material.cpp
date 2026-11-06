@@ -8,6 +8,9 @@
 #include "nw4r/math/types.h"
 #include "nw4r/ut/inlines.h"
 #include <cstdio>
+// 3DS: DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX values as 3DS GPU values;
+// JUTTexture3DS.hpp, GPU textures for JUTTextures; TevCompile3DS.hpp, TEV settings compiled into
+// combiner stages.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"

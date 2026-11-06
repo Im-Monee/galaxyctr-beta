@@ -19,6 +19,7 @@ extern RvlGXPipe GXWGFifo;
 volatile PPCWGPipe GXWGFifo;
 #endif
 
+// 3DS: the GX write pipe as functions (rvl_gx_fifo.h, declared only: nothing may call them).
 #ifdef __3DS__
 #define __GXVERT_WRITE(td, v) rvlGXWrite_##td(v)
 #else

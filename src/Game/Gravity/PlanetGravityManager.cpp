@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -12,6 +13,7 @@ void PlanetGravityManager::init(const JMapInfoIter& rIter) {
 }
 
 bool PlanetGravityManager::calcTotalGravityVector(TVec3f* pGravity, GravityInfo* pInfo, const TVec3f& rPosition, u32 gravityType, u32 host) const {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 43).
 #ifdef __3DS__
     SysTimer3DS timer3DS(43);
 #endif

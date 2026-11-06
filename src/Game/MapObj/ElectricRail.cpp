@@ -7,6 +7,7 @@
 #include "Game/Util/ActorShadowUtil.hpp"
 #include "Game/Util/ActorSwitchUtil.hpp"
 #include "Game/Util/CameraUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -20,6 +21,7 @@
 #include "Game/Util/RailUtil.hpp"
 #include "Game/Util/SchedulerUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
+// 3DS: GXImmediate3DS.hpp, this file's GXBegin geometry through DirectDraw.
 #ifdef __3DS__
 #include "GXImmediate3DS.hpp"
 #endif
@@ -93,6 +95,8 @@ void ElectricRailSeparator::setup(const TVec3f& rVec1, const TVec3f& rVec2, cons
 }
 
 ElectricRailShadowDrawer::ElectricRailShadowDrawer(const LiveActor* pActor, ElectricRailSeparator* pSeparator, s32 count)
+    // 3DS: the separators are kept, to draw the volume through DirectDraw instead of a display
+    // list.
 #ifdef __3DS__
     : ShadowVolumeDrawer("影描画[電撃レールボリューム]"), mHost(pActor), mDisplayListBuffer(), mDisplayListBufferSize(), mSeparators(pSeparator),
       mSeparatorCount(count) {
@@ -106,6 +110,8 @@ ElectricRailShadowDrawer::ElectricRailShadowDrawer(const LiveActor* pActor, Elec
     mDisplayListBufferSize += ElectricRailFunction::calcDisplayListSize(12, count * 2);
     mDisplayListBufferSize += ElectricRailFunction::calcDisplayListSize(12, count * 2);
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     mDisplayListBuffer = new (32) u8[mDisplayListBufferSize];
 

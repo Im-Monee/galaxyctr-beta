@@ -1,4 +1,5 @@
 #include "Game/Player/J3DModelX.hpp"
+// 3DS: headers the 3DS code of this file uses (ActorLightCtrl.hpp).
 #ifdef __3DS__
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #endif
@@ -16,6 +17,7 @@
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <revolution/gd.h>
+// 3DS: GXDelta3DS.hpp, GX state changes as data; GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXDelta3DS.hpp"
 #include "GXToCitro3D.hpp"
@@ -386,6 +388,8 @@ void J3DModelX::drawIn(J3DMaterial* material, bool fog, MtxPtr base, J3DModel* m
         packet->getDisplayListObj()->callDL();
     }
     if (MR::getJ3DShapePacketUserData(packet)) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         MR::getJ3DShapePacketUserData(packet)->callDL();
 #endif
@@ -399,6 +403,8 @@ void J3DModelX::drawIn(J3DMaterial* material, bool fog, MtxPtr base, J3DModel* m
 #else
         if (*reinterpret_cast< u32* >(&mFlags) & (1 << i)) {
 #endif
+            // Wii only: GX state, display lists and material setup; the 3DS draws this through
+            // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
             GXCallDisplayList(mDisplayLists[i], mDisplayListSizes[i]);
 #endif
@@ -410,6 +416,8 @@ void J3DModelX::drawIn(J3DMaterial* material, bool fog, MtxPtr base, J3DModel* m
         _1B8 = nullptr;
     }
     if (_1B4 && _1BC) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXCallDisplayList(_1B4, _1BC);
 #endif
@@ -421,6 +429,8 @@ void J3DModelX::drawIn(J3DMaterial* material, bool fog, MtxPtr base, J3DModel* m
         _1C8[index] = nullptr;
     }
     if (_1C4[index] && _1CC[index]) {
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXCallDisplayList(_1C4[index], _1CC[index]);
 #endif
@@ -446,6 +456,8 @@ void J3DModelX::drawIn(J3DMaterial* material, bool fog, MtxPtr base, J3DModel* m
 }
 
 bool J3DModelX::simpleDrawSetup(J3DMaterial* material) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)material;
     return false;
@@ -474,6 +486,7 @@ bool J3DModelX::simpleDrawSetup(J3DMaterial* material) {
 }
 
 void J3DModelX::simpleDrawShape(J3DMaterial* material) {
+    // 3DS: nothing to draw here: the native renderer draws the packets.
 #ifdef __3DS__
     (void)material;
 #else
@@ -482,6 +495,8 @@ void J3DModelX::simpleDrawShape(J3DMaterial* material) {
 }
 
 void J3DModelX::storeDisplayList(GDLObj* obj, u32 index) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)obj;
     (void)index;
@@ -507,6 +522,8 @@ J3DModelX::J3DModelX(J3DModelData* data, u32 flags, u32 bufferFlags) : J3DModel(
     _1E4 = 0;
     _1E5 = 0;
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
  #ifndef __3DS__
     GDLObj obj;
     u8 buffer[512] ATTRIBUTE_ALIGN(32);
@@ -682,6 +699,8 @@ J3DModelX::J3DModelX(J3DModelData* data, u32 flags, u32 bufferFlags) : J3DModel(
 }
 
 void J3DModelX::shapePacketDrawFast(J3DShapePacketX* packet) const {
+    // 3DS: nothing to do; the Wii branch sends GX state or display lists, which the native renderer
+    // replaces.
 #ifdef __3DS__
     (void)packet;
     return;
@@ -700,6 +719,8 @@ void J3DModelX::shapePacketDrawFast(J3DShapePacketX* packet) const {
 }
 
 void J3DModelX::shapeDrawFast(J3DShapeX* shape) const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)shape;
     return;

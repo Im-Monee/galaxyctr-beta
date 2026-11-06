@@ -15,6 +15,7 @@
 #include <JSystem/J3DGraphBase/J3DShape.hpp>
 #include <revolution/gx/GXGeometry.h>
 #include <revolution/mtx.h>
+// 3DS: NativeMaterial3DS.hpp, a model's material for immediate geometry.
 #ifdef __3DS__
 #include "NativeMaterial3DS.hpp"
 #endif

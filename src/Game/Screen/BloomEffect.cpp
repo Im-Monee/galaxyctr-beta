@@ -1,12 +1,11 @@
 #include "Game/Screen/BloomEffect.hpp"
+// 3DS: host.h, the port's host interface; DirectDraw, TDDraw's Citro3D draws; GXToCitro3D.hpp, GX
+// values as 3DS GPU values; JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "host.h"
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
-#endif
-#ifdef __3DS__
-
 #endif
 #include "Game/Screen/CopyFilterNegater.hpp"
 #include "Game/Screen/ImageEffectLocalUtil.hpp"
@@ -367,6 +366,8 @@ void BloomEffect::initBlurMtx(Mtx* pMtx, u32 count, f32 radius, f32 offset) cons
 }
 
 void BloomEffect::initBlur(JUTTexture* pTexture, u32 param2, f32 intensity) const {
+    // 3DS: nothing to do here; the bloom is drawn by the 3DS branch of the effect (the PICA has no
+    // texture matrices to set).
 #ifdef __3DS__
     (void)pTexture; (void)param2; (void)intensity;
     return;
@@ -396,6 +397,7 @@ void BloomEffect::initBlur(JUTTexture* pTexture, u32 param2, f32 intensity) cons
 }
 
 void BloomEffect::drawBlur(s32 divisions, s32 tile, Mtx* pMtx, u32 stageCount, u32 matrixCount) const {
+    // 3DS: nothing to do here; the bloom is drawn by the 3DS branch of the effect.
 #ifdef __3DS__
     (void)divisions; (void)tile; (void)pMtx; (void)stageCount; (void)matrixCount;
     return;

@@ -24,6 +24,7 @@ public:
 
     void update();
     void calcAnim();
+    // 3DS: skipping the joint calculation of a model whose pose has not changed (ModelManager.cpp).
 #ifdef __3DS__
     bool calcAnimSkipped();
     bool isPoseUnchanged();

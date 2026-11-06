@@ -20,15 +20,15 @@
 void rvl3DSFreeTextureMemory(unsigned long bytes);
 int rvl3DSFreeOneTexture(void);
 
-// ############################################################################################
-// # Linear memory in one piece for the decoder                                               #
-// #                                                                                          #
-// # The level's texture cache fills the linear memory and leaves it in fragments: in the     #
-// # CIA 0.21.1 log 4.1 MB were free, but no single 1.9 MB block for the decoder's work       #
-// # buffer, so the movie showed only its subtitles over a blue screen. Each buffer is        #
-// # allocated here, freeing one cached texture at a time until it fits (the textures are     #
-// # decoded again when the game draws them after the movie).                                 #
-// ############################################################################################
+// ##############################################################################################
+// # Linear memory in one piece for the decoder                                                 #
+// #                                                                                            #
+// # The level's texture cache fills the linear memory and leaves it in fragments: in the CIA   #
+// # 0.21.1 log 4.1 MB were free, but no single 1.9 MB block for the decoder's work buffer, so  #
+// # the movie showed only its subtitles over a blue screen. Each buffer is allocated here,     #
+// # freeing one cached texture at a time until it fits (the textures are decoded again when    #
+// # the game draws them after the movie).                                                      #
+// ##############################################################################################
 static void* linearAllocFreeingTextures(unsigned long size) {
     void* block;
     while ((block = linearAlloc(size)) == NULL && rvl3DSFreeOneTexture()) {
@@ -36,6 +36,14 @@ static void* linearAllocFreeingTextures(unsigned long size) {
     return block;
 }
 
+// ##############################################################################################
+// # Decoder state                                                                              #
+// #                                                                                            #
+// # One movie at a time: the decoder's configuration, its input buffer (one NAL unit) and      #
+// # output buffer (one RGB565 picture) in linear memory, and the two textures the pictures     #
+// # alternate in. sCurrent is the texture with the last complete picture, -1 before the first  #
+// # one.                                                                                       #
+// ##############################################################################################
 static bool sOpen;
 static MVDSTD_Config sConfig;
 static u8* sInput;
@@ -71,6 +79,15 @@ static u32 morton(u32 x, u32 y) {
     return (x & 1) | ((y & 1) << 1) | ((x & 2) << 1) | ((y & 2) << 2) | ((x & 4) << 2) | ((y & 4) << 3);
 }
 
+// ##############################################################################################
+// # Starting and ending a movie                                                                #
+// #                                                                                            #
+// # THPSimplePlayerWrapper (the game's player) calls hostMovieBegin with the movie's size and  #
+// # the size the converter padded it to. The decoder needs a work buffer sized for that        #
+// # picture size; the textures are freed after the GPU's last frame that reads them. When      #
+// # anything fails the movie is skipped: the game plays its sound and subtitles on a blank     #
+// # screen.                                                                                    #
+// ##############################################################################################
 void hostMovieEnd(void) {
     if (!sOpen) {
         return;
@@ -178,6 +195,13 @@ int hostMovieBegin(unsigned width, unsigned height, unsigned paddedWidth, unsign
     return 1;
 }
 
+// ##############################################################################################
+// # Pictures into textures                                                                     #
+// #                                                                                            #
+// # The decoder writes plain rows; the GPU reads textures in 8x8 tiles with their pixels in    #
+// # Morton order (morton, above). Each picture is copied into the texture the GPU is not       #
+// # reading now, upside down because textures are stored from the bottom row.                  #
+// ##############################################################################################
 // The rendered picture (rows top-down) into the next texture: image row y goes to memory row
 // (paddedHeight - 1 - y), as hostGfxTextureCreate stores images (t = 0 samples the top row).
 static void storePicture(void) {
@@ -198,6 +222,15 @@ static void storePicture(void) {
     sCurrent = next;
 }
 
+// ##############################################################################################
+// # Decoding a frame's data                                                                    #
+// #                                                                                            #
+// # A converted THP frame holds its H.264 NAL units with their start codes                     #
+// # (tools/3ds/builder/movie.py). Each unit is copied into the input buffer and given to the   #
+// # decoder; when it says a picture is ready, the picture is rendered and stored. After a unit #
+// # is refused, pictures are not shown until the next key picture, so the last good one stays  #
+// # on screen instead of garbage.                                                              #
+// ##############################################################################################
 static int decodeUnits(const unsigned char* data, unsigned long size) {
     int shown = 0;
     unsigned long i = 0;

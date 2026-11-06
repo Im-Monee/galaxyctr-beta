@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -1698,6 +1699,7 @@ void Mario::writeBackPhyisicalVector() {
 }
 
 void Mario::update() {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 30, 59).
 #ifdef __3DS__
     SysTimer3DS timer3DS(30);
     SysPhase3DS phase3DS;
@@ -1749,6 +1751,7 @@ void Mario::update() {
         f1 = 90.0f;
     }
 
+    // 3DS: profile timing (SysTimer3DS.hpp, type 60).
 #ifdef __3DS__
     phase3DS.next(60);
 #endif
@@ -1788,6 +1791,7 @@ void Mario::update() {
 
     OSGetTime();
 
+    // 3DS: profile timing (SysTimer3DS.hpp, type 61).
 #ifdef __3DS__
     phase3DS.next(61);
 #endif
@@ -1835,10 +1839,12 @@ void Mario::update() {
 
     _A8C[1] = mVelocity;
 
+    // 3DS: profile timing (SysTimer3DS.hpp, type 62).
 #ifdef __3DS__
     phase3DS.next(62);
 #endif
     actionMain();
+    // 3DS: profile timing (SysTimer3DS.hpp, type 63).
 #ifdef __3DS__
     phase3DS.next(63);
 #endif
@@ -1948,6 +1954,7 @@ void Mario::actionMain() {
 }
 
 void Mario::updateGroundInfo() {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 32).
 #ifdef __3DS__
     SysTimer3DS timer3DS(32);
 #endif

@@ -6,6 +6,7 @@
 #include "Game/MapObj/ElectricRailHolder.hpp"
 #include "Game/Util.hpp"
 #include "Game/Util/Color.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -13,9 +14,11 @@
 #include <JSystem/JMath/JMATrigonometric.hpp>
 #include <revolution/gd/GDBase.h>
 #include <revolution/gx/GXEnum.h>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
+// 3DS: GXImmediate3DS.hpp, this file's GXBegin geometry through DirectDraw.
 #ifdef __3DS__
 #include "GXImmediate3DS.hpp"
 #endif
@@ -300,6 +303,7 @@ void ElectricRailMoving::drawPlaneGX(f32 a1, f32 a2, f32 a3, f32 a4) const {
         GXBegin(GX_TRIANGLESTRIP, GX_VTXFMT0, _E4 * 2);
 
         for (s32 j = 0; j < _E4; j++) {
+            // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
             setVertexAttribute(j, i, a1, a2, a3, a4, TDDraw::directPosition, TDDraw::directTexCoord);
 #else

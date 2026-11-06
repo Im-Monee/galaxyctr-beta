@@ -4,6 +4,8 @@
 #include <revolution/os.h>
 
 void JPARegistChildPrmEnv(JPAEmitterWorkData* work) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)work;
     return;

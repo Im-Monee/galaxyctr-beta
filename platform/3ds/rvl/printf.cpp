@@ -1,6 +1,9 @@
-// sprintf and friends with Metrowerks MSL behaviour (see format.h).
-// The linker redirects every call to these functions here with --wrap (tools/3ds/configure.py).
-
+// ##############################################################################################
+// # sprintf with the Wii's behaviour                                                           #
+// #                                                                                            #
+// # The game's formatted strings must come out as on the Wii (Metrowerks MSL: format.h). The   #
+// # linker redirects every call to these functions here with --wrap (tools/3ds/configure.py).  #
+// ##############################################################################################
 #include "format.h"
 
 extern "C" {

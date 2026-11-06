@@ -22,6 +22,7 @@
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
 #include "Game/Util/TalkUtil.hpp"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -51,6 +52,7 @@ TalkPeekZ::TalkPeekZ() : mDrawSync(DrawSyncManager::sInstance->setCallback(4, 1,
 }
 
 void TalkPeekZ::setDrawSyncToken() {
+    // 3DS: the depth is read straight from the render target, at the next draw sync.
 #ifdef __3DS__
     drawSyncCallback(0);
     return;
@@ -64,6 +66,8 @@ void TalkPeekZ::setDrawSyncToken() {
 }
 
 void TalkPeekZ::drawSyncCallback(u16 arg) {
+    // 3DS: the depth under the speaker, read from the last finished frame (host/gfx.c,
+    // hostGfxPeekEfb).
 #ifdef __3DS__
     (void)arg;
     if (!MR::isInRange(mScreenPos.x, 0.0f, MR::getScreenWidth() - 1) ||

@@ -43,6 +43,8 @@ JUTVideo::JUTVideo(GXRenderModeObj const* param_0) {
     mPreCallback = nullptr;
     mPostCallback = nullptr;
     OSInitMessageQueue(&mMessageQueue, &mMessage, 1);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetDrawDoneCallback(drawDoneCallback);
 #endif
@@ -125,6 +127,8 @@ void JUTVideo::preRetraceProc(u32 retrace_count) {
             s16 index = xfb->getDrawnXfbIndex();
             if (index >= 0) {
                 xfb->setDisplayingXfbIndex(index);
+                // Wii only: GX state, display lists and material setup; the 3DS draws this through
+                // Citro3D (DETAILS.md, section 5).
 #ifndef __3DS__
                 GXCopyDisp(xfb->getDisplayingXfb(), GX_TRUE);
                 GXFlush();
@@ -144,6 +148,8 @@ void JUTVideo::preRetraceProc(u32 retrace_count) {
 
 void JUTVideo::drawDoneStart() {
     data_80451544 = true;
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

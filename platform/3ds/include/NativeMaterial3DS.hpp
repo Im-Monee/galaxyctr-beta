@@ -1,8 +1,12 @@
 #pragma once
 
-// 3DS: a J3D material as the native renderer translates it (platform/3ds/gx/native.cpp), for
-// immediate geometry drawn with a model's material: the Wii loads the material's display list
-// (J3DMatPacket::callDL) and sends the vertices with GXBegin (ElectricRailHolder).
+// ##############################################################################################
+// # A model's material for immediate geometry                                                  #
+// #                                                                                            #
+// # A J3D material as the native renderer translates it (platform/3ds/gx/native.cpp), for      #
+// # geometry drawn with a model's material: the Wii loads the material's display list          #
+// # (J3DMatPacket::callDL) and sends the vertices with GXBegin (ElectricRailHolder).           #
+// ##############################################################################################
 
 #include "host.h"
 #include <revolution/types.h>

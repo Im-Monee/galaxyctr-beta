@@ -513,6 +513,7 @@ void WarpPod::initDraw() {
 void WarpPod::drawCylinder(u32) const {
     f32 length = 30.0f;
 
+    // 3DS: the same four conditions as the Wii's, in one test.
 #ifdef __3DS__
     if (!mArg7 || mPairPod->mIsInactive || mIsInactive || mVisibilityState != 1) {
 #else
@@ -796,6 +797,7 @@ void WarpPod::draw() const {
         return;
     }
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setupDirect(0, 1, 0);
     TDDraw::setDirectDepthMode(true, 7, false);
@@ -807,6 +809,7 @@ void WarpPod::draw() const {
     for (u32 i = 0; i < _C8; i++) {
         TDDraw::drawCylinder(_C4[i], _C4[i + 1] - _C4[i], 100.0f, 0x40406040, 0x40406040, 8);
     }
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

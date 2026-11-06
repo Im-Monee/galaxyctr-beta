@@ -29,9 +29,11 @@
 #include <revolution/mtx.h>
 #include <revolution/types.h>
 #include <revolution/wpad.h>
+// 3DS: headers the 3DS code of this file uses (ModelUtil.hpp).
 #ifdef __3DS__
 #include "Game/Util/ModelUtil.hpp"
 #endif
+// 3DS: a shape drawn by the native renderer with one view matrix (the leaves).
 #ifdef __3DS__
 class J3DModel;
 bool rvlNativeDrawShape(J3DModel*, u32, const f32 (*)[4]);

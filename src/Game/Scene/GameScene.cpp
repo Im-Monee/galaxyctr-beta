@@ -38,12 +38,14 @@
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
 #include "Game/Util/SystemUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values; host.h, the port's host interface.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #include "host.h"
 #endif
 #include <JSystem/J3DGraphBase/J3DSys.hpp>
 
+// 3DS: delivers pending interrupts inside a wait loop (below).
 #ifdef __3DS__
 extern "C" void rvlPollInterrupts(void);
 #endif
@@ -195,6 +197,7 @@ void GameScene::draw() const {
     MR::reinitGX();
 }
 
+// 3DS: no joint calculation in loops that are not drawn (below).
 #ifdef __3DS__
 extern bool gRvl3DSSkipJointCalc;
 #endif
@@ -210,6 +213,7 @@ void GameScene::calcAnim() {
     } else {
         SceneFunction::executeCalcAnimList();
     }
+    // 3DS: the next loop decides again.
 #ifdef __3DS__
     gRvl3DSSkipJointCalc = false;
 #endif
@@ -377,6 +381,8 @@ void GameScene::drawMirror() const {
         PSMTXCopy(MR::getMirrorCameraViewMtx(), j3dSys.mViewMtx);
         MR::loadProjectionMtx();
         CategoryList::entryDrawBufferMirror();
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetAlphaUpdate(GX_FALSE);
         GXSetColorUpdate(GX_TRUE);
@@ -423,10 +429,14 @@ void GameScene::draw3D() const {
     CategoryList::execute(MR::DrawType_ClipArea);
     CategoryList::execute(MR::DrawType_FallOutFieldDraw);
     SceneFunction::executeDrawBufferListNormalOpaBeforeVolumeShadow();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetAlphaUpdate(GX_TRUE);
 #endif
     CategoryList::execute(MR::DrawType_ShadowVolume);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetColorUpdate(GX_TRUE);
     GXSetDstAlpha(GX_TRUE, 0);
@@ -437,6 +447,7 @@ void GameScene::draw3D() const {
     SceneFunction::executeDrawAlphaShadow();
     CategoryList::execute(MR::DrawType_BrightSun);
     MR::setLensFlareDrawSyncToken();
+    // 3DS: the scene's draws start without the shadow volumes' ambient stencil.
 #ifndef __3DS__
     GXSetAlphaUpdate(GX_FALSE);
     GXSetDstAlpha(GX_FALSE, 0);
@@ -459,6 +470,8 @@ void GameScene::draw3D() const {
     MR::setStarPointerDrawSyncToken();
     MR::setTalkDirectorDrawSyncToken();
     SceneFunction::executeDrawImageEffect();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetDither(GX_TRUE);
 #endif

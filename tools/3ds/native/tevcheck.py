@@ -10,6 +10,12 @@ random.seed(1)
 
 # ---- GX reference --------------------------------------------------------------------------
 
+# ##############################################################################################
+# # The Wii's TEV, evaluated                                                                   #
+# #                                                                                            #
+# # gx_eval computes what a material's TEV stages give for given inputs, by Dolphin's rules    #
+# # (signed 11-bit registers, the bias, scale and clamp of each stage).                        #
+# ##############################################################################################
 def s11(v):
     v &= 0x7FF
     return v - 0x800 if v & 0x400 else v
@@ -121,6 +127,12 @@ def ref_value(ref, tev_colors, konst, fallback):
     v = f(c[3 if part == M.PART_ALPHA else part - M.PART_R])
     return [v, v, v]
 
+# ##############################################################################################
+# # The compiled combiners, evaluated                                                          #
+# #                                                                                            #
+# # pica_eval computes what the PICA's combiner stages compiled by mat.py give for the same    #
+# # inputs.                                                                                    #
+# ##############################################################################################
 def pica_stages(stages, units, ras_channel, tev_colors, konst, tex, ras, buffer_masks=(0, 0)):
     prim = [x / 255.0 for x in ras[ras_channel]]
     prev = [0.0, 0.0, 0.0, 0.0]
@@ -191,6 +203,13 @@ def pica_eval(compiled, tev_colors, konst, tex, ras):
 
 # ---- colour animations -----------------------------------------------------------------------
 
+# ##############################################################################################
+# # Checking every material                                                                    #
+# #                                                                                            #
+# # Both are compared on random inputs and on the colour register values the archive's         #
+# # animations set; a material whose results differ is reported. far.py also uses gx_eval for  #
+# # the far models' colours.                                                                   #
+# ##############################################################################################
 def brk_keys(members):
     """{material name: {register (1-3): [(r, g, b, a) per key]}} from the .brk files."""
     out = {}

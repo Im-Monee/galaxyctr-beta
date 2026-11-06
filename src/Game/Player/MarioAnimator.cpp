@@ -1,3 +1,4 @@
+// 3DS: no joint calculation in loops that are not drawn (GameScene.cpp).
 #ifdef __3DS__
 extern bool gRvl3DSSkipJointCalc;
 #endif

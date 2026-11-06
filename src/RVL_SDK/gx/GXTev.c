@@ -304,6 +304,8 @@ void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
         ctmp = (u32*)&TEVCOpTableST1[mode];
         atmp = (u32*)&TEVAOpTableST1[mode];
     }
+    // 3DS: the TEV tables' bit fields packed into register words field by field (the bit field
+    // layout differs on ARM).
 #ifdef __3DS__
     u32 cpacked = packColorEnv((const tev_color_env_t*)ctmp);
     u32 apacked = packAlphaEnv((const tev_alpha_env_t*)atmp);

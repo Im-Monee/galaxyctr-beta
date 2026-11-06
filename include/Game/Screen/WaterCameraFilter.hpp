@@ -17,6 +17,8 @@ public:
     void exeWaterToAir();
     void exeWater();
     void exeAir();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     void loadMaterial() const;
 #endif

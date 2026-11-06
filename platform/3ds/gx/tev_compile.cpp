@@ -1,10 +1,23 @@
-// TEV configurations given as data compiled into 3DS combiner stages (TevCompile3DS.hpp), with
-// the terms and halves of tev_terms.h.
-
+// ##############################################################################################
+// # TEV configurations compiled into combiner stages                                           #
+// #                                                                                            #
+// # Code that sets its TEV stages at run time from data (the NW4R layouts' materials,          #
+// # nw4r/lyt/lyt_material.cpp, and native.cpp) describes them as an RvlTevDesc                 #
+// # (TevCompile3DS.hpp); rvlTevCompile turns it into at most 6 combiner stages with the terms  #
+// # of tev_terms.h, and says when the result is inexact.                                       #
+// ##############################################################################################
 #include "TevCompile3DS.hpp"
 #include "tev_terms.h"
 
 namespace {
+    // ##############################################################################################
+    // # The inputs of one stage                                                                    #
+    // #                                                                                            #
+    // # What a TEV stage can read: its texture (mapped to one of the 3DS's 3 units), the           #
+    // # rasterized colour, the four colour registers, the constant colours (konst) and the         #
+    // # fractions 1/8 to 1. A register a stage before has written is read as the previous stage's  #
+    // # result: an approximation, exact when the stages run in the usual order.                    #
+    // ##############################################################################################
     struct Inputs {
         const RvlTevDesc* desc;
         s32 unit;  // texture unit, or -1 when the stage has no texture
@@ -130,6 +143,12 @@ namespace {
         return buildHalves(t[0], t[1], t[2], t[3], bias, op == 1, scale, alpha, out);
     }
 
+    // ##############################################################################################
+    // # Two lerps of constants in a row                                                            #
+    // #                                                                                            #
+    // # A stage that blends two constants by the result of a stage that did the same would take    #
+    // # more stages than there are; the two are folded into one multiply and one add of constants. #
+    // ##############################################################################################
     // A colour stage lerp(a, b, x) of two constants by a texture or rasterized input, writing PREV.
     struct ConstantLerp {
         bool valid;
@@ -159,7 +178,7 @@ namespace {
     // F = (b - a) * (b' - a'): both constants, in two combiners, when F has one sign. nw4r's
     // C0/C1 stage after a texture already lerped by C0/C1 (a = a', b = b': F >= 0) needed both
     // constants with the previous result, of mixed signs (the pointer's nozzle, the Mii select
-    // arrows, the signboard: U6 audit).
+    // arrows, the signboard: found by the material audit).
     u32 composedLerp(const ConstantLerp& before, const ConstantLerp& now, Half* out) {
         s32 e[3], f[3];
         bool rising = true, falling = true;
@@ -183,6 +202,15 @@ namespace {
     }
 }  // namespace
 
+// ##############################################################################################
+// # Compiling                                                                                  #
+// #                                                                                            #
+// # Stage by stage: the texture unit (a new one for each texture map and coordinate pair, at   #
+// # most 3), the rasterized channel, the swap tables, then the colour and alpha functions,     #
+// # each one or more combiner halves, packed into combiner stages side by side. When the       #
+// # stages run out or a unit is missing, the rest is dropped and the program is marked         #
+// # incomplete.                                                                                #
+// ##############################################################################################
 void rvlTevDefaultSwapTables(RvlTevDesc& rDesc) {
     static const u8 kTables[4][4] = {{0, 1, 2, 3}, {0, 0, 0, 3}, {1, 1, 1, 3}, {2, 2, 2, 3}};
     for (u32 i = 0; i < 4; i++) {

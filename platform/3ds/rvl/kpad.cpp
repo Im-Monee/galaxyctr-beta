@@ -1,3 +1,10 @@
+// ##############################################################################################
+// # The Wii Remote and Nunchuk from the 3DS controls                                           #
+// #                                                                                            #
+// # The game reads a Wii Remote with a Nunchuk through KPAD and WPAD. Here those functions     #
+// # answer from the 3DS's buttons, circle pad and touch screen (host/main.c, hostInputGet),    #
+// # with the mapping below. The touch screen is the remote's pointer.                          #
+// ##############################################################################################
 // Wii Remote + Nunchuk (KPAD/WPAD) from the 3DS controls.
 //
 // Channel 0 is a Wii Remote with a Nunchuk attached; the other channels are empty.
@@ -32,6 +39,12 @@ static bool sPointerShown;
 static const u32 kShakeLength = 6;
 static const Vec kRestAcceleration = {0.0f, -1.0f, 0.0f};
 
+// ##############################################################################################
+// # Buttons and the stick                                                                      #
+// #                                                                                            #
+// # The 3DS buttons as Wii Remote and Nunchuk buttons (R depends on whether the touch screen   #
+// # points), and the circle pad as the Nunchuk stick, with a dead zone.                        #
+// ##############################################################################################
 static u32 wiiButtons(u32 keys, bool touching) {
     u32 buttons = 0;
     if (keys & (HOST_KEY_A | HOST_KEY_B)) buttons |= WPAD_BUTTON_A;
@@ -63,6 +76,12 @@ static f32 stickAxis(s32 value) {
 
 extern "C" {
 
+// ##############################################################################################
+// # Remote settings and WPAD                                                                   #
+// #                                                                                            #
+// # Settings for the remote's sensors are accepted and do not apply. The remote is always      #
+// # connected with its Nunchuk on channel 0; rumble and the remote's speaker do nothing.       #
+// ##############################################################################################
 void KPADInit(void) {
 }
 
@@ -220,6 +239,12 @@ s32 WPADGetInfoAsync(s32 chan, WPADInfo* info, WPADCallback callback) {
     return WPAD_ERR_NONE;
 }
 
+// ##############################################################################################
+// # Reading the remote                                                                         #
+// #                                                                                            #
+// # One sample per call: buttons with their pressed and released edges, the stick, the pointer #
+// # from the touch screen, and the acceleration of a shake while Y is held.                    #
+// ##############################################################################################
 s32 KPADRead(s32 chan, KPADStatus* samples, u32 length) {
     // The connection is reported on the first read, once the game's pad objects exist.
     if (!sAnnounced) {

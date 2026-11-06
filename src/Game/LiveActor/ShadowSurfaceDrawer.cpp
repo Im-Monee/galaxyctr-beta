@@ -4,6 +4,7 @@
 #include "Game/Util/Color.hpp"
 #include "Game/Util/DirectDraw.hpp"
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif

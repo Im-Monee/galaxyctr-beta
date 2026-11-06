@@ -7,6 +7,14 @@ Sequence bytecode (JAudio2 BMS and the game's ME/rhythm sequences) stays big-end
 from binary import ConversionError, be_s32, be_u16, be_u32, swap16, swap16_array, swap32, swap32_array
 
 
+# ##############################################################################################
+# # One converter per audio file kind                                                          #
+# #                                                                                            #
+# # Each function converts one kind of the game's audio files (build_files.py picks it by      #
+# # extension); its docstring gives the layout and the game code that reads it. Sample data    #
+# # stays as it is: the DSP mixer (platform/3ds/rvl/dsp.cpp) reads it big-endian, as the Wii's #
+# # DSP does.                                                                                  #
+# ##############################################################################################
 def convert_me_table(data):
     """metable.bmt (AudMePlayingParamsHolder::setResource):
     s32 count, s32 entries offset, s32 names offset, then count 8-byte entries

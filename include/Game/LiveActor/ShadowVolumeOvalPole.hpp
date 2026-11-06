@@ -8,6 +8,7 @@ public:
 
     virtual ~ShadowVolumeOvalPole();
     virtual void loadModelDrawMtx() const;
+    // 3DS: the volume drawn through DirectDraw instead of a GX display list.
 #ifdef __3DS__
     virtual void drawShape() const override;
 #endif
@@ -16,6 +17,3 @@ public:
 
     /* 0x20 */ TVec3f mSize;
 };
-#ifdef __3DS__
-
-#endif

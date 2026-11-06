@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -62,6 +63,7 @@ void CollisionCategorizedKeeper::removeFromGlobal(CollisionParts* pParts) {
 }
 
 s32 CollisionCategorizedKeeper::checkStrikePoint(const TVec3f& rPosition, HitInfo* pHitInfo) {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 42).
 #ifdef __3DS__
     SysTimer3DS timer3DS(42);
 #endif
@@ -129,6 +131,7 @@ s32 CollisionCategorizedKeeper::checkStrikePoint(const TVec3f& rPosition, HitInf
 
 s32 CollisionCategorizedKeeper::checkStrikeBall(const TVec3f& rPosition, f32 ballRadius, bool moving, const CollisionPartsFilterBase* pPartsFilter,
                                                 const TriangleFilterBase* pTriangleFilter) {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 40).
 #ifdef __3DS__
     SysTimer3DS timer3DS(40);
 #endif
@@ -205,6 +208,7 @@ s32 CollisionCategorizedKeeper::checkStrikeBall(const TVec3f& rPosition, f32 bal
 s32 CollisionCategorizedKeeper::checkStrikeBallWithThickness(const TVec3f& rPosition, f32 ballRadius, f32 thickness,
                                                              const CollisionPartsFilterBase* pPartsFilter,
                                                              const TriangleFilterBase* pTriangleFilter) {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 40).
 #ifdef __3DS__
     SysTimer3DS timer3DS(40);
 #endif
@@ -281,6 +285,7 @@ s32 CollisionCategorizedKeeper::checkStrikeBallWithThickness(const TVec3f& rPosi
 
 s32 CollisionCategorizedKeeper::checkStrikeLine(const TVec3f& rStart, const TVec3f& rDirection, s32 maxHits,
                                                 const CollisionPartsFilterBase* pPartsFilter, const TriangleFilterBase* pTriangleFilter) {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 41).
 #ifdef __3DS__
     SysTimer3DS timer3DS(41);
 #endif

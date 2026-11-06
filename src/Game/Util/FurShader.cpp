@@ -130,6 +130,7 @@ void CShader::calc(J3DModel* pModel) {
         u16 index = mIndexArray[i]._2;
 
         if (index != 0xFFFF) {
+            // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
             TVec2s fixedTex = furReadVec2s(static_cast< TVec2s* >(pTexCoords) + index);
             TVec2f floatTex = furReadVec2f(static_cast< TVec2f* >(pTexCoords) + index);
@@ -187,6 +188,7 @@ void CShader::calc(J3DModel* pModel) {
             TVec3s* pFixedOutput = reinterpret_cast< TVec3s* >(static_cast< s16* >(pOutput) + offset);
             TVec3s* pFixedPosition = reinterpret_cast< TVec3s* >(static_cast< s16* >(pPositions) + offset);
             TVec3s* pFixedNormal = reinterpret_cast< TVec3s* >(static_cast< s16* >(pNormals) + normalOffset);
+            // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
             TVec3s* pFixedOutputBE = pFixedOutput;
             TVec3s fixedPosition = furReadVec3s(pFixedPosition), fixedNormal = furReadVec3s(pFixedNormal);
@@ -203,6 +205,7 @@ void CShader::calc(J3DModel* pModel) {
             TVec3f* pFloatPosition = reinterpret_cast< TVec3f* >(static_cast< f32* >(pPositions) + offset);
             TVec3f* pFloatNormal = reinterpret_cast< TVec3f* >(static_cast< f32* >(pNormals) + normalOffset);
             TVec2f* pFloat = static_cast< TVec2f* >(pTexCoords) + texCoordIndex;
+            // 3DS: the model's vertex arrays stay big-endian for the GX layer; read them as such.
 #ifdef __3DS__
             TVec3f* pFloatOutputBE = pFloatOutput;
             TVec3f floatPosition = furReadVec3f(pFloatPosition), floatNormal = furReadVec3f(pFloatNormal);
@@ -278,6 +281,7 @@ void CShader::calc(J3DModel* pModel) {
             switch (_24) {
             case GX_S16:
                 MR::floatToFixed16(pFixedOutput, result, _21);
+                // 3DS: the result written back big-endian, as the GX layer's vertex arrays are.
 #ifdef __3DS__
                 furWriteS16(&pFixedOutputBE->x, pFixedOutput->x);
                 furWriteS16(&pFixedOutputBE->y, pFixedOutput->y);
@@ -286,6 +290,7 @@ void CShader::calc(J3DModel* pModel) {
                 break;
             case GX_F32:
                 *pFloatOutput = result;
+                // 3DS: the result written back big-endian, as the GX layer's vertex arrays are.
 #ifdef __3DS__
                 furWriteF32(&pFloatOutputBE->x, result.x);
                 furWriteF32(&pFloatOutputBE->y, result.y);
@@ -313,6 +318,7 @@ void CShader::setup(J3DModelData* pData) {
 
 namespace {
     inline s32 getCount(u8* pRead) {
+        // 3DS: display list data stays big-endian; read it as such.
 #ifdef __3DS__
         return furReadU16(pRead + 1);
 #else
@@ -374,6 +380,7 @@ void CShader::makeIndexData(J3DShape* pShape) const {
 
             for (s32 i = 0; i < count; i++) {
                 u8* pVertex = pRead + 3 + stride * i;
+                // 3DS: display list data stays big-endian; read it as such.
 #ifdef __3DS__
                 u16 pos = furReadU16(pVertex + posOffset);
                 u16 nrm = furReadU16(pVertex + nrmOffset);
@@ -437,6 +444,7 @@ void CShader::checkBorderVtx(J3DModelData* pData, u32 shapeIndex) {
                     break;
                 }
 
+                // 3DS: display list data stays big-endian; read it as such.
 #ifdef __3DS__
                 s32 count = furReadU16(pRead + 1);
 #else
@@ -444,6 +452,7 @@ void CShader::checkBorderVtx(J3DModelData* pData, u32 shapeIndex) {
 #endif
 
                 for (s32 i = 0; i < count; i++) {
+                    // 3DS: display list data stays big-endian; read it as such.
 #ifdef __3DS__
                     u16 pos = furReadU16((pRead + stride * i) + (posOffset + 3));
 #else

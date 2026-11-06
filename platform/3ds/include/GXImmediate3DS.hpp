@@ -1,10 +1,14 @@
 #pragma once
 
-// 3DS: GX immediate geometry as DirectDraw (Citro3D) submits. Included after a file's other
-// headers, it turns the GXBegin ... GXEnd vertices of that file into TDDraw immediate
-// primitives (DirectDraw.cpp), so the Wii's geometry code stays one copy; the file's 3DS branch
-// sets the state (TDDraw::setupDirect, setDirectTexture, setDirectCombine) instead of the GX
-// material calls. Only the forms the converted files use are mapped.
+// ##############################################################################################
+// # GX immediate geometry through DirectDraw                                                   #
+// #                                                                                            #
+// # Included after a file's other headers, it turns the GXBegin ... GXEnd vertices of that     #
+// # file into TDDraw immediate primitives (src/Game/Util/DirectDraw.cpp), so the Wii's         #
+// # geometry code stays one copy; the file's 3DS branch sets the state (TDDraw::setupDirect,   #
+// # setDirectTexture, setDirectCombine) instead of the GX material calls. Only the forms the   #
+// # converted files use are mapped.                                                            #
+// ##############################################################################################
 
 #include "Game/Util/DirectDraw.hpp"
 

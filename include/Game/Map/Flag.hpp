@@ -30,6 +30,8 @@ public:
     void setInfoPos(const char* pObjName, const TVec3f* pPos, const TVec3f& rSide, f32 stickLength, f32 width, f32 height, s32 numPointsU,
                     s32 numPointsV, f32);
     void updateFlag();
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     void loadMaterial() const;
 #endif

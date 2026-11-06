@@ -4,15 +4,18 @@
 #include "Game/System/ResourceHolder.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DrawUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (cfloat).
 #ifdef __3DS__
 #include <cfloat>
 #endif
 #include <cstdio>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
@@ -104,6 +107,8 @@ void VolumeModelDrawer::draw() const {
 }
 
 void VolumeModelDrawer::loadModelDrawMtx() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

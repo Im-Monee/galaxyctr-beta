@@ -246,10 +246,13 @@ void BigBubble::draw() const {
             TDDraw::setDirectStageConstant(4, ((a1 * 7 / 8) & 0xFF) << 24);
         }
 #endif
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetTevColor(GX_TEVREG1, mWarningColor);
 #endif
         mSurface->draw();
+        // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
         TDDraw::closeDirect();
 #endif

@@ -25,6 +25,7 @@
 #include <revolution/gx/GXPixel.h>
 #include <revolution/gx/GXTev.h>
 #include <revolution/mtx.h>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif

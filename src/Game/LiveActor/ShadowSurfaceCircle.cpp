@@ -28,6 +28,7 @@ void ShadowSurfaceCircle::draw() const {
     TVec3f pos, normal;
     controller->getProjectionPos(&pos);
     controller->getProjectionNormal(&normal);
+    // 3DS: the circle through DirectDraw, with more segments: it is a fill, not GX lines.
 #ifdef __3DS__
     TDDraw::resetViewMtxDirect();
     TDDraw::drawFillCircle(pos + normal * 1.0f, -normal, radius, 0x80808080, 128);

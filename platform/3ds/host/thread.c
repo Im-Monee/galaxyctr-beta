@@ -14,6 +14,14 @@
 // Interrupt sources must be able to run while a game thread is busy.
 #define IRQ_THREAD_PRIORITY 0x2F
 
+// ##############################################################################################
+// # Game threads                                                                               #
+// #                                                                                            #
+// # Every thread of the game (the Wii OS threads of rvl/os_thread.cpp) is a real 3DS thread on #
+// # the first core, all at the same priority: the scheduler in os_thread.cpp lets only one of  #
+// # them run at a time, as on the Wii's single CPU. The trampoline frees the start record and  #
+// # ends the thread when its entry function returns.                                           #
+// ##############################################################################################
 typedef struct {
     HostThreadEntry entry;
     void* arg;
@@ -45,6 +53,14 @@ int hostThreadCreate(HostThreadEntry entry, void* arg, unsigned long stackSize) 
     return 1;
 }
 
+// ##############################################################################################
+// # A thread on the second core                                                                #
+// #                                                                                            #
+// # Used only with the 96 MB of an Old 3DS, where rvl/dsp.cpp mixes the audio on the second    #
+// # core (the port now refuses an Old 3DS at startup, main.c). The system shares that core     #
+// # with the application for a limited part of its time: the limit is asked for first, and the #
+// # thread is refused without it. Such a thread must never touch game state.                   #
+// ##############################################################################################
 int hostCore1ThreadCreate(HostThreadEntry entry, void* arg, unsigned long stackSize) {
     ThreadStart* start = malloc(sizeof(ThreadStart));
     start->entry = entry;
@@ -73,6 +89,12 @@ void hostThreadExit(void) {
     threadExit(0);
 }
 
+// ##############################################################################################
+// # Semaphores                                                                                 #
+// #                                                                                            #
+// # Counting semaphores for the host threads (libctru's LightSemaphore): every signal is       #
+// # counted, none is lost when several arrive before the waiting thread wakes.                 #
+// ##############################################################################################
 void* hostSemaphoreCreate(void) {
     LightSemaphore* sem = malloc(sizeof(LightSemaphore));
     LightSemaphore_Init(sem, 0, 0x7FFF);
@@ -87,8 +109,15 @@ void hostSemaphoreSignal(void* sem) {
     LightSemaphore_Release((LightSemaphore*)sem, 1);
 }
 
-// Interrupts --------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Interrupts                                                                                 #
+// #                                                                                            #
+// # The Wii's hardware interrupts (timer, retrace, disc, audio, DSP: HOST_IRQ_* in host.h)     #
+// # become bits in sPendingIrqs. Host threads and callbacks raise them at any time; the game   #
+// # side takes them all at once (hostInterruptTakePending) and runs their handlers only where  #
+// # the game has interrupts enabled (os_thread.cpp, dispatchInterrupts). When every game       #
+// # thread waits, hostInterruptWait sleeps until a bit is raised.                              #
+// ##############################################################################################
 static volatile u32 sPendingIrqs;
 static LightEvent sIrqEvent;
 static LightEvent sDeadlineChanged;
@@ -129,6 +158,15 @@ void hostInterruptWait(void) {
     }
 }
 
+// ##############################################################################################
+// # The timer and retrace threads                                                              #
+// #                                                                                            #
+// # Two host threads, at a priority above the game's so they run while it is busy. The timer   #
+// # thread raises HOST_IRQ_TIMER at the deadline os_thread.cpp sets for the next OS alarm. The #
+// # retrace thread waits for each vertical blank of the screens, counts it and raises          #
+// # HOST_IRQ_VBLANK (the Wii's VI interrupt, rvl/vi.cpp); it also lets debug.c notice a game   #
+// # that has stopped presenting frames.                                                        #
+// ##############################################################################################
 void hostInterruptSetTimer(unsigned long long deadlineTick) {
     sTimerDeadline = deadlineTick;
     LightEvent_Signal(&sDeadlineChanged);

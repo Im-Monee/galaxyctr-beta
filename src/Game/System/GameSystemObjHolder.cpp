@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -82,6 +83,7 @@ void GameSystemObjHolder::createAudioSystem() {
 }
 
 void GameSystemObjHolder::update() {
+    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 46).
 #ifdef __3DS__
     {
         SysTimer3DS timer3DS(46);

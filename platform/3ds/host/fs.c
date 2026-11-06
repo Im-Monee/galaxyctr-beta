@@ -14,6 +14,13 @@
 
 #define FILES_ROOT "sdmc:/smg/files"
 
+// ##############################################################################################
+// # Folders                                                                                    #
+// #                                                                                            #
+// # The game's files are the converted disc, in sdmc:/smg/files (written by the builder or the #
+// # PC converter). rvl/dvd.cpp lists that tree once at startup with these functions to build   #
+// # the Wii's disc file table.                                                                 #
+// ##############################################################################################
 const char* hostFilesRoot(void) {
     return FILES_ROOT;
 }
@@ -43,6 +50,12 @@ void hostDirClose(void* dir) {
     closedir((DIR*)dir);
 }
 
+// ##############################################################################################
+// # Loading statistics                                                                         #
+// #                                                                                            #
+// # Opens and reads are timed for the loading profile in the log (hostLogLoadProfile,          #
+// # debug.c): where the seconds before a level's first frame go.                               #
+// ##############################################################################################
 // Time spent opening and reading game files, for the loading profile (hostLogLoadProfile).
 static unsigned long long sOpenTicks, sReadTicks, sReadBytes;
 static unsigned long sOpenCount, sReadCount;
@@ -56,17 +69,24 @@ void hostFileStats(unsigned long* pOpens, unsigned long long* pOpenTicks, unsign
     *pReadBytes = sReadBytes;
 }
 
-// File cache pack ------------------------------------------------------------------------------
-//
-// Opening a file on the SD card walks its folder, and ObjectData holds about 1800 files: an open
-// took about 157 ms on the console (642 opens, 101 of the 125 seconds before Good Egg's first
-// frame, CIA 0.11.5). The PC converter (tools/3ds/convert_smg_files.py) writes every game file
-// and native model up to 2 MB into sdmc:/smg/cache/pack.bin, and lists every file of both trees
-// in index.bin. A listed path opens at its offset in the pack, or from the card for a larger
-// file; a path under those trees that is not listed does not exist, and fails with no folder walk.
-// Copying files into the pack on the console was tried and dropped: its SD writes ran at about
-// 45 KB/s, and the first boot took 11 minutes (CIA 0.11.7).
-
+// ##############################################################################################
+// # File cache pack                                                                            #
+// #                                                                                            #
+// # Opening a file on the SD card walks its folder, and ObjectData holds about 1800 files: an  #
+// # open took about 157 ms on the console (642 opens, 101 of the 125 seconds before Good Egg's #
+// # first frame, CIA 0.11.5). The PC converter (tools/3ds/convert_smg_files.py) writes every   #
+// # game file and native model up to 2 MB into sdmc:/smg/cache/pack.bin, and lists every file  #
+// # of both trees in index.bin.                                                                #
+// #                                                                                            #
+// # A listed path opens at its offset in the pack, or from the card for a larger file; a path  #
+// # under those trees that is not listed does not exist, and fails with no folder walk.        #
+// # Copying files into the pack on the console was tried and dropped: its SD writes ran at     #
+// # about 45 KB/s, and the first boot took 11 minutes (CIA 0.11.7).                            #
+// #                                                                                            #
+// # The index is a hash table of the paths (case ignored, as FAT does). Reads from the pack    #
+// # share one FILE, so each seek and read holds sPackLock: another thread cannot move the      #
+// # position in between.                                                                       #
+// ##############################################################################################
 #define PACK_DIR "sdmc:/smg/cache"
 #define PACK_PATH PACK_DIR "/pack.bin"
 #define PACK_INDEX_PATH PACK_DIR "/index.bin"
@@ -176,6 +196,14 @@ static FILE* openUnpacked(const char* path, unsigned long* pSize) {
     return file;
 }
 
+// ##############################################################################################
+// # Opening and reading a game file                                                            #
+// #                                                                                            #
+// # A handle is either a packed file (an offset and size in the pack) or a file of its own on  #
+// # the card. Reads past the end of a packed file are cut to its size, as fread would do for a #
+// # real file. The SD card is read without stdio's buffer: the game's reads are large, and a   #
+// # buffer only copies them twice.                                                             #
+// ##############################################################################################
 void* hostFileOpen(const char* path) {
     unsigned long long start = svcGetSystemTick();
     if (!sPackTried) {
@@ -238,8 +266,13 @@ void hostFileClose(void* file) {
     free(f);
 }
 
-// Plain files on the SD card (the emulated Wii NAND, see rvl/nand.cpp) -------------------
-
+// ##############################################################################################
+// # Plain files on the SD card                                                                 #
+// #                                                                                            #
+// # The emulated Wii NAND (rvl/nand.cpp: the saves, in sdmc:/smg/nand) and the port's own      #
+// # files (sdmc:/smg/port, rvl/port_data.cpp): opened, created, renamed and deleted like       #
+// # normal files, creating the folders on the way.                                             #
+// ##############################################################################################
 // Creates every missing directory leading to path (not path itself).
 static void makeParentDirs(const char* path) {
     char buf[256];
@@ -311,8 +344,12 @@ int hostFileRename(const char* from, const char* to) {
     return rename(from, to) == 0 ? 0 : -1;
 }
 
-// Capture files (gx/capture.cpp): written sequentially with a large buffer ------------------
-
+// ##############################################################################################
+// # Capture files                                                                              #
+// #                                                                                            #
+// # Debug captures of the GPU commands (gx/capture.cpp): written in order with a large buffer, #
+// # since SD writes are slow.                                                                  #
+// ##############################################################################################
 void* hostCaptureOpen(const char* path) {
     FILE* file = fopen(path, "wb");
     if (file != NULL) {

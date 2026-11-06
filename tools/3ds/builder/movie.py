@@ -35,6 +35,13 @@ X264 = ["-c:v", "libx264", "-profile:v", "baseline", "-level", "2.1", "-preset",
         "-maxrate", "700k", "-bufsize", "1400k", "-x264-params", "ref=1:keyint=120:min-keyint=30:aud=1:repeat-headers=1"]
 
 
+# ##############################################################################################
+# # Reading a THP and encoding its pictures                                                    #
+# #                                                                                            #
+# # The THP's header, components and frames; its pictures (Motion JPEG on the Wii) are encoded #
+# # again by ffmpeg as H.264 at the decoder's size, one picture every other frame (30 a        #
+# # second), with the settings above.                                                          #
+# ##############################################################################################
 class MovieError(Exception):
     pass
 
@@ -170,6 +177,12 @@ def pad(data, align):
     return data + b"\0" * (-len(data) % align)
 
 
+# ##############################################################################################
+# # Writing the 3DS movie                                                                      #
+# #                                                                                            #
+# # The THP's layout with the H.264 pictures in place of the JPEG ones and the audio records   #
+# # made little-endian (the layout is in the docstring above).                                 #
+# ##############################################################################################
 def convert(src, dst, ffmpeg=None, progress=None):
     """progress(fraction) while encoding (most of the time) and writing."""
     ffmpeg = find_ffmpeg(ffmpeg)

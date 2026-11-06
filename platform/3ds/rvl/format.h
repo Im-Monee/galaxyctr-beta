@@ -1,15 +1,17 @@
 #pragma once
 
-// printf-style formatting that follows Metrowerks MSL behaviour, shared by the narrow
-// (printf.cpp) and wide (wchar.cpp) functions of the game world.
-//
-// Differences from newlib that the game relies on:
-// - a null %s or %ls argument prints nothing (newlib prints "(null)");
-// - wide strings use the game's 16-bit wchar_t.
-//
-// Each conversion is formatted with the C library's snprintf, so field widths, precision
-// and flags behave as usual. The game's calls to sprintf and friends are redirected here
-// with the linker's --wrap option (see printf.cpp); __real_snprintf is the library's own.
+// ##############################################################################################
+// # printf with the Wii's behaviour                                                            #
+// #                                                                                            #
+// # printf-style formatting that follows Metrowerks MSL behaviour, shared by the narrow        #
+// # (printf.cpp) and wide (wchar.cpp) functions of the game world. Differences from newlib     #
+// # that the game relies on: a null %s or %ls argument prints nothing (newlib prints           #
+// # "(null)"); wide strings use the game's 16-bit wchar_t.                                     #
+// #                                                                                            #
+// # Each conversion is formatted with the C library's snprintf, so field widths, precision and #
+// # flags behave as usual. The game's calls to sprintf and friends are redirected here with    #
+// # the linker's --wrap option (see printf.cpp); __real_snprintf is the library's own.         #
+// ##############################################################################################
 
 #include <stdarg.h>
 #include <stddef.h>

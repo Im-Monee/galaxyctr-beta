@@ -6,6 +6,7 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DrawUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (DirectDraw.hpp, SystemUtil.hpp, JUTTexture3DS.hpp).
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "Game/Util/SystemUtil.hpp"
@@ -96,6 +97,8 @@ void DepthOfFieldBlur::draw() const {
 }
 
 void DepthOfFieldBlur::drawZAlphaTex() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -177,6 +180,8 @@ void DepthOfFieldBlur::drawZAlphaTex() const {
 }
 
 void DepthOfFieldBlur::createBlurTexture() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -188,6 +193,8 @@ void DepthOfFieldBlur::createBlurTexture() const {
 }
 
 void DepthOfFieldBlur::drawFinal() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

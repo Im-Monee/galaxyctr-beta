@@ -111,6 +111,7 @@ bool THPSimplePlayerWrapper::init(s32 audio) {
 }
 
 void THPSimplePlayerWrapper::quit() {
+    // 3DS: stops the video decoder (host/movie.c).
 #ifdef __3DS__
     THPNativeMovieEnd();
 #endif
@@ -143,6 +144,7 @@ bool THPSimplePlayerWrapper::close() {
             if (!mReadProgress) {
                 mOpen = 0;
                 DVDClose(&mFileInfo);
+                // 3DS: stops the video decoder (host/movie.c).
 #ifdef __3DS__
                 THPNativeMovieEnd();
 #endif
@@ -311,6 +313,7 @@ s32 THPSimplePlayerWrapper::decode(s32 audio) {
         u32* compSize = (u32*)mReadBuffer[mNextDecodeIndex].ptr + 2;
         u8* ptr = mReadBuffer[mNextDecodeIndex].ptr + mFrameComp.numComponents * 4 + 8;
 
+        // 3DS: the movie's sound waits for the audio output to run.
 #ifdef __3DS__
         if (mAudioExist && THPNativeAudioActive()) {
 #else
@@ -324,6 +327,7 @@ s32 THPSimplePlayerWrapper::decode(s32 audio) {
                 for (s32 i = 0; i < mFrameComp.numComponents; i++) {
                     switch (mFrameComp.frameComp[i]) {
                     case 0:
+                        // 3DS: the picture's size, for the video decoder.
 #ifdef __3DS__
                         sVideoSize = *compSize;
 #endif
@@ -356,6 +360,7 @@ s32 THPSimplePlayerWrapper::decode(s32 audio) {
             for (s32 i = 0; i < mFrameComp.numComponents; i++) {
                 switch (mFrameComp.frameComp[i]) {
                 case 0:
+                    // 3DS: the picture's size, for the video decoder.
 #ifdef __3DS__
                     sVideoSize = *compSize;
 #endif
@@ -745,6 +750,7 @@ bool THPSimplePlayerWrapper::tryFinishDvdOpen() {
     }
 
     setupParams();
+    // 3DS: starts the video decoder (host/movie.c).
 #ifdef __3DS__
     THPNativeMovieBegin(mVideoInfo.videoType);
 #endif

@@ -1,10 +1,15 @@
 #pragma once
 
-// The TEV translation (tev_compile.cpp; tools/3ds/native/mat.py does the same for the .n3d
-// files): combiner terms and halves, and how one Wii TEV function
-// (d +/- ((1 - c) * a + c * b) + bias) * scale becomes 3DS combiner stages, with the
-// approximations the PICA needs. Nothing here reads GX state.
-
+// ##############################################################################################
+// # The TEV translation: terms and halves                                                      #
+// #                                                                                            #
+// # The Wii combines textures and colours in up to 16 TEV stages, each computing (d +/- ((1 -  #
+// # c) * a + c * b) + bias) * scale for colour and for alpha. The 3DS has 6 combiner stages,   #
+// # each a fixed function of up to 3 inputs (replace, modulate, add, subtract,                 #
+// # interpolate...). Here one TEV function becomes one or more combiner stages, with the       #
+// # approximations the PICA needs. Used by tev_compile.cpp; the converter does the same for    #
+// # the .n3d materials (tools/3ds/native/mat.py). Nothing here reads GX state.                 #
+// ##############################################################################################
 #include "host.h"
 #include <revolution/types.h>
 
@@ -56,6 +61,13 @@ enum {
     WRITE_DEPTH = 0x10,
 };
 
+// ##############################################################################################
+// # Terms and halves                                                                           #
+// #                                                                                            #
+// # A Term is one input of a combiner function (a source and an operand, or a constant); a     #
+// # Half is the colour or the alpha part of one combiner stage. The constructors below         #
+// # simplify 0 and 1, which are written as constants but need no constant register.            #
+// ##############################################################################################
 // One input of a combiner function.
 struct Term {
     u8 src;        // PICA source
@@ -144,6 +156,14 @@ static inline bool readsPrevious(const Term& t) {
     return t.previous;
 }
 
+// ##############################################################################################
+// # One TEV function as combiner stages                                                        #
+// #                                                                                            #
+// # The lerp first, in as few stages as its inputs allow (a constant 0 or 1 makes it a         #
+// # multiply or a single input), then d added or subtracted, the bias, and the scale. The      #
+// # combiners take no negative inputs: a negative constant d is handled by computing the rest  #
+// # and subtracting |d| after it.                                                              #
+// ##############################################################################################
 // Builds the combiner functions for (d +/- lerp(a, b, c) + bias) * scale. Returns the count.
 static inline u32 buildHalves(Term a, Term b, Term c, Term d, u32 bias, bool subtract, u32 scale, bool alpha, Half* out) {
     u32 n = 0;
@@ -317,6 +337,12 @@ static inline u32 buildHalves(Term a, Term b, Term c, Term d, u32 bias, bool sub
     return n;
 }
 
+// ##############################################################################################
+// # Comparisons                                                                                #
+// #                                                                                            #
+// # TEV's compare functions (a > b ? c : d and the like) have no combiner equivalent; the      #
+// # common forms are approximated with arithmetic, as explained below.                         #
+// ##############################################################################################
 // PICA has no GX packed-component comparator. For the common 8-bit forms, approximate its
 // conditional C + D output with an arithmetic mask. GT uses saturating A-B; EQ uses
 // A*B + (1-A)*(1-B), which is exact for binary mask inputs and fades smoothly between them.
@@ -350,6 +376,13 @@ static inline u32 buildCompareHalves(Term a, Term b, Term c, Term d, u32 mode, b
     return 1 + buildHalves(zero(), c, mask, d, 0, false, 0, alpha, out + 1);
 }
 
+// ##############################################################################################
+// # Swap tables                                                                                #
+// #                                                                                            #
+// # TEV can reorder the channels of a texture or of the rasterized colour (swap tables); the   #
+// # combiners can read a single channel as grey through the operand, which covers the          #
+// # reorderings the game uses.                                                                 #
+// ##############################################################################################
 static const u8 kColorChannelOp[4] = {OP_RGB_R, OP_RGB_G, OP_RGB_B, OP_RGB_ALPHA};
 static const u8 kAlphaChannelOp[4] = {OP_A_R, OP_A_G, OP_A_B, OP_A_ALPHA};
 
@@ -363,6 +396,12 @@ static inline u8 swappedColorOp(const u32* ch) {
     return OP_RGB_COLOR;
 }
 
+// ##############################################################################################
+// # Writing a stage                                                                            #
+// #                                                                                            #
+// # A combiner stage has one constant colour, shared by its colour and alpha halves: two       #
+// # halves needing different constants in one stage cannot both be exact.                      #
+// ##############################################################################################
 // Writes a half into a combiner stage. Returns false if its constant differs from the one
 // the stage already holds.
 static inline bool storeHalf(const Half& h, bool alpha, HostGfxStage& stage, bool& hasColorConst, bool& hasAlphaConst) {

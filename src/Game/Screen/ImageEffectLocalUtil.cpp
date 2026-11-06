@@ -4,6 +4,7 @@
 #include "Game/Screen/BloomEffect.hpp"
 #include "Game/Util/Color.hpp"
 #include "Game/Util/DrawUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -11,6 +12,8 @@
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SystemUtil.hpp"
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values; JUTTexture3DS.hpp, GPU textures for
+// JUTTextures.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
@@ -18,6 +21,8 @@
 
 namespace {
     void setTextureTrans(f32 x, f32 y) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         TPos3f transMtx;
         transMtx.makeTrans(x, y, 0.0f);
@@ -187,6 +192,8 @@ void ImageEffectLocalUtil::drawTexture(JUTTexture* pTexture, s32 divisions, s32 
 }
 
 void ImageEffectLocalUtil::sendTextureVertex(s32 divisions, s32 tile) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

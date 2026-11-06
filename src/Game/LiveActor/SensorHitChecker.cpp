@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -68,6 +69,7 @@ void SensorHitChecker::initGroup(HitSensor* pSensor) {
 }
 
 void SensorHitChecker::movement() {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 44).
 #ifdef __3DS__
     SysTimer3DS timer3DS(44);
 #endif

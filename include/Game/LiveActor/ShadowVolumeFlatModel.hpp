@@ -13,6 +13,7 @@ public:
     inline virtual ~ShadowVolumeFlatModel();
     virtual void draw() const;
     virtual void loadModelDrawMtx() const;
+    // 3DS: the volume drawn through DirectDraw instead of a GX display list.
 #ifdef __3DS__
     virtual void drawShape() const;
 #endif

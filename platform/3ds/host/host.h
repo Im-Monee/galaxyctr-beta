@@ -1,12 +1,25 @@
 #pragma once
 
-// The only interface between the game world (compiled with the Wii ABI) and the host
-// world (compiled against libctru). Keep it to plain C types: no enums, no libctru types.
+// ##############################################################################################
+// # The host interface                                                                         #
+// #                                                                                            #
+// # The only interface between the game world (the decompiled game and the Wii SDK             #
+// # replacements of platform/3ds/rvl, compiled with the Wii's ABI) and the host world (this    #
+// # folder, compiled against libctru and citro3d): DETAILS.md, section 4. Keep it to plain C   #
+// # types: no enums, no libctru types, so both worlds read the same layout.                    #
+// ##############################################################################################
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// ##############################################################################################
+// # Log and fatal errors                                                                       #
+// #                                                                                            #
+// # hostLog writes to the bottom screen and to sdmc:/smg/log.txt (main.c); hostFatal stops the #
+// # game with a message. Wii SDK functions the port does not implement report themselves once  #
+// # (hostStubHit).                                                                             #
+// ##############################################################################################
 // Logging. Messages go to the bottom-screen console and to sdmc:/smg/log.txt.
 void hostLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 void hostVLog(const char* fmt, __builtin_va_list args);
@@ -17,6 +30,13 @@ void hostFatal(const char* fmt, ...) __attribute__((format(printf, 1, 2), noretu
 // Called by every unimplemented Wii SDK function the first time it runs.
 void hostStubHit(const char* name);
 
+// ##############################################################################################
+// # Main loop and controls                                                                     #
+// #                                                                                            #
+// # hostMainLoop runs once per game frame (main.c): it reads the buttons, the circle pad, the  #
+// # C-Stick and the touch screen into HostInput, which rvl/kpad.cpp turns into the Wii Remote  #
+// # and Nunchuk the game expects.                                                              #
+// ##############################################################################################
 // Returns true while the app should keep running (false once the user quits).
 int hostMainLoop(void);
 
@@ -45,6 +65,13 @@ typedef struct {
 } HostInput;
 void hostInputGet(HostInput* pInput);
 
+// ##############################################################################################
+// # Debug options                                                                              #
+// #                                                                                            #
+// # Options read from sdmc:/smg/debug.txt (debug.c) for development builds: a start stage,     #
+// # timed screenshots and captures, A/B switches that turn parts of the renderer off to time   #
+// # them. Showcase and beta builds ignore the file (showcase.h).                               #
+// ##############################################################################################
 // Debug options from sdmc:/smg/debug.txt (debug.c).
 void hostDebugInit(void);
 // True while the "turbo" retraces run (retraces come as fast as possible, nothing is drawn).
@@ -91,7 +118,7 @@ int hostDebugEnvSkip(void);
 int hostDebugNative(void);  // native=1: J3D models drawn from the .n3d files (block N)
 // debug.txt "lcache=0": display lists are not drawn from the display list cache.
 int hostDebugListCache(void);
-int hostDebugGpuPath(void);
+int hostDebugGpuPath(void);  // gpu=0 (or gpu=f<frame>): draws sent without the GPU path, for A/B checks
 unsigned long hostDebugDrawDistance(void);  // drawdist=<units>: 3D draws beyond are dropped (0: off)
 int hostDebugAudio(void);                // audio=0: no sound output (on by default)
 int hostDebugSky(void);                  // sky=0: sky actors not drawn (drawn by default)
@@ -99,7 +126,25 @@ int hostDebugJ3dSkip(void);              // j3dskip=1: J3D model packets not dra
 int hostDebugGxSkip(void);               // gxskip=1: nothing sent to the GPU, 2: draws not prepared, 3: culled only, 4: + setups (A/B timing)
 int hostDebugAir(void);                  // air=0: air actors (atmosphere) are not drawn
 unsigned long hostDebugAudioDump(void);  // audiodump=<seconds>: output written to sdmc:/smg/audio.wav
+int hostDebugCpuClip(void);  // cpuclip=1: native draws crossing the guard band or the near plane are clipped on the CPU
+int hostDebugGpuKick(void);  // gpukick=0: the GPU starts on a frame only at its end (C3D_FrameEnd)
+int hostDebugFarClip(void);  // farclip=<m>: actors clip past this many metres (default the Wii's; 96 MB: 300; 0: the Wii distances)
+int hostDebugMerge(void);  // merge=0: every draw is its own draw call
+// debug.txt "shot=f350": the frame number when that frame is due, else 0.
+unsigned long hostDebugShotFrameDue(void);
+// Stage and scenario to start after the boot screens ("stage" option); 0 when not set.
+int hostDebugStartStage(const char** pName, long* pScenario);
+// Non-zero when the galaxy's opening camera is skipped (debug.txt "stage=" without "opening=1").
+int hostDebugSkipOpeningCamera(void);
+// debug.txt demo= (or a showcase build's SMG_START_DEMO): story demos to play at the debug start
+// stage, or NULL.
+const char* hostDebugStartDemo(void);
 
+// ##############################################################################################
+// # Audio                                                                                      #
+// #                                                                                            #
+// # The game's mixed sound (rvl/ai.cpp) played through the 3DS DSP (audio.c).                  #
+// ##############################################################################################
 // Audio output (audio.c): stereo PCM16 at the given rate; 0 when there is no sound.
 int hostAudioStart(unsigned long rate);
 // Non-zero once the output plays (the game's audio callbacks run).
@@ -111,6 +156,12 @@ void hostAudioQueue(const short* pSamples, unsigned long frames);
 // Stops the output and its ndsp thread (at quit).
 void hostAudioShutdown(void);
 
+// ##############################################################################################
+// # Movies                                                                                     #
+// #                                                                                            #
+// # The converted THP movies through the New 3DS hardware video decoder (movie.c), for the     #
+// # game's player (THPSimplePlayerWrapper).                                                    #
+// ##############################################################################################
 // Movies (movie.c): H.264 pictures through the New 3DS video decoder into a texture.
 // Non-zero on a New 3DS (the decoder's console).
 int hostMovieSupported(void);
@@ -123,22 +174,12 @@ int hostMovieDecode(const unsigned char* data, unsigned long size);
 void* hostMovieTexture(void);
 // Stops the decoder and frees its buffers and textures.
 void hostMovieEnd(void);
-int hostDebugCpuClip(void);  // cpuclip=1: native draws crossing the guard band or the near plane are clipped on the CPU
-int hostDebugGpuKick(void);  // gpukick=0: the GPU starts on a frame only at its end (C3D_FrameEnd)
-int hostDebugFarClip(void);  // farclip=<m>: actors clip past this many metres (default the Wii's; 96 MB: 300; 0: the Wii distances)
-int hostDebugMerge(void);  // merge=0: every draw is its own draw call  // gpu=0: transform and light vertices on the CPU
-// debug.txt "shot=f350": the frame number when that frame is due, else 0.
-unsigned long hostDebugShotFrameDue(void);
-// Stage and scenario to start after the boot screens ("stage" option); 0 when not set.
-int hostDebugStartStage(const char** pName, long* pScenario);
-// Non-zero when the galaxy's opening camera is skipped (debug.txt "stage=" without "opening=1").
-int hostDebugSkipOpeningCamera(void);
 
-// Sequential binary output for frame captures (fs.c).
-void* hostCaptureOpen(const char* path);
-void hostCaptureWrite(void* file, const void* pData, unsigned long size);
-void hostCaptureClose(void* file);
-
+// ##############################################################################################
+// # Quitting, and the game world's entry points                                                #
+// #                                                                                            #
+// # Functions of the game world that the host calls at startup (main.c) and at quit.           #
+// ##############################################################################################
 // Closes the log and exits the app.
 void hostQuit(void) __attribute__((noreturn));
 
@@ -149,6 +190,12 @@ void rvlLoadPortData(void);
 // Called by hostQuit so registered Wii shutdown callbacks run before app teardown.
 void rvlShutdown(void);
 
+// ##############################################################################################
+// # Memory                                                                                     #
+// #                                                                                            #
+// # The application's heaps (system.c). The linear heap is memory the GPU and the DSP can      #
+// # read: textures, vertex buffers, audio output, the movie decoder.                           #
+// ##############################################################################################
 // Memory. hostGetFreeMemory returns the bytes still available to the application.
 unsigned long hostGetFreeMemory(void);
 // Deepest use of the main (game) thread's stack so far, in bytes.
@@ -163,6 +210,12 @@ void hostGetHeapRange(unsigned long* pStart, unsigned long* pEnd);
 // Memory the GPU can read (never freed by its users here).
 void* hostLinearAlloc(unsigned long size);
 
+// ##############################################################################################
+// # Clock, Mii data                                                                            #
+// #                                                                                            #
+// # Time in the Wii's terms (system.c), and the console's own Mii database and Mii parts for   #
+// # the game's Mii faces (rvl/rfl.cpp).                                                        #
+// ##############################################################################################
 // Wall clock in milliseconds since 2000-01-01 (the Wii's epoch), and its conversion to a date.
 long long hostGetMillisecondsSince2000(void);
 void hostGetCalendarTime(long long msecSince2000, int* pYear, int* pMonth, int* pDay, int* pHour, int* pMinute,
@@ -173,6 +226,11 @@ int hostMiiDatabase(void* pData, unsigned long capacity, unsigned long* pSize);
 // Returns the system Mii component archive (CFL_Res.dat), kept alive for the process.
 int hostCflResource(const void** data, unsigned long* size);
 
+// ##############################################################################################
+// # Threads                                                                                    #
+// #                                                                                            #
+// # Host threads and semaphores (thread.c).                                                    #
+// ##############################################################################################
 // Threads. Game threads all run on the same core and priority; the game-side scheduler
 // guarantees that only one of them runs at a time, like on the single-core Wii.
 typedef void (*HostThreadEntry)(void* arg);
@@ -184,6 +242,12 @@ void* hostSemaphoreCreate(void);
 void hostSemaphoreWait(void* sem);
 void hostSemaphoreSignal(void* sem);
 
+// ##############################################################################################
+// # Interrupts                                                                                 #
+// #                                                                                            #
+// # The Wii's hardware interrupts as bits (thread.c): raised by host threads and callbacks,    #
+// # handled by the game world where it enables interrupts (rvl/os_thread.cpp).                 #
+// ##############################################################################################
 // Interrupt sources, delivered to the game as a bitmask of pending interrupts.
 #define HOST_IRQ_TIMER 1u
 #define HOST_IRQ_VBLANK 2u
@@ -205,10 +269,12 @@ void hostInterruptSetTimer(unsigned long long deadlineTick);
 unsigned long hostVBlankCount(void);
 // System tick of the last top-screen vertical blank.
 unsigned long long hostVBlankTick(void);
-// debug.txt demo= (or a showcase build's SMG_START_DEMO): story demos to play at the debug start
-// stage, or NULL.
-const char* hostDebugStartDemo(void);
 
+// ##############################################################################################
+// # System language                                                                            #
+// #                                                                                            #
+// # The console's language, for the game's language choice.                                    #
+// ##############################################################################################
 // The 3DS system language, as one of these values (other languages are returned as-is).
 #define HOST_LANGUAGE_JAPANESE 0
 #define HOST_LANGUAGE_ENGLISH 1
@@ -218,6 +284,12 @@ const char* hostDebugStartDemo(void);
 #define HOST_LANGUAGE_SPANISH 5
 int hostGetSystemLanguage(void);
 
+// ##############################################################################################
+// # Game files (the emulated disc)                                                             #
+// #                                                                                            #
+// # The converted game files under sdmc:/smg/files and the file cache pack (fs.c), read by the #
+// # Wii disc functions of rvl/dvd.cpp.                                                         #
+// ##############################################################################################
 // Files of the emulated Wii disc. hostFilesRoot is the folder that holds the disc's files.
 const char* hostFilesRoot(void);
 void* hostDirOpen(const char* path);
@@ -234,6 +306,12 @@ void hostFileStats(unsigned long* pOpens, unsigned long long* pOpenTicks, unsign
 void hostLogLoadProfile(void);
 void hostFileClose(void* file);
 
+// ##############################################################################################
+// # Plain files on the SD card                                                                 #
+// #                                                                                            #
+// # Files by full path (fs.c): the emulated Wii NAND with the saves (rvl/nand.cpp), the port's #
+// # data files, and debug captures.                                                            #
+// ##############################################################################################
 // Plain files on the SD card, by full path (used for the emulated Wii NAND).
 // hostPathType: 0 missing, 1 file, 2 directory. Access: 1 read, 2 write, 3 read/write.
 int hostPathType(const char* path);
@@ -249,6 +327,18 @@ int hostDirCreate(const char* path);
 int hostFileDelete(const char* path);
 int hostFileRename(const char* from, const char* to);
 
+// Sequential binary output for frame captures (fs.c).
+void* hostCaptureOpen(const char* path);
+void hostCaptureWrite(void* file, const void* pData, unsigned long size);
+void hostCaptureClose(void* file);
+
+// ##############################################################################################
+// # Rendering: vertices and pixel state                                                        #
+// #                                                                                            #
+// # The renderer's drawing interface (gfx.c). The values are the 3DS GPU's own, already        #
+// # translated from the Wii's by the game world (gx/, GXToCitro3D.hpp): the host side only     #
+// # hands them to citro3d.                                                                     #
+// ##############################################################################################
 // Rendering on the top screen (gfx.c). Positions are in clip space; colour is RGBA. Texture
 // unit 0 samples with (s0, t0), units 1 and 2 with (s1, t1).
 typedef struct {
@@ -300,6 +390,13 @@ typedef struct {
 // enable 0 turns it off. Taken by the following draws; reset at each frame start.
 void hostGfxSetStencilAmbient(int enable, int func, int ref, int mask, int writeMask, int fail, int zfail, int zpass);
 
+// ##############################################################################################
+// # Textures                                                                                   #
+// #                                                                                            #
+// # Textures in linear memory, made from decoded RGBA8 pixels or from texels the converter     #
+// # already wrote in the GPU's layout. A texture can be freed only after the GPU has finished  #
+// # every frame that reads it: hostGfxTextureDestroy waits for that, the frame ids tell when.  #
+// ##############################################################################################
 // Creates a texture from RGBA8 pixels (0xRRGGBBAA, row by row) of width x height, placed in
 // a texture of potWidth x potHeight (powers of two). Wrap: 0 clamp, 1 repeat, 2 mirror. Filters:
 // 1 linear, 0 nearest, for magnification and minification (the base level of GX's min filter).
@@ -323,6 +420,12 @@ unsigned long hostGfxLinearFree(void);
 void* hostGfxTextureCreateNative(const void* pData, int nativeFormat, unsigned width, unsigned height, int wrapS, int wrapT, int linear,
                                  int minLinear);
 
+// ##############################################################################################
+// # Drawing                                                                                    #
+// #                                                                                            #
+// # Draws of vertices already in clip space (made on the CPU: 2D layouts, effects, particles), #
+// # and the Wii frame buffer reads (EFB peeks).                                                #
+// ##############################################################################################
 void hostGfxInit(void);
 // Draws a triangle list.
 #define HOST_GFX_TRIANGLES 0
@@ -339,6 +442,13 @@ int hostGfxDrawAgain(const unsigned short* pIndices, unsigned long indexCount, i
 // Reads one emulated Wii framebuffer pixel. Returns nonzero when the coordinate is valid.
 int hostGfxPeekEfb(unsigned short x, unsigned short y, int depth, unsigned long* pValue);
 
+// ##############################################################################################
+// # GPU-transformed models                                                                     #
+// #                                                                                            #
+// # The native models (gx/native.cpp): their vertices stay in model space in the vertex arena, #
+// # and the vertex shader (shaders/gx.v.pica) transforms, lights and texture-maps them with    #
+// # the matrices and lights of HostGfxTransform, as the Wii's XF unit does.                    #
+// ##############################################################################################
 // Draws whose vertices the GPU transforms, lights and texture-maps (shaders/gx.v.pica): the
 // vertex carries model-space data, the transform the GX settings as shader uniforms.
 typedef struct {
@@ -380,6 +490,11 @@ void hostGfxArenaReset(void);
 // The vertex at an arena index returned by hostGfxArenaAlloc (valid while the allocation is).
 HostGfxModelVertex* hostGfxArenaVertex(unsigned long index);
 
+// ##############################################################################################
+// # Clipping before the GPU                                                                    #
+// #                                                                                            #
+// # The PICA clips only against the near and far planes (clip.c).                              #
+// ##############################################################################################
 // Clipping before the GPU (clip.c): the PICA clips only against near and far, and a triangle
 // crossing the camera plane far off to the side stalls it. Polygons are clipped against the near
 // plane and a lateral guard band of HOST_CLIP_GUARD screens.
@@ -403,6 +518,12 @@ typedef void (*HostClipLerp)(void* out, const void* a, const void* b, float t);
 // vertex count of the clipped polygon, left in pPolygon (0: nothing remains).
 int hostClipPolygon(unsigned char* pPolygon, int count, unsigned size, HostClipLerp lerp, unsigned char* pScratch);
 
+// ##############################################################################################
+// # Drawing models                                                                             #
+// #                                                                                            #
+// # Draws of arena vertices with their transform; the indices of persistent models stay in     #
+// # their own buffer like their vertices.                                                      #
+// ##############################################################################################
 // Draws count vertices of an arena allocation starting at first: first + pIndices[i], or the
 // count vertices in order without indices. Draws passing the same transformVersion must pass
 // the same transform (it is then not compared again).
@@ -421,6 +542,12 @@ void hostGfxDrawIndexed(unsigned long first, const unsigned short* pIndices, uns
 // Citro3D command buffer before the frame is submitted.
 int hostGfxDrawNativeIndexed(unsigned long first, const unsigned short* pIndices, unsigned long count, const HostGfxState* pState,
                              const HostGfxTransform* pTransform, unsigned long transformVersion);
+// ##############################################################################################
+// # Frames and pacing                                                                          #
+// #                                                                                            #
+// # Frame start and end, and the pacing that decides which frames are drawn when the game runs #
+// # behind the clock (gfx.c, DETAILS.md section 10).                                           #
+// ##############################################################################################
 // Ends the frame; the next one starts cleared to clearColor (0xRRGGBBAA).
 void hostGfxClearFrame(unsigned long clearColor);
 void hostGfxEndFrame(unsigned long clearColor);
@@ -449,6 +576,11 @@ int hostGfxFallingBehind(void);  // the game is drawing one loop in three: draws
 void hostGfxTakeSubmitStats(unsigned long* pCalls, unsigned long long* pStateTicks, unsigned long long* pDrawTicks,
                             unsigned long* pVectors, unsigned long* pBinds);
 
+// ##############################################################################################
+// # Ticks                                                                                      #
+// #                                                                                            #
+// # The system tick, for timing.                                                               #
+// ##############################################################################################
 // Free-running tick counter (268 MHz on 3DS) and its frequency.
 unsigned long long hostGetTick(void);
 unsigned long long hostGetTickFrequency(void);

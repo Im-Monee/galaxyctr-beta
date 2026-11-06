@@ -3,6 +3,7 @@
 #include "Game/Map/WhirlPoolAccelerator.hpp"
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -116,6 +117,7 @@ void WhirlPool::draw() const {
     nextU1 += 1.0f / 6.0f;
 
     drawPlane(1.0f, 0.0f, 0.5f, 0.70710677f, u0, nextU0, u1, nextU1);
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif
@@ -222,6 +224,8 @@ void WhirlPool::drawPlane(f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 u1, f32 u2
 }
 
 void WhirlPool::loadMaterial() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);

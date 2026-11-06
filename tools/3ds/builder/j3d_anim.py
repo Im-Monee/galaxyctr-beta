@@ -17,6 +17,13 @@ def is_j3d_animation(data):
     return data[:4] == J3D_ANIM_MAGIC
 
 
+# ##############################################################################################
+# # One converter per animation block                                                          #
+# #                                                                                            #
+# # Each J3D animation file holds one block (joints, texture matrices, colours, texture        #
+# # patterns, visibility); its header and value tables are swapped by the block's layout       #
+# # (BLOCKS).                                                                                  #
+# ##############################################################################################
 def convert_tables(buf, block, size, tables, counts):
     """tables: (header offset, table kind) pairs. counts: header offset -> element count for
     tables whose elements mix sizes."""

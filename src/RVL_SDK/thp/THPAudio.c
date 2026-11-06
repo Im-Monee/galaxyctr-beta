@@ -1,4 +1,5 @@
 #include "revolution/thp.h"
+// 3DS: the decoder's helpers declared static before use, as the port's C compiler requires.
 #ifdef __3DS__
 
 static s32 __THPAudioGetNewSample(THPAudioDecodeInfo* info);

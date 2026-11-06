@@ -1,6 +1,10 @@
-// Typed compatibility entry points for Wii services without a 3DS hardware counterpart.
-// Keeping the Wii ABI signatures here prevents generated int(void) placeholders from
-// corrupting arguments or making unsupported operations look successful.
+// ##############################################################################################
+// # Wii services without a 3DS counterpart                                                     #
+// #                                                                                            #
+// # Typed entry points for what the 3DS does not have. Keeping the Wii's signatures prevents   #
+// # untyped placeholders from corrupting arguments, and each answers as the Wii would when the #
+// # service is unavailable, so the game takes its own fallback path.                           #
+// ##############################################################################################
 
 #include "host.h"
 #include "rvl_internal.h"
@@ -28,6 +32,12 @@ OSErrorHandler sErrorHandlers[OS_ERROR_MAX];
 OSPowerCallback sPowerCallback;
 bool sShutdownCallbacksRun;
 
+// ##############################################################################################
+// # Shutdown, reset and errors                                                                 #
+// #                                                                                            #
+// # The game's shutdown functions run once, when the player quits (host/main.c, hostQuit       #
+// # through rvlShutdown). Resets and returning to the Wii menu quit the app.                   #
+// ##############################################################################################
 void runShutdownCallbacks() {
     if (sShutdownCallbacksRun) {
         return;
@@ -122,6 +132,13 @@ void PPCMtwpar(u32 value) {
     (void)value;
 }
 
+// ##############################################################################################
+// # WiiConnect24, RSO and the THP decoder                                                      #
+// #                                                                                            #
+// # WiiConnect24 (the Wii's messages, the game's letters to the message board) answers         #
+// # "disabled"; RSO (loadable modules) is not used by the game and fails; the THP decoder is   #
+// # not needed: the movies go through the New 3DS video decoder.                               #
+// ##############################################################################################
 void VFInitEx(void* work, u32 size) {
     (void)work;
     (void)size;

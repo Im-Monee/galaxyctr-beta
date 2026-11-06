@@ -209,6 +209,8 @@ void Rock::control() {
         return;
     }
 
+    // 3DS: a hidden rolling rock far from the player skips its movement (CPU time); it moves again
+    // when it comes near.
 #ifdef __3DS__
     if (isNerve(GET_NERVE(Rock, RockNrvMove)) && MR::isHiddenModel(this) &&
         !MR::isNearPlayerAnyTime(this, 3000.0f)) {

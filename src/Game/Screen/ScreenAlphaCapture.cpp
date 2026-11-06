@@ -33,6 +33,7 @@ void ScreenAlphaCapture::createScreenAlpha(s32 textureIndex, f32 screenScale) {
 }
 
 void ScreenAlphaCapture::captureScreenAlpha(s32 textureIndex) {
+    // 3DS: the capture through the GPU's copy (rvl/jut_texture.cpp); no copy filter to set.
 #ifdef __3DS__
     if (textureIndex >= 0 && textureIndex < ARRAY_SIZE(mTexture) && mTexture[textureIndex] != nullptr) {
         mTexture[textureIndex]->capture(0, 0, GX_CTF_A8, false, false);
@@ -47,6 +48,7 @@ void ScreenAlphaCapture::captureScreenAlpha(s32 textureIndex) {
 }
 
 void ScreenAlphaCapture::loadScreenTexture(s32 index, GXTexMapID id) {
+    // 3DS: the capture is bound by the Citro3D draw that uses it.
 #ifdef __3DS__
     (void)id;
     if (index >= 0 && index < ARRAY_SIZE(mTexture) && mTexture[index] != nullptr) {

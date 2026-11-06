@@ -13,6 +13,8 @@ u16 mLightingMask;
 namespace MR {
     void ddSetVtxFormat(u32 format) {
         mVtxMode = format;
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -55,6 +57,8 @@ namespace MR {
     }
 
     void ddChangeTev() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -92,6 +96,8 @@ namespace MR {
     }
 
     void ddSendVtxData(const TVec3f& rVec1, const TVec3f& rVec2, const TVec2f& rVec3) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)rVec1;
         (void)rVec2;
@@ -111,6 +117,8 @@ namespace MR {
     }
 
     void ddSendVtxData(const TVec3f& rVec1, const TVec2f& rVec2) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)rVec1;
         (void)rVec2;
@@ -125,6 +133,8 @@ namespace MR {
     void ddLightingOn(u16 light) {
         mLightingFlag = 1;
         mLightingMask = light;
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -138,6 +148,8 @@ namespace MR {
 
     void ddLightingOff() {
         mLightingFlag = 0;
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else
@@ -151,6 +163,8 @@ namespace MR {
 };  // namespace MR
 
 void DirectDrawUtil_FORCE_MATCH(const TVec3f& rNormal) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXNormal3f32(rNormal.x, rNormal.y, rNormal.z);
 #else

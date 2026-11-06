@@ -230,6 +230,7 @@ ResFileInfo* ResourceHolder::createAndRegisterObject(const char* pName, void* pD
         if (MR::isUseFur(modelData) || MR::strcasecmp(pName, "MarioShadow.bdl") == 0) {
             MR::downFracVtx(modelData);
         }
+        // 3DS: the model's .n3d is found and registered for the native renderer (native.cpp).
 #ifdef __3DS__
         rvlNativeRegister(modelData, mArchive->mEntryNum, pName);
 #endif
@@ -240,6 +241,7 @@ ResFileInfo* ResourceHolder::createAndRegisterObject(const char* pName, void* pD
         J3DModelData* modelData =
             J3DModelLoaderDataBase::load(pData, J3DMLF_Material_PE_Full | J3DMLF_Material_UseIndirect | J3DMLF_UseUniqueMaterials | J3DMLF_21);
         modelData->newSharedDisplayList(0);
+        // 3DS: the model's .n3d is found and registered for the native renderer (native.cpp).
 #ifdef __3DS__
         rvlNativeRegister(modelData, mArchive->mEntryNum, pName);
 #endif

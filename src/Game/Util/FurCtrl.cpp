@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+// 3DS: headers the 3DS code of this file uses (ActorLightCtrl.hpp, NativeFur3DS.hpp).
 #ifdef __3DS__
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #include "NativeFur3DS.hpp"
@@ -49,6 +50,8 @@ void FurDrawManager::draw() const {
         }
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetClipMode(GX_CLIP_ENABLE);
 #endif

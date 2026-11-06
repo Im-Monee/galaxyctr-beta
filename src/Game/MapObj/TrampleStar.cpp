@@ -6,6 +6,7 @@
 #include "Game/Util.hpp"
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: headers the 3DS code of this file uses (ActorLightCtrl.hpp, LightFunction.hpp).
 #ifdef __3DS__
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #include "Game/Map/LightFunction.hpp"
@@ -564,6 +565,7 @@ void TrampleStar::drawSelf() const {
         return;
     }
 
+    // Wii only: the actor light for GX's lighting; the 3DS lights the star per vertex on the CPU.
 #ifndef __3DS__
     MR::loadActorLight(this);
 

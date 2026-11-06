@@ -1,11 +1,15 @@
 #pragma once
 
-// Wii GX state values -> 3DS GPU (Citro3D) values, for the game code that draws with Citro3D
-// directly (DirectDraw, layouts, particles). Values are libctru's gpu/enums.h; the tables are the
-// ones the GX register translation used (the former platform/3ds/gx/pixel.cpp), checked against both headers.
-//
-// The 3DS depth buffer keeps 1 at the near plane (the Wii keeps 0), so a depth comparison is
-// reversed. A GX cull mode names the faces culled, GX front faces being clockwise on screen.
+// ##############################################################################################
+// # GX values to 3DS GPU values                                                                #
+// #                                                                                            #
+// # Wii GX state values turned into 3DS GPU (Citro3D) values, for the game code that draws     #
+// # with Citro3D directly (DirectDraw, layouts, particles). Values are libctru's gpu/enums.h,  #
+// # checked against both headers.                                                              #
+// #                                                                                            #
+// # The 3DS depth buffer keeps 1 at the near plane (the Wii keeps 0), so a depth comparison is #
+// # reversed. A GX cull mode names the faces culled, GX front faces being clockwise on screen. #
+// ##############################################################################################
 
 #include <revolution/types.h>
 

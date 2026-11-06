@@ -1,10 +1,12 @@
 #include "Game/Screen/StarPointerBlur.hpp"
 #include "Game/Screen/StarPointerDirector.hpp"
 #include "Game/Util/MathUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include "Game/Util/StarPointerUtil.hpp"
+// 3DS: JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #endif
@@ -12,6 +14,7 @@
 #include <revolution/gx/GXStruct.h>
 #include <revolution/gx/GXTransform.h>
 #include <revolution/gx/GXVert.h>
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
@@ -220,6 +223,8 @@ void StarPointerBlur::draw1() const {
 }
 
 void StarPointerBlur::draw2() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -276,6 +281,8 @@ void StarPointerBlur::draw2() const {
 }
 
 void StarPointerBlur::initDraw() const {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else

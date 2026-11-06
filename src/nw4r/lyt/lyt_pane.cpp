@@ -6,6 +6,7 @@
 #include "nw4r/lyt/pane.h"
 #include "nw4r/math/triangular.h"
 #include <cstdio>
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -346,6 +347,7 @@ namespace nw4r {
                 pMtx = &mGlbMtx;
             }
 
+            // 3DS: the pane's matrix goes to DirectDraw, which keeps it itself.
 #ifdef __3DS__
             TDDraw::setDirectViewMtx(const_cast< MtxPtr >(reinterpret_cast< const f32(*)[4] >(pMtx)));
 #else

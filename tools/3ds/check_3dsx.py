@@ -14,6 +14,12 @@ import struct
 import subprocess
 import sys
 
+# ##############################################################################################
+# # The check                                                                                  #
+# #                                                                                            #
+# # Each relocated word of the .3dsx must point into one of its segments (details in the       #
+# # docstring above); a bad one fails the build, named by the ELF symbol it belongs to.        #
+# ##############################################################################################
 BASE = 0x00100000
 
 

@@ -3,6 +3,7 @@
 #include "Game/MapObj/ClipAreaShape.hpp"
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values; DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #include "Game/Util/DirectDraw.hpp"

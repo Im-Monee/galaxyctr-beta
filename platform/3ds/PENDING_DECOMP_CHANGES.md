@@ -536,7 +536,7 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
 
 - **GX command stream capture** (`libs/RVL_SDK/include/revolution/gx/GXRegs.h`, `GXVert.h`):
   on the 3DS, writes to the write-gather pipe go to a buffer (`platform/3ds/include/rvl_gx_fifo.h`)
-  that `platform/3ds/gx` interprets. `GXWGFifo` becomes a C++ object whose members append to it.
+  that `platform/3ds/gx` interpreted in early builds (the interpreter is gone: nothing writes this stream now). `GXWGFifo` becomes a C++ object whose members append to it.
 - **Register bit insertion** (`GXRegs.h` `FAST_FLAG_SET`, `GXFDLShortcut.h` `FAST_GPFLAGSET`):
   these were empty for non-Metrowerks compilers, which left every GX register at zero. The
   3DS uses a portable version of `rlwimi`.
@@ -561,11 +561,10 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
 
 ## Inventory by file
 
-Every decomp file changed on the port branches, by kind of change. Regenerate the raw list
-with `python tools/3ds/decomp_inventory.py` (`--unguarded` shows changes outside
-`__3DS__`/`__MWERKS__` conditionals); `tools/3ds/tests/suite_decomp.py` checks that every
-changed file is named here. Unguarded changes are allowed only when they keep the Wii build
-byte-identical (checked by `suite_build.py --full`).
+Every decomp file changed on the port branches, by kind of change. Development scripts (not
+published) regenerate the raw list, show changes outside `__3DS__`/`__MWERKS__` conditionals
+and check that every changed file is named here. Unguarded changes are allowed only when they
+keep the Wii build byte-identical.
 
 - **Weak symbols for definitions GCC sees twice** (nerves defined in headers, SDK functions the
   game overrides): `Nerve.hpp` (`NEW_NERVE_WEAK`), `BenefitItemObj.hpp`, `MorphItemObjNeo.hpp`,
@@ -1009,7 +1008,7 @@ The THP movies are converted by `tools/3ds/builder/movie.py` (builder `build_fil
 
 ## Effects drawn by object code, checked against the Wii (Oct 28 2026, CIA 0.13.11)
 
-`tools/3ds/particles/fxinventory.py` lists every draw function outside JPA with the Wii branch's GX state and the 3DS branch's draws (52 functions in 47 files). The 13 seen most often were compared stage by stage. New `TDDraw::drawStageTriangles` (`DirectDraw.hpp/.cpp`, 3DS) draws with given combiner stages, each with its own constant, and a vertex colour (or one per vertex); `TDDraw::stageConstant` packs a colour for it. The effects now translate their Wii TEV into it.
+A development script (not published) lists every draw function outside JPA with the Wii branch's GX state and the 3DS branch's draws (52 functions in 47 files). The 13 seen most often were compared stage by stage. New `TDDraw::drawStageTriangles` (`DirectDraw.hpp/.cpp`, 3DS) draws with given combiner stages, each with its own constant, and a vertex colour (or one per vertex); `TDDraw::stageConstant` packs a colour for it. The effects now translate their Wii TEV into it.
 - `WarpPod::drawCylinder`: the alpha is 1, as the Wii's `(TEXA * K + 1/2) * 2` clamps. It was the texture alpha, which faded the additive cylinder.
 - `MarioFoo::draw3D` (Red Star beam and trail):
   - colour `lerp(C0, C1, TEXA)` and alpha `TEXA * A0 * 2`, as on the Wii; it blended toward white before;
@@ -1222,11 +1221,18 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
   - The 3DS build now defines `cStoryProgressTable`, `cGalaxyInfoTable` and `cErrorMessageArchive` in `platform/3ds/rvl/port_data.cpp`. It fills them at startup from `sdmc:/smg/port/`, which the converter writes from the user's own `main.dol` (SHA-1 checked).
   - **Why:** the CIA contains no Nintendo data and can be shared.
   - `tools/3ds/builder/convert_assets.py` is removed, and `tools/3ds/configure.py` no longer needs the Wii build first.
-  - Wii SHA-1 unchanged; wiiview: 0 differences.
+  - Wii SHA-1 unchanged; the Wii view of the files shows no difference.
 
 ## Why the streamed music stops for good (Nov 6 2026)
 
 - `src/JSystem/JAudio2/JASAramStream.cpp`: under `__3DS__`, `report3DSStreamStop` writes to the log, once per place, each of the nine places that set `UNK_BOOL_B`, with their values.
   - `UNK_BOOL_B` is shared by every stream and never cleared. Once it is set, `channelProc` pauses every stream, so the music stops for good while sound effects and voices go on.
   - **Why:** in the CIA 0.21.1 test the music stopped for good at a random moment of play, and the log could not say why.
-  - Logging only; behaviour unchanged. Wii SHA-1 unchanged; wiiview: 0 Wii code differences.
+  - Logging only; behaviour unchanged. Wii SHA-1 unchanged; the Wii view of the file shows no code difference.
+
+## A comment on every 3DS block (Nov 6 2026)
+
+- Every `#ifdef __3DS__` / `#ifndef __3DS__` block of `src/`, `include/` and `libs/` that had no comment got a one-line comment above it saying what the 3DS does there and why (703 blocks in 197 files). The comment sits above the directive, so both builds see only a comment.
+- 18 empty `#ifdef __3DS__ ... #endif` blocks (leftovers of earlier edits) were removed.
+- `src/Game/Screen/WipeFade.cpp`: a dead copy of `GXSetColorUpdate`/`GXSetBlendMode` under `#ifdef __3DS__` inside the Wii branch (never compiled by either build) was removed; the Wii's own calls stay above it, under `#ifndef __3DS__`.
+- Wii SHA-1 unchanged (full Wii rebuild); wiiview: 0 Wii code differences, comment-only differences in the 197 files.

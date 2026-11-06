@@ -1,3 +1,4 @@
+// 3DS: SysTimer3DS.hpp, the profile timers.
 #ifdef __3DS__
 #include <SysTimer3DS.hpp>
 #endif
@@ -1001,6 +1002,7 @@ void MarioActor::control2() {
 }
 
 void MarioActor::controlMain() {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 34).
 #ifdef __3DS__
     SysTimer3DS timer3DS(34);
 #endif
@@ -1009,6 +1011,7 @@ void MarioActor::controlMain() {
         _930 = 0;
     }
 
+    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 57).
 #ifdef __3DS__
     {
         SysTimer3DS timer3DS(57);
@@ -1034,6 +1037,7 @@ void MarioActor::controlMain() {
     } else {
         mVelocity.zero();
         updateBehavior();
+        // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 58).
 #ifdef __3DS__
         {
             SysTimer3DS timer3DS(58);
@@ -1057,9 +1061,11 @@ void MarioActor::controlMain() {
 }
 
 void MarioActor::updateBehavior() {
+    // 3DS: profile timing (SysTimer3DS.hpp, type 33).
 #ifdef __3DS__
     SysTimer3DS timer3DS(33);
 #endif
+    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 50).
 #ifdef __3DS__
     {
         SysTimer3DS timer3DS(50);
@@ -1087,6 +1093,7 @@ void MarioActor::updateBehavior() {
     vec -= _270;
     mLastMove = vec;
     _270 = mPosition;
+    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 51).
 #ifdef __3DS__
     {
         SysTimer3DS timer3DS(51);
@@ -1102,6 +1109,7 @@ void MarioActor::updateBehavior() {
         mMario->stopAnimation("ハンマー投げ回転中");
     }
 
+    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 52).
 #ifdef __3DS__
     {
         SysTimer3DS timer3DS(52);
@@ -1111,6 +1119,7 @@ void MarioActor::updateBehavior() {
     updatePunching();
 #endif
     if (!doPressing() && !doStun() && !doRush()) {
+        // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 53).
 #ifdef __3DS__
         {
             SysTimer3DS timer3DS(53);
@@ -1126,6 +1135,7 @@ void MarioActor::updateBehavior() {
                     initForJump();
                 }
 
+                // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 54).
 #ifdef __3DS__
                 {
                     SysTimer3DS timer3DS(54);
@@ -1143,6 +1153,7 @@ void MarioActor::updateBehavior() {
                 if (!checkClapCatchStart()) {
                     _7DC = 0;
                     mMario->Mario::update();
+                    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 55).
 #ifdef __3DS__
                     {
                         SysTimer3DS timer3DS(55);
@@ -1151,6 +1162,7 @@ void MarioActor::updateBehavior() {
 #else
                     updateForCamera();
 #endif
+                    // 3DS: the same calls, timed for the profile log (SysTimer3DS.hpp, type 56).
 #ifdef __3DS__
                     {
                         SysTimer3DS timer3DS(56);

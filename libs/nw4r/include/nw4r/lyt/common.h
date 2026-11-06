@@ -5,6 +5,7 @@
 #include "nw4r/math/types.h"
 #include "nw4r/ut/Color.h"
 #include "nw4r/ut/inlines.h"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -12,6 +13,7 @@
 namespace nw4r {
     namespace lyt {
         class Material;
+        // 3DS: layout textures are drawn through Citro3D from their TexMap.
 #ifdef __3DS__
         class TexMap;
 #endif

@@ -1,6 +1,8 @@
 #pragma once
 
-// Shared by the startup log and the CIA packager.
+// The port's version: in the log's first lines (main.c), and the CIA's version, read by the
+// developer's CIA script and the builder (tools/beta/galaxyctr_builder.py, port_version).
+// Raised for every CIA.
 #define SMG_CIA_VERSION_MAJOR 0
 #define SMG_CIA_VERSION_MINOR 21
 #define SMG_CIA_VERSION_MICRO 3

@@ -39,6 +39,8 @@ extern volatile void* __memReg;
 
 /* GXColor (r, g, b, a bytes) and GXColorS10 (r, g, b, a halves) read as big-endian words */
 
+// 3DS: colours packed field by field: the Wii reads them as a big-endian word, which a
+// little-endian CPU would reverse.
 #ifdef __3DS__
 #define GX_COLOR_AS_U32(c) (((u32)(c).r << 24) | ((u32)(c).g << 16) | ((u32)(c).b << 8) | (u32)(c).a)
 #define GX_COLORS10_RG(c) (((u32)(u16)(c).r << 16) | (u16)(c).g)

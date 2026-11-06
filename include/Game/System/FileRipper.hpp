@@ -12,6 +12,7 @@ public:
     static s32 checkCompressed(const u8*);
     static void* loadToMainRAM(const char*, u8*, bool, JKRHeap*, AllocDirection);
     static bool decompressFromDVD(DVDFileInfo*, void*, u32, u32, const u8*, u32);
+    // 3DS: the decompression knows the output size, so a damaged file cannot write past the buffer.
 #ifdef __3DS__
     static bool decompressSzsSub(u8*, u8*, u32);
 #else

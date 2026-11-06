@@ -217,6 +217,8 @@ GXFifoObj* GXInit(void* base, u32 size) {
 
     __GXFifoInit();
     GXInitFifoBase(&FifoObj, base, size);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetCPUFifo(&FifoObj);
     GXSetGPFifo(&FifoObj);

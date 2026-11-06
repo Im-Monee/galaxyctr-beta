@@ -25,6 +25,8 @@ void JetTurtleShadow::drawType0() const {
     pModel->mFlags.clear();
     pModel->mFlags._14 = true;
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetZScaleOffset(1.0f, 0.0f);
 #endif

@@ -1,6 +1,7 @@
 #include "Game/LiveActor/ClippingJudge.hpp"
 #include "Game/LiveActor/ClippingDirector.hpp"
 #include "Game/Util.hpp"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -22,6 +23,7 @@ ClippingJudge::ClippingJudge(const char* pName) : NameObj(pName), mFrustum() {
     mClipDistances[5] = 20000.0f;
     mClipDistances[6] = 10000.0f;
     mClipDistances[7] = 5000.0f;
+    // 3DS: no scaling until the detail is lowered.
 #ifdef __3DS__
     mActorScale = 1.0f;
 #endif

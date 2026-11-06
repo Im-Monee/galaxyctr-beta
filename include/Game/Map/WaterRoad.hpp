@@ -62,12 +62,14 @@ public:
     void initPoints(WaterRoad*);
     void initDisplayList();
     void sendGD() const;
+    // 3DS: the road's draw takes the road, whose textures the Citro3D draw binds itself.
 #ifdef __3DS__
     void drawGD(const WaterRoad*) const;
 #else
     void drawGD() const;
 #endif
     void drawDirect(const WaterRoad*) const;
+    // 3DS: the water road through Citro3D (WaterRoad.cpp).
 #ifdef __3DS__
     void draw3DS(const WaterRoad*, s32) const;
 #endif

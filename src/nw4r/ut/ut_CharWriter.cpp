@@ -37,6 +37,8 @@ void rvl3DSGlyphBatch(bool on) {
 #endif
 
 namespace {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     void SetupGXCommon() {
         static const nw4r::ut::Color fog = 0;
@@ -69,6 +71,8 @@ namespace nw4r {
         }
 
         void CharWriter::LoadTexture(const Glyph& glyph, GXTexMapID slot) {
+            // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not
+            // have (DETAILS.md, section 5).
 #ifdef __3DS__
             (void)glyph;
             (void)slot;
@@ -97,6 +101,8 @@ namespace nw4r {
         }
 
         void CharWriter::SetupVertexFormat() {
+            // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not
+            // have (DETAILS.md, section 5).
 #ifdef __3DS__
             return;
 #else
@@ -158,6 +164,8 @@ namespace nw4r {
         }
 
         void CharWriter::SetupGXDefault() {
+            // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not
+            // have (DETAILS.md, section 5).
 #ifdef __3DS__
             return;
 #else
@@ -172,6 +180,8 @@ namespace nw4r {
         }
 
         void CharWriter::SetupGXForI() {
+            // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not
+            // have (DETAILS.md, section 5).
 #ifdef __3DS__
             return;
 #else
@@ -189,6 +199,7 @@ namespace nw4r {
         }
 
         void CharWriter::SetupGXForRGBA() {
+            // 3DS: no GX state to set: the glyphs' Citro3D draw sets its own.
 #ifdef __3DS__
             return;
 #else
@@ -342,6 +353,8 @@ namespace nw4r {
         }
 
         void CharWriter::SetupGXWithColorMapping(Color min, Color max) {
+            // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not
+            // have (DETAILS.md, section 5).
 #ifdef __3DS__
             (void)min;
             (void)max;

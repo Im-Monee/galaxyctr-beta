@@ -5,6 +5,7 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include "WaterRender3DS.hpp"
 #endif
@@ -22,6 +23,7 @@ void OceanBowlBloomDrawer::draw() const {
         return;
     }
 
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     void* water = rvl3DSGetJUTTexture(mHost->mWaterTex);
     for (s32 x = 0; x < 24; x++) {

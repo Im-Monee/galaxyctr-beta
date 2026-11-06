@@ -9,6 +9,7 @@ public:
 
     virtual void loadModelDrawMtx() const;
     virtual bool isDraw() const;
+    // 3DS: the volume drawn through DirectDraw instead of a GX display list.
 #ifdef __3DS__
     virtual void drawShape() const override;
 #endif

@@ -13,6 +13,7 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/JUtility/JUTVideo.hpp>
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -172,6 +173,8 @@ BrightObjBase::BrightObjBase() : mInfo(), mBrightCenter(0.0f, 0.0f), mNowCenter(
 }
 
 void BrightObjBase::checkVisibilityOfSphere(u16 index, const BrightCamInfo& rCamInfo) {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXPokeAlphaRead(GX_READ_NONE);
 #endif

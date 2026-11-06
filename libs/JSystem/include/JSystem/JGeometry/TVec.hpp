@@ -1050,6 +1050,8 @@ namespace JGeometry {
                 if (length <= 0.0f) {
                     inverse = length;
                 } else {
+                    // 3DS: the ARM's square root is exact; the Wii refines an estimate (frsqrte)
+                    // instead.
 #ifdef __3DS__
                     inverse = 1.0f / __builtin_sqrtf(length);
 #else

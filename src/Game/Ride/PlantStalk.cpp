@@ -18,6 +18,7 @@
 #include <revolution/gx/GXTev.h>
 #include <revolution/gx/GXTransform.h>
 #include <revolution/gx/GXVert.h>
+// 3DS: GXImmediate3DS.hpp, this file's GXBegin geometry through DirectDraw.
 #ifdef __3DS__
 #include "GXImmediate3DS.hpp"
 #endif

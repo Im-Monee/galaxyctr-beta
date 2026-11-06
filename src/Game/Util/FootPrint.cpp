@@ -140,6 +140,8 @@ void FootPrint::draw() const {
         }
 
         color.a = 255.0f * MR::normalize(mPrints[i].mTimeLeft, 0.0f, ::sFadeOutTime);
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetTevColor(GX_TEVREG0, color);
 #endif
@@ -154,6 +156,7 @@ void FootPrint::draw() const {
 
         v1 += mPrints[i]._18 * 5.0f;
 
+        // 3DS: the footprint's texture and alpha go to the Citro3D draw.
 #ifdef __3DS__
         TDDraw::drawTexture3D(v1, mPrints[i]._18, mPrints[i]._C, _34, _30, _C, mPrints[i]._29 != false, false, color.a);
 #else
@@ -161,6 +164,7 @@ void FootPrint::draw() const {
 #endif
     }
 
+    // 3DS: ends the DirectDraw state.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #else

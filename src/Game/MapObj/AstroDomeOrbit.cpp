@@ -4,12 +4,14 @@
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/Color.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #endif
@@ -28,6 +30,7 @@ namespace {
 
     const static Color8 cColor(0x13, 0xB1, 0xFF, 0xFF);
     const static Color8 cBloomColor(0x00, 0xB4, 0x64, 0xFF);
+    // 3DS: the orbit's colour, kept for the DirectDraw strips below.
 #ifdef __3DS__
     static u32 sDirectColor;
 #endif
@@ -58,6 +61,7 @@ void AstroDomeOrbit::draw() const {
 
     drawSide(::cWidth, true, ::cHeight);
     drawSide(::cWidth, false, ::cHeight);
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif
@@ -75,6 +79,7 @@ void AstroDomeOrbit::drawBloom() const {
 
     drawSide(::cBloomWidth, true, ::cBloomHeight);
     drawSide(::cBloomWidth, false, ::cBloomHeight);
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

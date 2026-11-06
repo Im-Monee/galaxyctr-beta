@@ -4,6 +4,7 @@
 #include <JSystem/JKernel/JKRSolidHeap.hpp>
 #include <revolution/os.h>
 #include <revolution/wpad.h>
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -112,7 +113,7 @@ void HeapMemoryWatcher::setCurrentHeapToSceneHeap() {
 #ifdef __3DS__
 namespace {
     // 3DS port: what the scene used of its heaps (solid heaps only grow: this is their peak) and
-    // of the file cache, in KB, to size the memory budget (Old 3DS, _workspace/plans/R).
+    // of the file cache, in KB, to size the memory budget (Old 3DS).
     void reportSceneHeaps(JKRHeap* pSceneHeapNapa, JKRHeap* pSceneHeapGDDR, JKRHeap* pFileCacheHeap) {
         if (pSceneHeapNapa == nullptr || pSceneHeapGDDR == nullptr) {
             return;
@@ -145,6 +146,7 @@ void HeapMemoryWatcher::destroySceneHeap() {
 }
 
 void HeapMemoryWatcher::destroyGameHeap() {
+    // 3DS: what the scene used of its heaps, to the log.
 #ifdef __3DS__
     reportSceneHeaps(mSceneHeapNapa, mSceneHeapGDDR, mFileCacheHeap);
 #endif

@@ -250,6 +250,7 @@ void DrawBuffer::resetLightSort(const ActorLightCtrl* pLightCtrl) {
 
 void DrawBuffer::drawOpa() const {
     if (mNumActors > 0) {
+        // 3DS: the model decides whether it draws as its far model this frame (native.cpp).
 #ifdef __3DS__
         rvlNativeFarPrepare(mModel);
 #endif

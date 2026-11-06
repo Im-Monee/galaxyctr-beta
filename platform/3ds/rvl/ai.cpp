@@ -1,10 +1,12 @@
-// The Wii audio interface (AI): streams the game's stereo buffers to the speakers.
-//
-// On the Wii, AIInitDMA sets the buffer the DMA plays next; when a buffer starts playing the
-// AI interrupt calls the game's callback, which sets the following one (JASDriver::updateDac).
-// Here the 3DS output (host/audio.c) raises HOST_IRQ_AUDIO when it can take a buffer: the
-// current one is queued, then the callback runs, as many times as there are free slots.
-
+// ##############################################################################################
+// # The Wii audio interface (AI)                                                               #
+// #                                                                                            #
+// # Streams the game's mixed stereo buffers to the speakers. On the Wii, AIInitDMA sets the    #
+// # buffer the DMA plays next; when a buffer starts playing the AI interrupt calls the game's  #
+// # callback, which sets the following one (JASDriver::updateDac). Here the 3DS output         #
+// # (host/audio.c) raises HOST_IRQ_AUDIO when it can take a buffer: the current one is queued, #
+// # then the callback runs, as many times as there are free slots.                             #
+// ##############################################################################################
 #include <revolution/ai.h>
 #include <revolution/os.h>
 
@@ -47,9 +49,13 @@ void AISetDSPSampleRate(u32 rate) {
     sRate = rate == 0 ? 32000 : 48000;
 }
 
-// Sound output is off unless debug.txt has audio=1: with it, sounds start playing, and a scene
-// change waits for them to stop (JAUSoundMgr::stopSync), which can still hang while the mixer
-// and the streams are incomplete (block J).
+// ##############################################################################################
+// # Starting the output                                                                        #
+// #                                                                                            #
+// # The output starts with the first DMA, at the game's rate; debug.txt audio=0 keeps the game #
+// # silent (the mixing still runs). Without the console's DSP firmware the output does not     #
+// # start and the game runs silently.                                                          #
+// ##############################################################################################
 void AIStartDMA(void) {
     sOutput = hostDebugAudio() && hostAudioStart(sRate) != 0;
     sRunning = true;

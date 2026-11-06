@@ -1,9 +1,20 @@
-// 3DS GPU renderer for the emulated Wii GPU (citro3d).
-//
-// platform/3ds/gx turns the Wii's draws into triangles with clip-space positions, a colour and
-// one texture coordinate, plus a small description of the pixel state. This file draws them
-// on the top screen.
-
+// ##############################################################################################
+// # The 3DS renderer (citro3d)                                                                 #
+// #                                                                                            #
+// # Everything the game draws reaches the GPU here, through host.h. The game world             #
+// # (platform/3ds/gx) has already turned the Wii's draws into the 3DS GPU's terms: vertices,   #
+// # combiner stages and pixel state. Two kinds of draws arrive: vertices already in clip       #
+// # space, made on the CPU (layouts, particles, effects: hostGfxDraw), and the native models,  #
+// # whose vertices stay in model space and are transformed, lit and texture-mapped by the      #
+// # vertex shader (shaders/gx.v.pica) from the uniforms of HostGfxTransform (hostGfxDrawArena, #
+// # hostGfxDrawNativeIndexed).                                                                 #
+// #                                                                                            #
+// # The render target is the 400x240 top screen on its side (240x400): the Wii's 640x456 frame #
+// # buffer coordinates are turned onto it in the shader and in the frame buffer reads below.   #
+// # This file also paces the frames (at most 30 a second, fewer when the game runs behind),    #
+// # starts the GPU while the frame is still being drawn, makes the Wii's EFB copies and reads, #
+// # and keeps the diagnostics of a GPU stall.                                                  #
+// ##############################################################################################
 #include "host.h"
 #include "showcase.h"
 
@@ -21,6 +32,15 @@
      GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |                    \
      GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
+// ##############################################################################################
+// # Vertex arena and index buffers                                                             #
+// #                                                                                            #
+// # All vertices live in one array in linear memory, split into windows of 65536 vertices      #
+// # because indices are 16 bits: a draw binds one window. Persistent vertices (models uploaded #
+// # once, gx/native.cpp) stay until the arena is full, then all go at the next frame's start   #
+// # and are uploaded again; transient ones last one frame. The sizes shrink in the 96 MB of an #
+// # Old 3DS.                                                                                   #
+// ##############################################################################################
 // Vertex arena in linear memory (I-4): windows of 65536 vertices, the reach of 16-bit indices.
 // The first windows keep vertices across frames (draw.cpp caches decoded display lists there),
 // the last one holds the current frame's other vertices.
@@ -51,6 +71,14 @@ static u32 sIndexBufferSize, sPersistentIndexSize;
 #define CMDBUF_RESERVE_WORDS 4096
 #define NATIVE_DRAW_BUDGET 2048
 
+// ##############################################################################################
+// # Renderer state                                                                             #
+// #                                                                                            #
+// # What the renderer keeps between draws and frames: the target and the shader, the arena's   #
+// # use and the parts of it the CPU wrote since the last cache writeback, counters for the     #
+// # log, and the GPU's frame counts (a texture is freed only once the GPU has finished every   #
+// # frame that reads it).                                                                      #
+// ##############################################################################################
 static C3D_RenderTarget* sTarget;
 static C3D_RenderTarget* sOutputTarget;
 static DVLB_s* sShaderDvlb;
@@ -93,6 +121,15 @@ static unsigned long sCompletedFrames;
 static u32 sGpuLastP3dTotal, sGpuLastPpfTotal;
 static bool sGpuPerfBaseline;
 
+// ##############################################################################################
+// # GPU stall reports                                                                          #
+// #                                                                                            #
+// # When the GPU never finishes a frame, every later frame waits for it: after 30 frames that  #
+// # could not begin, reportGpuStall writes the stalled frame's command buffer, its draws and   #
+// # the GPU's registers to the SD card (sdmc:/smg/c3d_stall*.bin), to find the draw that hung  #
+// # it. With STALL_DRAW_DIAG the frame is also split into small groups of draws, which costs   #
+// # time, so it is off in normal builds.                                                       #
+// ##############################################################################################
 // What the frame being recorded did besides plain draws, kept for the last submitted frame so a
 // GPU that never finishes it can be traced back to the operation that stalled it.
 typedef struct {
@@ -255,6 +292,14 @@ static void logGpuProgress(const char* point) {
     sGpuLastPpfTotal = ppf;
     sGpuPerfBaseline = true;
 }
+
+// ##############################################################################################
+// # Frame pacing state                                                                         #
+// #                                                                                            #
+// # The game updates at every retrace (60 Hz); the port draws at most every second one, and    #
+// # fewer while the game runs behind the clock, so that its updates keep the game's speed.     #
+// # planNextFrame decides at each frame's end whether the next loop draws.                     #
+// ##############################################################################################
 static u32 sFrameNumber;
 static u32 sClearColor = 0x000000FF;
 static bool sBlackScreen;
@@ -315,6 +360,12 @@ static unsigned long sFogLutBuilds;
 static float sFogLutValues[129];
 static float sFogLutData[256];
 
+// ##############################################################################################
+// # Shader uniforms                                                                            #
+// #                                                                                            #
+// # The locations of the vertex shader's uniforms, and the transform last sent: a draw sends   #
+// # only the vectors that changed (uploadTransform).                                           #
+// ##############################################################################################
 // Shader uniforms (shaders/gx.v.pica) and what was last sent of them.
 enum { MODE_NONE, MODE_PRETRANSFORMED, MODE_MODEL };
 static int sMode;  // kind of the draws the shader is set up for
@@ -326,6 +377,13 @@ static s8 sLocClip, sLocPalette, sLocTexMtx, sLocTexPost, sLocTexFinal, sLocMate
 static s8 sLocPretransformed, sLocLit, sLocHasLights, sLocNormalize[3], sLocDivide[3], sLocNrmPalette, sLocLightLoop;
 static s8 sLocVtxMtx[3], sLocNrmCofactor;
 
+// ##############################################################################################
+// # Initialization                                                                             #
+// #                                                                                            #
+// # citro3d with a larger command buffer and GX queue, the combiner buffer's constant 0.5, the #
+// # render target on the top screen, the shader and its vertex layout (HostGfxModelVertex,     #
+// # host.h), the arena and the index buffers, and the blank texture for unused units.          #
+// ##############################################################################################
 void hostGfxInit(void) {
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 8);
     // citro3d's GX queue holds 32 entries a frame (C3D_Init) and panics when full: the GPU
@@ -417,8 +475,15 @@ void hostGfxInit(void) {
     GSPGPU_FlushDataCache(sBlankTexture.data, 8 * 8 * 4);
 }
 
-// Textures --------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Textures                                                                                   #
+// #                                                                                            #
+// # Decoded RGBA8 pixels become a texture in the smallest GPU format that holds them as they   #
+// # are, written in the GPU's 8x8 tiles and upside down (the GPU stores the bottom row first). #
+// # Textures the converter already wrote in the GPU's layout (ETC1, ETC1A4, LA4) are copied as #
+// # they are. A texture released while the GPU may still read it waits in sPendingDeletes      #
+// # until the next frame begins.                                                               #
+// ##############################################################################################
 // Textures released during a frame are deleted once the GPU is done with it.
 #define MAX_PENDING_DELETES 4096
 static C3D_Tex* sPendingDeletes[MAX_PENDING_DELETES];
@@ -541,6 +606,14 @@ void hostGfxTextureDestroyNow(void* texture) {
     free(texture);
 }
 
+// ##############################################################################################
+// # Frame pacing                                                                               #
+// #                                                                                            #
+// # Whether the next loop draws, and the detail level (hostPerfDetail) the rest of the port    #
+// # lowers its work by while the game runs behind: actors clip nearer, fewer particles. With a #
+// # drawn and an undrawn loop together over 41 ms, one loop in three is drawn, until they are  #
+// # under 37 ms again (DETAILS.md, section 10).                                                #
+// ##############################################################################################
 static void beginFrame(void);
 
 int hostGfxFrameDropped(void) {
@@ -620,6 +693,12 @@ static void planNextFrame(void) {
     sPerfDetail = sPerfDetail < HOST_PERF_DETAIL_MIN ? HOST_PERF_DETAIL_MIN : sPerfDetail > 1.0f ? 1.0f : sPerfDetail;
 }
 
+// ##############################################################################################
+// # Frame ids                                                                                  #
+// #                                                                                            #
+// # For texture lifetimes (rvl/jut_texture.cpp): the frame being recorded, and the last one    #
+// # the GPU has finished.                                                                      #
+// ##############################################################################################
 unsigned long hostGfxFrameId(void) {
     return sGpuFrameEndCount + 1;
 }
@@ -642,8 +721,12 @@ static void deletePendingTextures(void) {
     sPendingDeleteCount = 0;
 }
 
-// Frames ----------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Screenshots                                                                                #
+// #                                                                                            #
+// # debug.txt shot= and the capture tool: the render target and single textures, as they are   #
+// # in memory.                                                                                 #
+// ##############################################################################################
 // Saves the render target of the last frame (240x400 RGBA8 in the GPU's 8x8 tiled layout) for
 // the debug.txt "shot" option. The game's screen is read from the render target rather than
 // the display frame buffer, which emulators with a hardware renderer do not keep up to date.
@@ -676,6 +759,15 @@ void hostGfxSaveTexture(void* texture, const char* path) {
     hostLog("gfx: texture %ux%u saved to %s\n", tex->width, tex->height, path);
 }
 
+// ##############################################################################################
+// # Beginning a frame                                                                          #
+// #                                                                                            #
+// # Each frame begins lazily, at its first draw or query. A frame is dropped (its draws thrown #
+// # away) when it is not due (pacing), or when the GPU is still busy after                     #
+// # GPU_BUSY_TIMEOUT_MS. A frame that begins frees the textures released before it, empties    #
+// # the persistent arena if it was full, clears the target and forgets the state last sent:    #
+// # the first draw sends it in full.                                                           #
+// ##############################################################################################
 #define GPU_BUSY_TIMEOUT_MS 2000
 
 static void beginFrame(void) {
@@ -791,6 +883,13 @@ static void beginFrame(void) {
     sTransformValid = false;
 }
 
+// ##############################################################################################
+// # Texture combiners                                                                          #
+// #                                                                                            #
+// # The draw's combiner stages, sent only when they differ from the last draw's. GX's          #
+// # destination alpha (the alpha written to the frame buffer is a constant) becomes one more   #
+// # stage that replaces the alpha with it.                                                     #
+// ##############################################################################################
 static u32 effectiveStageCount(const HostGfxState* pState) {
     u32 count = pState->stageCount;
     if (pState->dstAlphaEnable && count < HOST_GFX_STAGES) {
@@ -880,6 +979,14 @@ static void applyStages(const HostGfxState* pState) {
     }
 }
 
+// ##############################################################################################
+// # Fog                                                                                        #
+// #                                                                                            #
+// # The Wii's fog registers (BP 0xEE-0xF2) carry the parameters of a curve of the depth; the   #
+// # PICA takes a table of 128 steps from far to near (C3D_FogLut). The table is computed from  #
+// # the Wii's formula, for each of its curves, and the last few are cached: materials with     #
+// # different fog alternate within a frame.                                                    #
+// ##############################################################################################
 static float decodeFogFloat(unsigned int value) {
     u32 bits = ((value & 0x7FF) << 12) | (((value >> 11) & 0xFF) << 23) | (((value >> 19) & 1) << 31);
     float decoded;
@@ -969,6 +1076,13 @@ static void applyFog(const HostGfxState* pState) {
     C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
 }
 
+// ##############################################################################################
+// # Issuing draws, and merging them                                                            #
+// #                                                                                            #
+// # A triangle list waits as the pending draw; the next one with the same state, transform and #
+// # window extends it, and anything else sends it first (flushPendingDraw). Most of the game's #
+// # small CPU-made draws thus reach the GPU as one draw call.                                  #
+// ##############################################################################################
 // Draws are indexed triangle lists into the vertex arena; consecutive triangle lists with the
 // same state, transform and arena window are sent as one draw call. The pending draw is
 // issued when anything changes.
@@ -1094,8 +1208,15 @@ void hostGfxSetStencilAmbient(int enable, int func, int ref, int mask, int write
     }
 }
 
-// Vertex arena ------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Vertex arena                                                                               #
+// #                                                                                            #
+// # Allocating arena vertices and indices. Persistent allocations never straddle a window and  #
+// # skip the transient part; when the arena or the persistent indices are full, the request    #
+// # fails and the arena is emptied at the next frame's start (the caller uploads again then).  #
+// # Transient vertices fail while the frame is dropped: the GPU may still read the last        #
+// # frame's.                                                                                   #
+// ##############################################################################################
 static void bindWindow(int window) {
     if (window == sBoundWindow) {
         return;
@@ -1204,6 +1325,13 @@ unsigned long hostGfxArenaEpoch(void) {
     return sArenaEpoch;
 }
 
+// ##############################################################################################
+// # Cache writeback                                                                            #
+// #                                                                                            #
+// # The GPU reads memory, not the CPU's cache: everything written since the last writeback is  #
+// # flushed before the GPU can read it (before each early start of the GPU, copies and the     #
+// # frame end).                                                                                #
+// ##############################################################################################
 // Writes the CPU's data cache back for everything the GPU reads that changed since the last
 // time: new arena vertices and this frame's indices.
 static void flushWrittenData(void) {
@@ -1229,8 +1357,12 @@ static void flushWrittenData(void) {
     }
 }
 
-// GPU start during the frame ---------------------------------------------------------------
-
+// ##############################################################################################
+// # Starting the GPU during the frame                                                          #
+// #                                                                                            #
+// # So that the GPU draws while the CPU is still recording the frame (details below). After    #
+// # each split the GPU state is sent again in full.                                            #
+// ##############################################################################################
 // citro3d runs a frame's command lists only from C3D_FrameEnd: the GPU (about 31 ms a frame in
 // Good Egg) started after the whole draw phase, and the next frame waited for it in
 // C3D_FrameBegin. Every GPU_KICK_MS of drawing the commands so far are sent and the queue runs,
@@ -1261,6 +1393,13 @@ static void kickGpu(void) {
     forgetStateAfterSplit();
 }
 
+// ##############################################################################################
+// # Frame buffer reads                                                                         #
+// #                                                                                            #
+// # Some game objects read the Wii's frame buffer (the EFB): a pixel's colour or depth. They   #
+// # read the copy of the last finished frame, made at each frame's end while reads keep        #
+// # coming.                                                                                    #
+// ##############################################################################################
 // EFB reads (BrightObj, StarPointerPeekZ, TalkPeekZ, OdhConverter) come in the middle of the
 // draw phase, when the GPU may have drawn part of the frame. They read the last finished frame,
 // as before the GPU started early: a copy of the target's colour and depth the GPU makes at the
@@ -1308,8 +1447,12 @@ static const u32* efbReadSource(int depth) {
     return (const u32*)(depth ? sTarget->frameBuf.depthBuf : sTarget->frameBuf.colorBuf);
 }
 
-// Draws -------------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # Draws: uniforms and state                                                                  #
+// #                                                                                            #
+// # Statistics of the native submissions for the log, and the upload of a model draw's         #
+// # transform: only the uniform vectors that changed are sent.                                 #
+// ##############################################################################################
 static unsigned long sSubmitCalls, sSubmitVectors, sSubmitBinds;
 static unsigned long long sSubmitStateTicks, sSubmitDrawTicks;
 
@@ -1389,6 +1532,14 @@ static void uploadTransform(const HostGfxTransform* pTransform) {
     sTransformValid = true;
 }
 
+// ##############################################################################################
+// # Setting up a draw                                                                          #
+// #                                                                                            #
+// # Drops the draw when the frame is dropped or a buffer is full; merges it into the pending   #
+// # one when it can; otherwise starts the GPU early if it is time, binds the window, the       #
+// # shader mode, the transform and the textures, then the combiners, fog, depth, alpha test,   #
+// # culling, stencil, scissor and blending: each only when it changed since the last draw.     #
+// ##############################################################################################
 // Sets up the GPU for a draw of indexCount indices: returns false to drop it, and sets *pMerge
 // when the indices extend the pending triangle list.
 static bool beginDraw(unsigned long indexCount, int primitive, int window, const HostGfxState* pState, int mode,
@@ -1573,6 +1724,13 @@ static bool beginDraw(unsigned long indexCount, int primitive, int window, const
     return true;
 }
 
+// ##############################################################################################
+// # Drawing arena vertices                                                                     #
+// #                                                                                            #
+// # The three entry points of model draws (host.h): arena vertices with indices written into   #
+// # this frame's buffer, persistent indices drawn in place, and native draws, which have their #
+// # own budget per frame so a broken model cannot fill the command buffer.                     #
+// ##############################################################################################
 static void drawArena(unsigned long first, const unsigned short* pIndices, unsigned long count, int primitive, const HostGfxState* pState,
                       int mode, const HostGfxTransform* pTransform, unsigned long version) {
     beginFrame();
@@ -1670,6 +1828,16 @@ int hostGfxDrawNativeIndexed(unsigned long first, const unsigned short* pIndices
     return true;
 }
 
+// ##############################################################################################
+// # Drawing clip-space vertices                                                                #
+// #                                                                                            #
+// # CPU-made vertices are copied into this frame's arena, turned onto the sideways target,     #
+// # with w in the normal's x for the shader's pretransformed mode. A draw wholly inside the    #
+// # guard band goes as it is. Otherwise it still goes as it is (the PICA clips the near plane  #
+// # itself) unless it lies wholly outside one plane, and then it is dropped. With debug.txt    #
+// # cpuclip=1, or when a vertex is NaN or infinite, it is clipped triangle by triangle on the  #
+// # CPU (clip.c), and the triangles with such vertices are dropped.                            #
+// ##############################################################################################
 // The vertices' place in the arena, or HOST_GFX_NO_ARENA.
 static unsigned long drawPretransformed(const HostGfxVertex* pVertices, unsigned long count, const unsigned short* pIndices,
                                         unsigned long indexCount, int primitive, const HostGfxState* pState) {
@@ -1824,6 +1992,13 @@ void hostGfxDraw(const HostGfxVertex* pVertices, unsigned long count, const unsi
     }
 }
 
+// ##############################################################################################
+// # Ending a frame                                                                             #
+// #                                                                                            #
+// # Times the loop for the pacing, sends the pending draw and the rest of the frame, makes the #
+// # copy EFB reads use, and ends the frame (citro3d then shows it on the top screen). Every    #
+// # 300 frames the memory, arena and dropped-draw counters go to the log.                      #
+// ##############################################################################################
 // Saves the top screen as raw 240x400 BGR8 (the framebuffer's own layout) to sdmc:/smg.
 static void dumpFrame(const char* path) {
     u16 width, height;
@@ -1921,7 +2096,7 @@ void hostGfxEndFrame(unsigned long clearColor) {
     }
 
     sFrameNumber++;
-    // Lowest free linear memory since the start, for the memory budget (_workspace/plans/R).
+    // Lowest free linear memory since the start, for the memory budget (Old 3DS).
     static unsigned long sLinearMinFree = 0xFFFFFFFFul;
     const unsigned long linearFree = (unsigned long)linearSpaceFree();
     if (linearFree < sLinearMinFree) {
@@ -1967,6 +2142,13 @@ void hostGfxEndFrame(unsigned long clearColor) {
     }
 }
 
+// ##############################################################################################
+// # Depth for the next frame's reads                                                           #
+// #                                                                                            #
+// # A game object that clears the depth buffer in the middle of the frame (MR::clearZBuffer)   #
+// # would leave the frame end's copy without the depth the reads need: the depth is copied     #
+// # before the clear.                                                                          #
+// ##############################################################################################
 void hostGfxKeepDepthForReads(void) {
     beginFrame();
     if (sSkipFrame || sLastEfbReadFrame == ~0ul || sFrameNumber - sLastEfbReadFrame > EFB_COPY_FRAMES ||
@@ -1990,6 +2172,13 @@ void hostGfxKeepDepthForReads(void) {
     sDepthKeptFrame = sFrameNumber;
 }
 
+// ##############################################################################################
+// # Reading one frame buffer pixel                                                             #
+// #                                                                                            #
+// # A Wii frame buffer pixel (640x456) maps to a texel of the sideways target; only its cache  #
+// # line is read. The depth buffer runs the other way from the Wii's, so the value is turned   #
+// # back.                                                                                      #
+// ##############################################################################################
 int hostGfxPeekEfb(unsigned short x, unsigned short y, int depth, unsigned long* pValue) {
     if (pValue == NULL || x >= 640 || y >= 456) {
         return 0;
@@ -2033,8 +2222,13 @@ int hostGfxPeekEfb(unsigned short x, unsigned short y, int depth, unsigned long*
     return 1;
 }
 
-// EFB copies ---------------------------------------------------------------------------------
-
+// ##############################################################################################
+// # EFB copies                                                                                 #
+// #                                                                                            #
+// # The Wii copies part of the frame buffer into a texture (bloom, water, captures); here the  #
+// # GPU copies whole tiles of the render target into a texture, queued after the drawing so    #
+// # far.                                                                                       #
+// ##############################################################################################
 // The render target (240x400, the screen on its side) is RGBA8 in 8x8 tiles of 256 bytes,
 // stored tile row by tile row along its 400-pixel side: frame buffer x goes along target
 // rows (y = x * 400 / 640), frame buffer y along target columns, reversed (x = 240 - y * 240
@@ -2147,13 +2341,7 @@ void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, 
 
     // The split restarts the GPU state: the shader program is configured again, which resets its
     // boolean uniforms (pretransformed, lit...), so the mode and the transform are sent again.
-    sLastStateValid = false;
-    sStencilAppliedValid = false;
-    sMode = MODE_NONE;
-    sTransformValid = false;
-    sBoundWindow = -1;
-    sMode = MODE_NONE;
-    sTransformValid = false;
+    forgetStateAfterSplit();
 
     // Texel (column n, memory row m) is sampled at u = n / potW, v = 1 - m / potH.
     coeffs[0] = (targetWidth - y0 * ky - colLo) / potW;

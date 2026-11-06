@@ -1,12 +1,15 @@
 #include "JSystem/JKernel/JKRHeap.hpp"
 #include "JSystem/JUtility/JUTPalette.hpp"
 #include "JSystem/JUtility/JUTTexture.hpp"
+// 3DS: JUTTexture3DS.hpp, GPU textures for JUTTextures.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #endif
 
 JUTTexture::JUTTexture(int width, int height, GXTexFmt format) {
     mFlag = mFlag & 2 | 1;
+    // 3DS: the buffer size as GX computes it (rvl/jut_texture.cpp), since GX is not part of the 3DS
+    // build.
 #ifdef __3DS__
     u32 bufSize = rvl3DSTexBufferSize(width, height, format);
 #else
@@ -194,6 +197,7 @@ void JUTTexture::initTexObj() {
 }
 
 void JUTTexture::initTexObj(GXTlut lut) {
+    // 3DS: the texture object kept as data for the Citro3D draws (rvl/jut_texture.cpp).
 #ifdef __3DS__
     mTlutName = lut;
     rvl3DSInitTexObj(&mObj, reinterpret_cast< u8* >(const_cast< ResTIMG* >(mTIMG)) + (mTIMG->mImageDataOffset ? mTIMG->mImageDataOffset : 0x20),
@@ -220,6 +224,8 @@ void JUTTexture::initTexObj(GXTlut lut) {
 }
 
 void JUTTexture::load(GXTexMapID texMapID) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)texMapID;
     return;
@@ -233,6 +239,7 @@ void JUTTexture::load(GXTexMapID texMapID) {
 }
 
 void JUTTexture::capture(int width, int height, GXTexFmt format, bool mipmap, GXBool clear) {
+    // 3DS: the capture is the GPU's copy of the render target (rvl/jut_texture.cpp).
 #ifdef __3DS__
     (void)width;
     (void)height;

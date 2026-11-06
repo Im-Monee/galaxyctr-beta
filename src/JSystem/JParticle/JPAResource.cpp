@@ -11,6 +11,7 @@
 #include "JSystem/JParticle/JPAKeyBlock.hpp"
 #include "JSystem/JParticle/JPAParticle.hpp"
 #include "JSystem/JParticle/JPAResourceManager.hpp"
+// 3DS: JPADraw3DS.hpp, the particles' 3DS drawing.
 #ifdef __3DS__
 #include "JPADraw3DS.hpp"
 #endif
@@ -826,6 +827,8 @@ void JPAResource::drawP(JPAEmitterWorkData* work) {
         }
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetMisc(GX_MT_XF_FLUSH, 0);
 #endif
@@ -890,6 +893,8 @@ void JPAResource::drawC(JPAEmitterWorkData* work) {
         }
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetMisc(GX_MT_XF_FLUSH, 0);
 #endif
@@ -997,6 +1002,8 @@ void JPAResource::setCTev(JPAEmitterWorkData* work) {
     }
     GXSetNumTexGens(1);
 #endif
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     work->mpResMgr->CALL_INLINE_FUNC(load, work->mpRes->getTexIdx(mpChildShape->getTexIdx()), GX_TEXMAP1);
 #endif

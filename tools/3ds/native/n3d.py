@@ -30,6 +30,13 @@ import struct
 
 import mat
 
+# ##############################################################################################
+# # The format's constants                                                                     #
+# #                                                                                            #
+# # The .n3d version (raised whenever the format or the material compiler changes, so the      #
+# # converter writes the files again) and the bits of a shape's vertex format; they must match #
+# # platform/3ds/gx/native.cpp.                                                                #
+# ##############################################################################################
 MAGIC = b"J3D2"
 VERSION = 16  # 16: mat.compare_stage keeps a stage's alpha in the buffer
 
@@ -43,7 +50,7 @@ ATTR_SOURCE_POS = 1 << 13  # source VTX1 position index for J3D CPU skinning
 # Normals stored at half scale (s8 / 63.5): the shape has normals longer than 1. The Wii reads s16
 # normals with 14 fraction bits whatever their length (about 350 models have them near 2) and
 # lights with them as they are; clamped to 1 per component they changed direction by up to 15
-# degrees (U4 audit, 2026-10-29).
+# degrees (model audit, 2026-10-29).
 ATTR_NRM_X2 = 1 << 14
 POS_F32_SCALE = 1.0 / 64  # s16 steps coarser than this use f32 positions
 
@@ -62,6 +69,11 @@ GX_NONE, GX_DIRECT, GX_INDEX8, GX_INDEX16 = 0, 1, 2, 3
 PRIM_QUADS, PRIM_QUADS2, PRIM_TRIANGLES, PRIM_TRISTRIP, PRIM_TRIFAN = 0x80, 0x88, 0x90, 0x98, 0xA0
 
 
+# ##############################################################################################
+# # Reading the J3D model                                                                      #
+# #                                                                                            #
+# # Little helpers and the model's blocks, read from the Wii (big-endian) model.               #
+# ##############################################################################################
 class N3DError(Exception):
     pass
 
@@ -100,8 +112,12 @@ def blocks(data):
     return found
 
 
-# Vertex arrays (VTX1) ----------------------------------------------------------------------
-
+# ##############################################################################################
+# # Vertex arrays (VTX1)                                                                       #
+# #                                                                                            #
+# # The model's position, normal, colour and texture coordinate arrays, decoded from their GX  #
+# # component types into numbers.                                                              #
+# ##############################################################################################
 COMP_SIZE = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4}
 COMP_FMT = {0: "B", 1: "b", 2: "H", 3: "h", 4: "f"}
 
@@ -167,8 +183,15 @@ class VertexArrays:
         return [d[p], d[p + 1], d[p + 2], d[p + 3]]
 
 
-# Shapes (SHP1) -----------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Shapes (SHP1) and the file                                                                 #
+# #                                                                                            #
+# # Each shape's display lists are decoded into triangle lists (strips and fans split), its    #
+# # vertices packed in the smallest format that keeps them (positions as s16 at a scale, or    #
+# # f32 for large shapes), grouped by the matrix slots they use. The materials are compiled by #
+# # mat.py; animated colour registers and texture patterns are found from the archive's        #
+# # animation files, since a compiled material must leave those values to the run time.        #
+# ##############################################################################################
 
 def triangles(prim, first, count):
     out = []

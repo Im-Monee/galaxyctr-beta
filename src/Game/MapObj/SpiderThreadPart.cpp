@@ -7,6 +7,7 @@
 #include "Game/Util/Color.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -188,6 +189,7 @@ void SpiderThreadPart::update() {
     }
 }
 
+// 3DS: the draw takes the thread's texture, which the Citro3D draw binds itself.
 #ifdef __3DS__
 void SpiderThreadPart::draw(JUTTexture* texture) const {
 #else
@@ -197,6 +199,7 @@ void SpiderThreadPart::draw() const {
         return;
     }
 
+    // 3DS: the thread's lines and points through DirectDraw.
 #ifdef __3DS__
     if (mIsStill) {
         drawLineDirect(texture);
@@ -765,7 +768,4 @@ void SpiderThreadPart::drawLineDirect(JUTTexture* texture) const {
 void SpiderThreadPart::drawPointsDirect(JUTTexture* texture) const {
     drawThreadPartDirect(this, texture, false);
 }
-#endif
-#ifdef __3DS__
-
 #endif

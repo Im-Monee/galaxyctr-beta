@@ -14,6 +14,7 @@
 #include <JSystem/JGeometry/TMatrix.hpp>
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include "WaterRender3DS.hpp"
 #endif
@@ -823,6 +824,8 @@ void OceanSphere::draw() const {
 #endif
 }
 
+// Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+// (DETAILS.md, section 5).
 #ifndef __3DS__
 const GXColor sOceanSphereFogFace = {0xFF, 0xFF, 0xFF, 0};
 const GXColor sOceanSphereFogBack = {0xFF, 0xFF, 0xFF, 0};
@@ -1089,6 +1092,8 @@ void OceanSphere::drawSphere(bool useEnvMap, bool useGD) const {
 #endif
 }
 
+// Wii only: GX material code the 3DS does not use (it draws through Citro3D, DETAILS.md, section
+// 5).
 #ifndef __3DS__
 void OceanSphere::sendVertex(const OceanSpherePoint* pPoint, bool useEnvMap, bool useGD) const {
     if (useGD) {

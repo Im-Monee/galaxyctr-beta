@@ -1,9 +1,14 @@
 #pragma once
 
-// Force-included into every translation unit of the 3DS build.
-// The decompiled code was written against Metrowerks' MSL, whose headers pull in
-// the C library transitively and provide a few non-standard macros. This recreates
-// that environment on top of newlib.
+// ##############################################################################################
+// # The Metrowerks C library environment                                                       #
+// #                                                                                            #
+// # Force-included into every file of the game world (tools/3ds/configure.py, -include). The   #
+// # decompiled code was written against Metrowerks' MSL, whose headers pull in the C library   #
+// # transitively and provide a few non-standard macros; this recreates that environment on top #
+// # of newlib. The small headers beside it (mem.h, cmath, extras.h...) map MSL-only headers to #
+// # newlib's.                                                                                  #
+// ##############################################################################################
 
 #include <ctype.h>
 #include <float.h>

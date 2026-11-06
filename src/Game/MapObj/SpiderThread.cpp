@@ -11,6 +11,7 @@
 #include "Game/Util/ActorSensorUtil.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DemoUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -134,6 +135,7 @@ void SpiderThread::draw() const {
         initDraw();
 
         for (s32 idx = 0; idx < mNumRadialParts; idx++) {
+            // 3DS: the thread's texture goes to the part's Citro3D draw.
 #ifdef __3DS__
             getRadialPart(idx)->draw(mThreadTexture);
 #else
@@ -142,6 +144,7 @@ void SpiderThread::draw() const {
         }
 
         for (s32 idx = 0; idx < mNumCircleParts; idx++) {
+            // 3DS: the thread's texture goes to the part's Citro3D draw.
 #ifdef __3DS__
             getCirclePart(idx)->draw(mThreadTexture);
 #else

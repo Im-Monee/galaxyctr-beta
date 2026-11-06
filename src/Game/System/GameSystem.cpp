@@ -162,6 +162,8 @@ void GameSystem::exeNormal() {
 }
 
 void GameSystem::initGX() {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     return;
 #else
@@ -232,6 +234,7 @@ namespace {
 #endif
 
 void GameSystem::frameLoop() {
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(1);
 #endif
@@ -248,33 +251,40 @@ void GameSystem::frameLoop() {
     draw();
 #endif
     FRAME_PHASE(1);
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(3);
 #endif
     MainLoopFramework::sManager->endRender();
     FRAME_PHASE(2);
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(4);
 #endif
     update();
     FRAME_PHASE(3);
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(5);
 #endif
     calcAnim();
     FRAME_PHASE(4);
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(6);
 #endif
     mObjHolder->captureIfAllowForScreenPreserver();
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(7);
 #endif
     MainLoopFramework::sManager->endFrame();
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(8);
 #endif
     MainLoopFramework::sManager->waitForRetrace();
+    // 3DS: the frame phase, for the stall report (debug.c).
 #ifdef __3DS__
     DEBUG_FRAME_PHASE(0);
 #endif
@@ -298,17 +308,20 @@ void GameSystem::draw() {
 
 void GameSystem::update() {
     SingletonHolder< GameSystemResetAndPowerProcess >::get()->movement();
+    // 3DS: the same calls, timed for the profile log (SYS_TIMER).
 #ifdef __3DS__
     {
         SYS_TIMER(5);
 #endif
         mSceneController->checkRequestAndChangeScene();
+    // 3DS: the same calls, timed for the profile log (SYS_TIMER).
 #ifdef __3DS__
     }
     {
         SYS_TIMER(4);
 #endif
         mObjHolder->update();
+    // 3DS: ends the timed part above.
 #ifdef __3DS__
     }
 #endif

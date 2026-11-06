@@ -39,6 +39,13 @@ import tpl
 import yaz0
 from binary import ConversionError
 
+# ##############################################################################################
+# # What is converted, and how                                                                 #
+# #                                                                                            #
+# # Each file is converted by its extension (FORMATS); text is the same on both platforms;     #
+# # editor leftovers are dropped; some files are used as they are (KEPT_AS_IS, with the        #
+# # reason). The movies are their own step, since they need ffmpeg.                            #
+# ##############################################################################################
 # Folders the file conversion leaves to their own step: the movies (movie.py, with ffmpeg).
 SKIPPED_DIRS = {"MovieData"}
 
@@ -90,6 +97,12 @@ def builder_version():
     return digest.hexdigest()[:12]
 
 
+# ##############################################################################################
+# # The converter                                                                              #
+# #                                                                                            #
+# # Converts one file: an archive file by file inside it, a model with its textures reduced,   #
+# # anything else by its format. Counts what it did for the log.                               #
+# ##############################################################################################
 class Converter:
     """Converts one file, recording which formats it could not handle."""
 
@@ -167,6 +180,12 @@ class Converter:
         return data
 
 
+# ##############################################################################################
+# # Converting a tree                                                                          #
+# #                                                                                            #
+# # For the command line: every file of a tree, then the movies. convert_smg_files.py drives   #
+# # the same Converter for the builder and the GUI.                                            #
+# ##############################################################################################
 def convert_one(job):
     src, dst = job
     converter = Converter()

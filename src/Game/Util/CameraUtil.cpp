@@ -55,6 +55,7 @@ namespace {
 #endif
 
     CameraContext* getCameraContext() {
+        // 3DS: a camera set for the native draws (rvl3DSSetCameraContext) takes precedence.
 #ifdef __3DS__
         if (sCameraContextOverride != nullptr) {
             return sCameraContextOverride;
@@ -72,6 +73,7 @@ namespace {
 
 };  // namespace
 
+// 3DS: the camera of the native draws while a scene uses its own (ScenarioSelectScene.cpp).
 #ifdef __3DS__
 void rvl3DSSetCameraContext(CameraContext* pContext) {
     sCameraContextOverride = pContext;
@@ -159,6 +161,8 @@ namespace MR {
     }
 
     void loadProjectionMtx() {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         return;
 #else

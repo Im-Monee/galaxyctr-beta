@@ -178,6 +178,8 @@ extern "C" void JUTWarningConsole(const char* pMessage) {
 }
 
 void JUTTexture::captureDolTexture(void* pBuffer, int width, int height, int x, int y, bool mipmap, GXTexFmt format) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifdef __3DS__
     (void)pBuffer;
     (void)width;
@@ -237,6 +239,7 @@ bool JUTException::queryMapAddress_single(char* pMap, u32 address, s32 section, 
 }
 
 void J3DShapeMtx::loadMtxIndx_PNGP(int slot, u16 index) const {
+    // 3DS: nothing to load: the native renderer sends the matrices itself.
 #ifdef __3DS__
     (void)slot;
     (void)index;
@@ -251,6 +254,7 @@ void J3DShapeMtx::loadMtxIndx_PNGP(int slot, u16 index) const {
 #endif
 }
 
+// 3DS: JPADraw3DS.hpp, the particles' 3DS drawing.
 #ifdef __3DS__
 #include "JPADraw3DS.hpp"
 #endif
@@ -261,6 +265,7 @@ namespace {
     void loadPrj(JPAEmitterWorkData const* pWork, const Mtx pSrt) {
         Mtx mtx;
         PSMTXConcat(pWork->mPrjMtx, pSrt, mtx);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::loadTexMtx(mtx);
 #else
@@ -299,6 +304,7 @@ namespace {
         matrix[2][3] = 0.0f;
         PSMTXConcat(matrix, pWork->mPrjMtx, matrix);
         PSMTXConcat(matrix, pSrt, matrix);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::loadTexMtx(matrix);
 #else
@@ -571,6 +577,7 @@ void JPADrawDirection(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle) {
     matrix[2][3] = pParticle->mPosition.z;
     p_plane[pWork->mPlaneType](matrix, scaleX, scaleY);
     PSMTXConcat(pWork->mPosCamMtx, matrix, matrix);
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(matrix);
     p_prj[pWork->mPrjType](pWork, matrix);
@@ -625,6 +632,7 @@ void JPADrawRotDirection(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle) 
     matrix[2][3] = pParticle->mPosition.z;
     PSMTXConcat(matrix, rotation, rotation);
     PSMTXConcat(pWork->mPosCamMtx, rotation, matrix);
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(matrix);
     p_prj[pWork->mPrjType](pWork, matrix);
@@ -665,6 +673,7 @@ void JPADrawDBillboard(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle) {
     matrix[2][2] = 1.0f;
     matrix[2][3] = position.z;
     matrix[0][2] = matrix[1][2] = matrix[2][0] = matrix[2][1] = 0.0f;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(matrix);
     p_prj[pWork->mPrjType](pWork, matrix);
@@ -690,32 +699,40 @@ void JPADrawLine(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle) {
 
     end.setLength(pWork->mGlobalPtclScl.y * (25.0f * pParticle->mParticleScaleY));
     end.sub(position, end);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
     GXSetVtxDesc(GX_VA_TEX0, GX_DIRECT);
 #endif
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_LINES);
 #else
     GXBegin(GX_LINES, GX_VTXFMT1, 2);
 #endif
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::vertex(position.x, position.y, position.z, 0.0f, 0.0f);
 #else
     GXPosition3f32(position.x, position.y, position.z);
     GXTexCoord2f32(0.0f, 0.0f);
 #endif
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::vertex(end.x, end.y, end.z, 0.0f, 1.0f);
 #else
     GXPosition3f32(end.x, end.y, end.z);
     GXTexCoord2f32(0.0f, 1.0f);
 #endif
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::end();
 #else
     GXEnd();
 #endif
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_INDEX8);
     GXSetVtxDesc(GX_VA_TEX0, GX_INDEX8);
@@ -752,12 +769,15 @@ void JPADrawStripe(JPAEmitterWorkData* pWork) {
         pNext = ::getNext;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(pWork->mPosCamMtx);
 #else
     GXLoadPosMtxImm(pWork->mPosCamMtx, GX_PNMTX0);
 #endif
     p_prj[pWork->mPrjType](pWork, pWork->mPosCamMtx);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
     GXSetVtxDesc(GX_VA_TEX0, GX_DIRECT);
@@ -767,6 +787,7 @@ void JPADrawStripe(JPAEmitterWorkData* pWork) {
     TVec3f side;
     TVec3f vertices[2];
     Mtx matrix;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_TRIANGLESTRIP);
 #else
@@ -811,12 +832,14 @@ void JPADrawStripe(JPAEmitterWorkData* pWork) {
         matrix[2][2] = pParticle->mBaseAxis.z;
         matrix[2][3] = 0.0f;
         PSMTXMultVecArraySR(matrix, vertices, vertices, 2);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z, 0.0f, texCoord);
 #else
         GXPosition3f32(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z);
         GXTexCoord2f32(0.0f, texCoord);
 #endif
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[1].x + position.x, vertices[1].y + position.y, vertices[1].z + position.z, 1.0f, texCoord);
 #else
@@ -827,11 +850,14 @@ void JPADrawStripe(JPAEmitterWorkData* pWork) {
         texCoord += texStep;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::end();
 #else
     GXEnd();
 #endif
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_INDEX8);
     GXSetVtxDesc(GX_VA_TEX0, GX_INDEX8);
@@ -871,12 +897,15 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
         pNext = ::getNext;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(pWork->mPosCamMtx);
 #else
     GXLoadPosMtxImm(pWork->mPosCamMtx, GX_PNMTX0);
 #endif
     p_prj[pWork->mPrjType](pWork, pWork->mPosCamMtx);
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
     GXSetVtxDesc(GX_VA_TEX0, GX_DIRECT);
@@ -886,6 +915,7 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
     TVec3f side;
     TVec3f vertices[2];
     Mtx matrix;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_TRIANGLESTRIP);
 #else
@@ -934,12 +964,14 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
         matrix[2][2] = pParticle->mBaseAxis.z;
         matrix[2][3] = 0.0f;
         PSMTXMultVecArraySR(matrix, vertices, vertices, 2);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z, 0.0f, texCoord);
 #else
         GXPosition3f32(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z);
         GXTexCoord2f32(0.0f, texCoord);
 #endif
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[1].x + position.x, vertices[1].y + position.y, vertices[1].z + position.z, 1.0f, texCoord);
 #else
@@ -950,12 +982,14 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
         texCoord += texStep;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::end();
 #else
     GXEnd();
 #endif
     texCoord = startTexCoord;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::begin(GX_TRIANGLESTRIP);
 #else
@@ -1004,12 +1038,14 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
         matrix[2][2] = pParticle->mBaseAxis.z;
         matrix[2][3] = 0.0f;
         PSMTXMultVecArraySR(matrix, vertices, vertices, 2);
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z, 0.0f, texCoord);
 #else
         GXPosition3f32(vertices[0].x + position.x, vertices[0].y + position.y, vertices[0].z + position.z);
         GXTexCoord2f32(0.0f, texCoord);
 #endif
+        // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
         JPA3DS::vertex(vertices[1].x + position.x, vertices[1].y + position.y, vertices[1].z + position.z, 1.0f, texCoord);
 #else
@@ -1020,11 +1056,14 @@ void JPADrawStripeX(JPAEmitterWorkData* pWork) {
         texCoord += texStep;
     }
 
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::end();
 #else
     GXEnd();
 #endif
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxDesc(GX_VA_POS, GX_INDEX8);
     GXSetVtxDesc(GX_VA_TEX0, GX_INDEX8);
@@ -1136,6 +1175,7 @@ void JPADrawYBillboard(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle) {
     matrix[2][2] = pWork->mYBBCamMtx[2][2];
     matrix[2][3] = position.z;
     matrix[0][1] = matrix[0][2] = matrix[1][0] = matrix[2][0] = 0.0f;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(matrix);
     p_prj[pWork->mPrjType](pWork, matrix);
@@ -1180,6 +1220,7 @@ void JPADrawRotYBillboard(JPAEmitterWorkData* pWork, JPABaseParticle* pParticle)
     matrix[2][1] = cosY * z;
     matrix[2][2] = y;
     matrix[2][3] = position.z;
+    // 3DS: the same step through the particles' 3DS drawing (JPADraw3DS.hpp) in place of GX.
 #ifdef __3DS__
     JPA3DS::loadPosMtx(matrix);
     p_prj[pWork->mPrjType](pWork, matrix);

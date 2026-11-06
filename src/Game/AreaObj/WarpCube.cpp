@@ -109,6 +109,7 @@ void WarpCube::draw() const {
     }
 
     TDDraw::drawSphere(cubePos + up * 120.0f, 120.0f, flags, 16);
+    // 3DS: ends the DirectDraw (Citro3D) state the draw above set up.
 #ifdef __3DS__
     TDDraw::closeDirect();
 #endif

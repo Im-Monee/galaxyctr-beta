@@ -1,8 +1,10 @@
-// Wide-character functions for the game's 16-bit wchar_t (UTF-16, as on the Wii).
-//
-// The game world is built with -fshort-wchar, while the 3DS C library uses 32-bit wchar_t,
-// so the library's versions cannot be used. Formatting is shared with printf.cpp (format.h).
-
+// ##############################################################################################
+// # Wide-character functions                                                                   #
+// #                                                                                            #
+// # For the game's 16-bit wchar_t (UTF-16, as on the Wii). The game world is built with        #
+// # -fshort-wchar, while the 3DS C library uses 32-bit wchar_t, so the library's versions      #
+// # cannot be used. Formatting is shared with printf.cpp (format.h).                           #
+// ##############################################################################################
 #include "format.h"
 #include <revolution/types.h>
 

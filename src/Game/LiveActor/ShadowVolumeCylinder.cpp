@@ -2,6 +2,7 @@
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -40,6 +41,7 @@ void ShadowVolumeCylinder::loadModelDrawMtx() const {
 
     TVec3f scale(radius, calcBaseDropLength() / ::sModelScale, radius);
     MR::preScaleMtx(mtx, scale);
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setModelMtxDirect(mtx.toMtxPtr());
 #else

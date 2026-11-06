@@ -12,10 +12,14 @@
 #include <revolution/gx/GXEnum.h>
 #include <revolution/gx/GXGeometry.h>
 #include <revolution/gx/GXVert.h>
+// 3DS: headers the 3DS code of this file uses (cmath, cstring).
 #ifdef __3DS__
 #include <cmath>
 #include <cstring>
 #endif
+// 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values; JUTTexture3DS.hpp, GPU textures for
+// JUTTextures; NativeMaterial3DS.hpp, a model's material for immediate geometry; host.h, the port's
+// host interface.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
@@ -210,6 +214,7 @@ namespace TDDraw {
     }
 
     void loadViewMtx(MtxPtr pMtx) {
+        // 3DS: the view matrix is kept for DirectDraw's own transform.
 #ifdef __3DS__
         PSMTXCopy(pMtx, ::mViewMtx);
         return;
@@ -219,6 +224,7 @@ namespace TDDraw {
     }
 
     void setModelMtx(MtxPtr pMtx) {
+        // 3DS: the Wii-style call goes to its DirectDraw (Citro3D) version.
 #ifdef __3DS__
         setModelMtxDirect(pMtx);
         return;
@@ -229,6 +235,7 @@ namespace TDDraw {
     }
 
     void resetViewMtx() {
+        // 3DS: the Wii-style call goes to its DirectDraw (Citro3D) version.
 #ifdef __3DS__
         resetViewMtxDirect();
         return;
@@ -239,6 +246,7 @@ namespace TDDraw {
     }
 
     void close() {
+        // 3DS: the Wii-style call goes to its DirectDraw (Citro3D) version.
 #ifdef __3DS__
         closeDirect();
         return;
@@ -250,6 +258,7 @@ namespace TDDraw {
     }
 
     void setup(u32 drawMode, u32 blendMode, u8 viewMode) {
+        // 3DS: the Wii-style call goes to its DirectDraw (Citro3D) version.
 #ifdef __3DS__
         setupDirect(drawMode, blendMode, viewMode);
         return;
@@ -1354,10 +1363,9 @@ namespace TDDraw {
         hostGfxDraw(vertices, count, nullptr, count, HOST_GFX_TRIANGLES, &state);
     }
 #endif
-#ifdef __3DS__
-
-#endif
     void sendPoint(const TVec3f& rPoint, u32 color) NO_INLINE {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)rPoint;
         (void)color;
@@ -1368,6 +1376,8 @@ namespace TDDraw {
     }
 
     void sendPoint(const TVec3f& rVec) NO_INLINE {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)rVec;
 #else
@@ -1438,6 +1448,7 @@ namespace TDDraw {
     }
 
     void drawCircle(const TVec3f& rCenter, const TVec3f& rNormal, const TVec3f& rAxis, f32 radius, u32 color, u32 segments) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
         TVec3f axis(rAxis);
@@ -1468,6 +1479,7 @@ namespace TDDraw {
     }
 
     void drawFillCircle(const TVec3f& rCenter, f32 radius, u32 centerColor, u32 edgeColor, u32 segments) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
         TVec3f points[258];
@@ -1499,6 +1511,7 @@ namespace TDDraw {
     }
 
     void drawFillCircle(const TVec3f& rCenter, const TVec3f& rNormal, f32 radius, u32 color, u32 segments) {
+        // 3DS: the vertices go into an array of at most 256 segments.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
 #endif
@@ -1513,6 +1526,7 @@ namespace TDDraw {
         Mtx rotation;
         PSMTXRotAxisRad(rotation, rNormal, (6.2831855f / segments));
 
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
         TVec3f points[258];
@@ -1544,6 +1558,7 @@ namespace TDDraw {
     }
 
     void drawFillFan(const TVec3f& rCenter, const TVec3f& rNormal, const TVec3f& rAxis, u32 color, f32 startAngle, f32 endAngle, u32 segments) {
+        // 3DS: the vertices go into an array of at most 256 segments.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
 #endif
@@ -1554,6 +1569,7 @@ namespace TDDraw {
         TVec3f axis;
         PSMTXMultVec(startRotation, rAxis, axis);
 
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
         TVec3f points[258];
@@ -1586,6 +1602,7 @@ namespace TDDraw {
     }
 
     void drawCylinder(const TVec3f& rBase, const TVec3f& rHeight, f32 radius, u32 baseColor, u32 topColor, u32 segments) {
+        // 3DS: the vertices go into an array of at most 256 segments.
 #ifdef __3DS__
         if (segments == 0 || segments > 256) return;
 #endif
@@ -1607,6 +1624,7 @@ namespace TDDraw {
         Mtx rotation;
         PSMTXRotAxisRad(rotation, rHeight, (TWO_PI / segments));
 
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         TVec3f positions[514];
         u32 colors[514];
@@ -1638,6 +1656,7 @@ namespace TDDraw {
 
     void drawSpherePart(const TPos3f& rMtx, f32 radius, f32 startAzimuth, f32 endAzimuth, f32 startPolar, f32 endPolar, u32 color,
                         u32 azimuthSegments, u32 polarSegments) {
+        // 3DS: the vertices go into an array of at most 256 segments.
 #ifdef __3DS__
         if (azimuthSegments == 0 || polarSegments == 0 || azimuthSegments > 256 || polarSegments > 256) return;
 #endif
@@ -1660,6 +1679,7 @@ namespace TDDraw {
             azimuthCos = MR::cos(azimuth);
             TVec3f radial((side * azimuthCos + up * azimuthSin) * radius);
 
+            // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
             TVec3f positions[514];
             u32 colors[514];
@@ -1719,6 +1739,7 @@ namespace TDDraw {
     }
 
     void drawTexture(const TVec2f& rPosition, JUTTexture* pTexture, const TVec2f& rSize) {
+        // 3DS: the textured quad through the Citro3D draw below, fully opaque.
 #ifdef __3DS__
         drawTexture(rPosition, pTexture, rSize, 255);
 #else
@@ -1937,11 +1958,9 @@ namespace TDDraw {
         hostGfxDraw(vertices, 6, nullptr, 6, HOST_GFX_TRIANGLES, &state);
     }
 #endif
-#ifdef __3DS__
-
-#endif
     void drawTexture3D(const TVec3f& rCenter, const TVec3f& rNormal, const TVec3f& rUp, f32 width, f32 height, JUTTexture* pTexture, bool flipX,
                        bool flipY) {
+        // 3DS: the textured quad through the Citro3D draw below, fully opaque.
 #ifdef __3DS__
         drawTexture3D(rCenter, rNormal, rUp, width, height, pTexture, flipX, flipY, 255);
 #else
@@ -1981,9 +2000,7 @@ namespace TDDraw {
         GXEnd();
 #endif
     }
-#ifdef __3DS__
-
-#endif
+    // 3DS: a textured quad in 3D with an alpha, through Citro3D.
 #ifdef __3DS__
     void drawTexture3D(const TVec3f& rCenter, const TVec3f& rNormal, const TVec3f& rUp, f32 width, f32 height,
                        JUTTexture* pTexture, bool flipX, bool flipY, u8 alpha) {
@@ -2006,6 +2023,7 @@ namespace TDDraw {
 #endif
 
     void drawFillBox(const TVec3f& rMin, const TVec3f& rMax, u32 color) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         const TVec3f positions[6] = {TVec3f(rMin.x, rMin.y, rMin.z), TVec3f(rMax.x, rMin.y, rMin.z),
                                       TVec3f(rMax.x, rMax.y, rMax.z), TVec3f(rMin.x, rMin.y, rMin.z),
@@ -2030,6 +2048,7 @@ namespace TDDraw {
     }
 
     void drawFillBox(const TVec2f& rMin, const TVec2f& rMax, u32 color) {
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         const TVec3f positions[6] = {TVec3f(rMin.x, rMin.y, 0.0f), TVec3f(rMax.x, rMin.y, 0.0f),
                                       TVec3f(rMax.x, rMax.y, 0.0f), TVec3f(rMin.x, rMin.y, 0.0f),
@@ -2064,6 +2083,7 @@ namespace TDDraw {
         p6 = p2 + rHeight;
         p7 = p3 + rHeight;
 
+        // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
         const TVec3f quads[6][4] = {{p0, p1, p2, p3}, {p7, p4, p0, p3}, {p6, p2, p1, p5},
                                     {p0, p4, p5, p1}, {p6, p7, p3, p2}, {p6, p5, p4, p7}};
@@ -2129,6 +2149,7 @@ namespace TDDraw {
 
     void cameraInit3D() {
         MR::loadProjectionMtx();
+        // 3DS: DirectDraw keeps the projection itself (no GX projection register).
 #ifdef __3DS__
         copyDirectProjection(*MR::getCameraProjectionMtx().toCMtx44());
 #endif
@@ -2146,9 +2167,12 @@ namespace TDDraw {
         height = MR::getScreenHeight() / 2;
         Mtx44 projection;
         C_MTXOrtho(projection, height, -height, -width, width, nearZ, -farZ);
+        // 3DS: DirectDraw keeps the projection itself (no GX projection register).
 #ifdef __3DS__
         copyDirectProjection(projection);
 #endif
+        // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+        // (DETAILS.md, section 5).
 #ifndef __3DS__
         GXSetProjection(projection, GX_ORTHOGRAPHIC);
         MR::setDefaultViewportAndScissor();
@@ -2156,6 +2180,8 @@ namespace TDDraw {
     }
 
     void mixFogColor(TVec3f position, f32 radius, u32 packedColor) {
+        // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+        // (DETAILS.md, section 5).
 #ifdef __3DS__
         (void)position;
         (void)radius;
@@ -2285,6 +2311,8 @@ namespace TDDraw {
     }
 
     void project2D(TVec3f* pDest, const TVec3f& rPosition) {
+        // 3DS: the position projected with the camera's matrices directly (GX's viewport and
+        // projection are not kept).
 #ifdef __3DS__
         TVec3f view;
         PSMTXMultVec(MR::getCameraViewMtx(), &rPosition, &view);

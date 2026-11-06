@@ -1,9 +1,13 @@
 #pragma once
 
-// JPA particles on the 3DS (platform/3ds/gx/particle.cpp): what the Wii's JPA draws send to GX
-// (vertex arrays and display lists, position and texture matrices, texture coordinate generation,
-// TEV colours and modes, alpha test, point size and line width), kept here and drawn through
-// Citro3D with the vertices and texture coordinates GX would make of them.
+// ##############################################################################################
+// # JPA particles on the 3DS                                                                   #
+// #                                                                                            #
+// # What the Wii's JPA draws send to GX (vertex arrays and display lists, position and texture #
+// # matrices, texture coordinate generation, TEV colours and modes, alpha test, point size and #
+// # line width), kept by platform/3ds/gx/particle.cpp and drawn through Citro3D with the       #
+// # vertices and texture coordinates GX would make of them.                                    #
+// ##############################################################################################
 
 #include <revolution/gx.h>
 #include <revolution/mtx.h>

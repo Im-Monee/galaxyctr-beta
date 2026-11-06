@@ -11,6 +11,8 @@
 #include "Game/Util/JMapUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+// 3DS: headers the 3DS code of this file uses (DirectDraw.hpp, DrawUtil.hpp, MathUtil.hpp,
+// SystemUtil.hpp, GXToCitro3D.hpp).
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #include "Game/Util/DrawUtil.hpp"

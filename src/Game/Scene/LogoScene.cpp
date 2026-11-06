@@ -237,6 +237,7 @@ void LogoScene::exeDeactive() {
 }
 
 void LogoScene::initLayout() {
+    // Wii only: the Wii Remote strap screen; the 3DS has no Wii Remote (owner's request).
 #ifndef __3DS__
     mStrapLayout = MR::createSimpleLayout("ストラップ着用画面", "WiiRemoteStrap", 1);
     mStrapLayout->kill();

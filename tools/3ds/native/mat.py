@@ -41,6 +41,12 @@ of that, 6 half the value negated: added or taken off after the clamped value).
 import copy
 import struct
 
+# ##############################################################################################
+# # The record's values                                                                        #
+# #                                                                                            #
+# # The PICA's combiner sources, operands and functions, and the flags of a material record,   #
+# # as platform/3ds/gx/native.cpp reads them.                                                  #
+# ##############################################################################################
 # PICA values (libctru gpu/enums.h).
 SRC_PRIMARY, SRC_TEXTURE0, SRC_BUFFER, SRC_CONSTANT, SRC_PREVIOUS = 0x00, 0x03, 0x0D, 0x0E, 0x0F
 OP_RGB_COLOR, OP_RGB_ALPHA, OP_RGB_R, OP_RGB_G, OP_RGB_B = 0x00, 0x02, 0x04, 0x08, 0x0C
@@ -79,8 +85,14 @@ COLOR_CHANNEL_OP = [OP_RGB_R, OP_RGB_G, OP_RGB_B, OP_RGB_ALPHA]
 ALPHA_CHANNEL_OP = [OP_A_R, OP_A_G, OP_A_B, OP_A_ALPHA]
 
 
-# Combiner terms --------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Combiner terms and halves                                                                  #
+# #                                                                                            #
+# # The same model as platform/3ds/gx/tev_terms.h: a Term is one input of a combiner function, #
+# # a Half the colour or alpha part of one combiner stage. One TEV function, (d +/- lerp(a, b, #
+# # c) + bias) * scale, becomes one or more halves; build_halves picks the form with the       #
+# # fewest stages, and clamps where the Wii's TEV clamps.                                      #
+# ##############################################################################################
 
 class Term:
     __slots__ = ("src", "op", "value", "ref", "zero", "one", "previous", "negative", "below_zero", "signed_half",
@@ -513,8 +525,13 @@ def build_halves_clamped(a, b, c, d, bias, subtract, scale, alpha):
     return out
 
 
-# Material inputs ---------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Material inputs                                                                            #
+# #                                                                                            #
+# # What a TEV stage reads, as terms: its texture, the rasterized colour, the colour registers #
+# # (constant in the record, or left to the run time when the game animates them), the         #
+# # constant colours and the swap tables.                                                      #
+# ##############################################################################################
 
 def clamp(v):
     return 0 if v < 0 else 255 if v > 255 else v
@@ -716,6 +733,12 @@ def alpha_input(arg, inp, low_byte=False):
     return zero()
 
 
+# ##############################################################################################
+# # Combiner stages                                                                            #
+# #                                                                                            #
+# # A compiled stage holds a colour half and an alpha half side by side; the helpers below     #
+# # pack the halves of consecutive TEV stages into as few combiner stages as possible.         #
+# ##############################################################################################
 class Stage:
     def __init__(self):
         self.color_src = [SRC_PREVIOUS] * 3
@@ -820,6 +843,13 @@ def store_halves(color, alpha):
     return stages, exact
 
 
+# ##############################################################################################
+# # More passes                                                                                #
+# #                                                                                            #
+# # A material that needs more than the PICA's 6 combiner stages is split into passes, each    #
+# # drawn over the last with a blending that adds or multiplies its result into the frame      #
+# # buffer the way the TEV would have combined it.                                             #
+# ##############################################################################################
 # Framebuffer operations of the passes after the first (blend equation, source, destination):
 # the framebuffer holds the colour so far, the pass draws src.
 FB_MUL = (BLEND_ADD, FACTOR_ZERO, FACTOR_SRC_COLOR)         # dst * src
@@ -1187,6 +1217,14 @@ def multipass_allowed(mat):
     return mat["blend"][0] == 0 and enable and update
 
 
+# ##############################################################################################
+# # Compiling a material                                                                       #
+# #                                                                                            #
+# # Stage by stage: the inputs, each TEV function as halves, comparisons and indirect stages,  #
+# # then the halves packed into combiner stages and passes. When the result does not fit or is #
+# # not exact, simpler forms are tried (folding constants, reordering terms); the record says  #
+# # when the material is inexact. tevcheck.py checks the result against the Wii's TEV.         #
+# ##############################################################################################
 def compile_material(mat, chains=True, fixed=False):
     """(stages, units, ras channel, inexact, passes, buffer masks) for a decoded material; passes
     are (stages, blend, rasterized channel, units).
@@ -1515,12 +1553,18 @@ def compile_material(mat, chains=True, fixed=False):
     return stages, units, ras_channel, inexact or inp.inexact, passes, (buffer_rgb, buffer_alpha)
 
 
+# ##############################################################################################
+# # Folding and chaining                                                                       #
+# #                                                                                            #
+# # The rewrites compile_material tries to make a material fit: constants folded into a stage, #
+# # alpha placed where it is free, lerps factored, chains of offsets and halvings collapsed.   #
+# ##############################################################################################
 def buffer_safe(stages, buffer_rgb, buffer_alpha):
     """(stages, buffer masks) whose first combiner does not read the combiner buffer. The buffer
     reaches a combiner one stage late and is 0 in the first one on the 3DS as Azahar computes it
     (sw_rasterizer.cpp WriteTevConfig), while these rules read its initial 0.5 from the first
     combiner on (half()): a leading combiner that changes nothing puts the reader second, where
-    both behaviours give 0.5 (TicoComet, GlareGlow, ShockWaveGenerator: U3 audit)."""
+    both behaviours give 0.5 (TicoComet, GlareGlow, ShockWaveGenerator: found by the material audit)."""
     if not stages or len(stages) >= MAX_STAGES or (buffer_rgb, buffer_alpha) != (0, 0):
         return stages, buffer_rgb, buffer_alpha
     first = stages[0]
@@ -1878,8 +1922,12 @@ def buffered(halves, alpha):
     return out
 
 
-# MAT3 --------------------------------------------------------------------------------------
-
+# ##############################################################################################
+# # Reading MAT3                                                                               #
+# #                                                                                            #
+# # The model's materials from its MAT3 block: every material's TEV stages, orders, colours,   #
+# # texture coordinate generations, alpha test, blending and depth.                            #
+# ##############################################################################################
 
 def _u16(b, o):
     return struct.unpack_from(">H", b, o)[0]
@@ -1994,6 +2042,15 @@ def parse(data, block, size):
     return mats
 
 
+# ##############################################################################################
+# # The alpha test                                                                             #
+# #                                                                                            #
+# # GX tests alpha with two comparisons and a logic operation, the PICA with one comparison:   #
+# # the one that passes the same values is found by trying all 256 values, and a range is      #
+# # split into two passes. The Wii wraps an unclamped alpha to 8 bits where the 3DS clamps it: #
+# # the materials that rely on it (the eyelids of Mario and others, some water) get stages     #
+# # that reproduce the wrap.                                                                   #
+# ##############################################################################################
 def _gx_alpha(mat, regs, konst, tex, ras):
     """The GX TEV's alpha before the alpha test (Dolphin's rules): unclamped stages keep 11
     signed bits; the last result is wrapped to 8 bits (prev & 255) before the test, not clamped.
@@ -2017,7 +2074,7 @@ def _gx_alpha(mat, regs, konst, tex, ras):
         av, bv, cv = inp(a) & 255, inp(b) & 255, inp(c) & 255
         # Dolphin's Tev::DrawAlphaRegular, bit for bit: the lerp is rounded (+128, +127 when
         # subtracting, none for divide-by-2) before >> 8, and the scale shifts both terms. Without
-        # the rounding the eyelids' test passed from texture alpha 4 instead of 2 (U3 audit).
+        # the rounding the eyelids' test passed from texture alpha 4 instead of 2 (material audit).
         c2 = cv + (cv >> 7)
         temp = (av * (256 - c2) + bv * c2) << [0, 1, 2, 0][scale]
         temp += 0 if scale == 3 else (127 if op == 1 else 128)
@@ -2187,7 +2244,7 @@ def exact_alpha_test(comp0, ref0, logic, comp1, ref1):
     """(PICA test, reference) passing exactly the alpha values the Wii's two comparisons and
     their logic pass, or None when no single comparison does (a range inside 0-255, two ranges).
     As JPA3DS::reduceAlphaTest does for particles: the first comparison alone was wrong for 23
-    materials by one value (U3 audit)."""
+    materials by one value (material audit)."""
     passes = [_alpha_passes(comp0, ref0, logic, comp1, ref1, a) for a in range(256)]
     n = sum(passes)
     if n == 0:
@@ -2224,6 +2281,12 @@ def split_alpha_test(comp0, ref0, logic, comp1, ref1):
     return (TEST_LEQUAL, low), (TEST_GEQUAL, high)
 
 
+# ##############################################################################################
+# # The record                                                                                 #
+# #                                                                                            #
+# # Blending, depth and alpha test as PICA values, and the record native.cpp reads (its layout #
+# # is MATERIAL_SIZE bytes, matching kMaterialSize there).                                     #
+# ##############################################################################################
 def fragment_state(mat):
     """(blend equation, src, dst, alpha test, alpha ref, depth test, depth func, write mask)."""
     btype, src, dst, _ = mat["blend"]

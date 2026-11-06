@@ -57,6 +57,7 @@ void J3DShapeMtx::loadMtxIndx_PNCPU(int slot, u16 indx) const {
 #endif
 }
 
+// 3DS: the texture matrices are also handed back, for the native renderer to load.
 #ifdef __3DS__
 void J3DDifferedTexMtx::loadExecute(f32 const (*param_0)[4], Mtx* pOut) {
 #else
@@ -86,6 +87,7 @@ void J3DDifferedTexMtx::loadExecute(f32 const (*param_0)[4]) {
 
     if (j3dSys.checkFlag(J3DSysFlag_PostTexMtx)) {
         for (u16 i = 0; i < tex_mtx_num; i++) {
+            // 3DS: an identity matrix where the Wii loads none.
 #ifdef __3DS__
             if (pOut != NULL) {
                 PSMTXIdentity(pOut[i]);
@@ -185,6 +187,7 @@ void J3DDifferedTexMtx::loadExecute(f32 const (*param_0)[4]) {
         }
     } else {
         for (u16 i = 0; i < tex_mtx_num; i++) {
+            // 3DS: an identity matrix where the Wii loads none.
 #ifdef __3DS__
             if (pOut != NULL) {
                 PSMTXIdentity(pOut[i]);

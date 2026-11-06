@@ -30,6 +30,7 @@ void CaptureScreenDirector::captureIfAllow(const char* pName) {
 }
 
 void CaptureScreenDirector::capture() {
+    // 3DS: the capture through the GPU's copy (rvl/jut_texture.cpp); no copy filter to set.
 #ifdef __3DS__
     if (mTexture != nullptr) {
         mTexture->capture(0, 0, GX_TF_RGB565, false, false);

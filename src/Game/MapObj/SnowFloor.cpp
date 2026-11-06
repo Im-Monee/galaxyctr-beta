@@ -3,10 +3,12 @@
 #include "Game/Util.hpp"
 #include "Game/Util/Color.hpp"
 #include "Game/Util/DirectDraw.hpp"
+// 3DS: headers the 3DS code of this file uses (CameraUtil.hpp).
 #ifdef __3DS__
 #include "Game/Util/CameraUtil.hpp"
 #endif
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: JUTTexture3DS.hpp, GPU textures for JUTTextures; host.h, the port's host interface.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
 #include "host.h"
@@ -40,9 +42,7 @@ namespace {
     f32 cSnowFallRateFirst = 0.1f;
     f32 cPlayerWalkResist = 0.5f;
     u16 sCellSize = 1024 / sTextureSize;
-#ifdef __3DS__
-
-#endif
+    // 3DS: a snow point into clip space for the Citro3D draw.
 #ifdef __3DS__
     void projectSnowFloorPoint(const TVec3f& position, float s, float t, const Mtx44& projection, HostGfxVertex& vertex) {
         TVec3f view;
@@ -619,6 +619,7 @@ void SnowFloor::attackSensor(HitSensor* pSender, HitSensor* pReceiver) {
 }
 
 void SnowFloor::draw() const {
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::setupDirect(1, 1, 0);
     rvl3DSInvalidateJUTTexture(mTexture);

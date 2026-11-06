@@ -34,6 +34,8 @@ namespace MR {
     void fillScreenSetup(const GXColor&);
     void fillScreenArea(const TVec2s&, const TVec2s&);
     void fillScreen(const GXColor&);
+    // 3DS: a full-screen fill of the frame buffer's alpha (GX's destination alpha), for the shadow
+    // volumes.
 #ifdef __3DS__
     void fillScreenAlpha(const GXColor&);
 #endif

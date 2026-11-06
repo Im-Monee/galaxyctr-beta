@@ -1,4 +1,5 @@
 #include "Game/Screen/StarPointerDirector.hpp"
+// 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
 #endif
@@ -157,6 +158,7 @@ StarPointerPeekZ::StarPointerPeekZ() {
 }
 
 void StarPointerPeekZ::setDrawSyncToken() {
+    // 3DS: the depth is read straight from the render target, at the next draw sync.
 #ifdef __3DS__
     drawSyncCallback(0);
     return;
@@ -169,6 +171,8 @@ void StarPointerPeekZ::setDrawSyncToken() {
 }
 
 void StarPointerPeekZ::drawSyncCallback(u16 token) {
+    // 3DS: the depth under each pointer, read from the last finished frame (host/gfx.c,
+    // hostGfxPeekEfb).
 #ifdef __3DS__
     (void)token;
     for (s32 channel = 0; channel < StarPointerFunction::getNumStarPointer(); channel++) {

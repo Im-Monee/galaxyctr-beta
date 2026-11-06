@@ -42,6 +42,12 @@ TYPE_BGM = 0x60
 TYPE_STREAM = 0x70
 
 
+# ##############################################################################################
+# # Reading an audio archive                                                                   #
+# #                                                                                            #
+# # An audio archive is a list of commands, each naming a section and where it lies; the       #
+# # sections the game reads are converted, the rest are left as they are.                      #
+# ##############################################################################################
 def read_commands(data):
     if data[:4] != b"AA_<":
         raise ConversionError("not an audio archive")
@@ -314,6 +320,11 @@ def convert_bank(buf, start):
         swap32_array(buf, at, 2)
 
 
+# ##############################################################################################
+# # Converting an archive                                                                      #
+# #                                                                                            #
+# # Every kept section converted by its kind; describe lists them, for checks.                 #
+# ##############################################################################################
 def convert(data):
     commands, end = read_commands(data)
     buf = bytearray(data)

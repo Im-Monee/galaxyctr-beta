@@ -30,6 +30,8 @@ public:
     bool calcInfo(const TVec3f& rPosition, TVec3f* pAcceleration) const;
     void initPoints();
     void drawPlane(f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 u1) const;
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     void loadMaterial() const;
 #endif

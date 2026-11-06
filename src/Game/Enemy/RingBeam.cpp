@@ -8,6 +8,7 @@
 #include "Game/Util/ActorSensorUtil.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DemoUtil.hpp"
+// 3DS: DirectDraw, TDDraw's Citro3D draws.
 #ifdef __3DS__
 #include "Game/Util/DirectDraw.hpp"
 #endif
@@ -80,6 +81,7 @@ void RingBeamShadowDrawer::drawShape() const {
         PSMTXMultVec(mtx, &XDirScaled, &XDirScaled);
     }
 
+    // 3DS: the strip's vertices are collected, then drawn through DirectDraw.
 #ifdef __3DS__
     TVec3f strip[64];
     u32 colors[64];
@@ -96,6 +98,7 @@ void RingBeamShadowDrawer::drawShape() const {
         listXDirScaledPos.scale(5.0f, listXDir);
         temp.add(Trans, listXDirScaledNeg);
         temp2.add(Trans, listXDirScaledPos);
+        // 3DS: the strip's vertices are collected, then drawn through DirectDraw.
 #ifdef __3DS__
         strip[i * 2] = temp2;
         strip[i * 2 + 1] = temp;
@@ -104,12 +107,15 @@ void RingBeamShadowDrawer::drawShape() const {
         GXPosition3f32(temp.x, temp.y, temp.z);
 #endif
     }
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::drawDirectStrip(strip, colors, 64);
 #else
     GXEnd();
 #endif
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXBegin(GX_TRIANGLESTRIP, GX_VTXFMT0, 64);
 #endif
@@ -125,6 +131,7 @@ void RingBeamShadowDrawer::drawShape() const {
         temp2.add(Trans, listXDirScaledPos);
         temp.add(negYDirScaled);
         temp2.add(negYDirScaled);
+        // 3DS: the strip's vertices are collected, then drawn through DirectDraw.
 #ifdef __3DS__
         strip[i * 2] = temp;
         strip[i * 2 + 1] = temp2;
@@ -133,10 +140,14 @@ void RingBeamShadowDrawer::drawShape() const {
         GXPosition3f32(temp2.x, temp2.y, temp2.z);
 #endif
     }
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXEnd();
 #endif
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXBegin(GX_TRIANGLESTRIP, GX_VTXFMT0, 64);
 #endif
@@ -150,6 +161,7 @@ void RingBeamShadowDrawer::drawShape() const {
         temp.add(Trans, listXDirScaledNeg);
         temp2.add(Trans, listXDirScaledNeg);
         temp2.add(negYDirScaled);
+        // 3DS: the strip's vertices are collected, then drawn through DirectDraw.
 #ifdef __3DS__
         strip[i * 2] = temp;
         strip[i * 2 + 1] = temp2;
@@ -158,12 +170,15 @@ void RingBeamShadowDrawer::drawShape() const {
         GXPosition3f32(temp2.x, temp2.y, temp2.z);
 #endif
     }
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::drawDirectStrip(strip, colors, 64);
 #else
     GXEnd();
 #endif
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXBegin(GX_TRIANGLESTRIP, GX_VTXFMT0, 64);
 #endif
@@ -177,6 +192,7 @@ void RingBeamShadowDrawer::drawShape() const {
         temp.add(Trans, listXDirScaledPos);
         temp2.add(Trans, listXDirScaledPos);
         temp2.add(negYDirScaled);
+        // 3DS: the strip's vertices are collected, then drawn through DirectDraw.
 #ifdef __3DS__
         strip[i * 2] = temp2;
         strip[i * 2 + 1] = temp;
@@ -185,6 +201,7 @@ void RingBeamShadowDrawer::drawShape() const {
         GXPosition3f32(temp.x, temp.y, temp.z);
 #endif
     }
+    // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     TDDraw::drawDirectStrip(strip, colors, 64);
 #else
@@ -193,6 +210,8 @@ void RingBeamShadowDrawer::drawShape() const {
 }
 
 void RingBeamShadowDrawer::loadModelDrawMtx() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXLoadPosMtxImm(MR::getCameraViewMtx(), 0);
     GXSetCurrentMtx(0);

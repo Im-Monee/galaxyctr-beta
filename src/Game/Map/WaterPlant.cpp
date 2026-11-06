@@ -6,6 +6,7 @@
 #include <JSystem/J3DGraphAnimator/J3DAnimation.hpp>
 #include <JSystem/JGeometry/TUtil.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+// 3DS: WaterRender3DS.hpp, water drawn through Citro3D.
 #ifdef __3DS__
 #include <WaterRender3DS.hpp>
 #endif
@@ -163,6 +164,8 @@ void WaterPlant::draw() const {
         return;
     }
 
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     ::getWaterPlantDrawInit()->loadTex(mType);
 #endif
@@ -357,6 +360,8 @@ void WaterPlantDrawInit::movement() {
 }
 
 void WaterPlantDrawInit::loadTex(int tex) {
+    // 3DS: nothing to do here: the Wii branch works with GX, which the 3DS build does not have
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     if (tex == 1) {
         mPlantBTex->load(GX_TEXMAP0);
@@ -391,6 +396,8 @@ void WaterPlantDrawInit::updateSwingPos() {
 #pragma push
 #pragma opt_propagation off
 void WaterPlantDrawInit::initDraw() const {
+    // Wii only: GX state, display lists and material setup; the 3DS draws this through Citro3D
+    // (DETAILS.md, section 5).
 #ifndef __3DS__
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
     GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_POS_XYZ, GX_F32, 0);

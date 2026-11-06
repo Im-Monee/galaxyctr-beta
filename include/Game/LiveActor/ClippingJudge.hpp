@@ -19,6 +19,8 @@ public:
     /* 0x0C */ THex3f mFrustum;
     /* 0x06C */ THex3f mClipFrustums[0x8];
     /* 0x36C */ f32 mClipDistances[0x8];
+    // 3DS: the actor clipping test with the frustums scaled for the lowered detail
+    // (ClippingJudge.cpp, hostPerfDetail).
 #ifdef __3DS__
     bool isJudgedToClipActor(const TVec3f&, f32, s32) const;
     void updateActorScale();

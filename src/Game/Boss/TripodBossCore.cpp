@@ -95,6 +95,7 @@ void TripodBossCore::exeWait() {
     }
 
     updateTripodMatrix();
+    // 3DS: Color8 in place of the GX colour type; the same values.
 #ifdef __3DS__
     MR::requestPointLight(this, mPosition, Color8(0x96, 0x96, 0x96, 0xFF), 1.0f, -1);
 #else
@@ -112,6 +113,7 @@ void TripodBossCore::exeDamageDemo() {
         MR::tryStartAllAnim(mBloomModel, "2ndDemo");
     }
 
+    // 3DS: Color8 in place of the GX colour type; the same values.
 #ifdef __3DS__
     MR::requestPointLight(this, mPosition, Color8(0xFF, 0x96, 0x96, 0xFF), 1.0f, -1);
 #else
@@ -125,6 +127,7 @@ void TripodBossCore::exeDamageDemo() {
 
 void TripodBossCore::exeWarning() {
     updateTripodMatrix();
+    // 3DS: Color8 in place of the GX colour type; the same values.
 #ifdef __3DS__
     MR::requestPointLight(this, mPosition, Color8(0xFF, 0x96, 0x96, 0xFF), 1.0f, -1);
 #else
