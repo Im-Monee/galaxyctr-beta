@@ -8,6 +8,10 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/TalkUtil.hpp"
+// 3DS: Pad3DS.hpp, the remote's tilt from the circle pad.
+#ifdef __3DS__
+#include "Pad3DS.hpp"
+#endif
 
 namespace {
     static const s32 sStepTalk = 150;
@@ -46,7 +50,12 @@ SurfRayTutorial::SurfRayTutorial(LiveActor* pHost, TalkMessageCtrl* pTalkCtrl, c
 }
 
 bool SurfRayTutorial::update() {
+    // 3DS: the remote's tilt from the circle pad, as on the manta (SurfRay::updateRotate).
+#ifdef __3DS__
+    rvl3DSSurfRayAcceleration(&mPadAccel.x, &mPadAccel.y, &mPadAccel.z);
+#else
     MR::getCorePadAcceleration(&mPadAccel, WPAD_CHAN0);
+#endif
     updateNerve();
 
     return mIsTutorialPass;

@@ -201,6 +201,17 @@ namespace MR {
         u32 i;
 
         for (i = 0; i < num - 1; pDst++, pSrc++, i++) {
+            // 3DS: the converter stores the game's text little-endian (tools/3ds/builder/bmg.py), so
+            // the high byte comes second. Reading the bytes in the Wii's order stopped at the first
+            // character, and sound tags in messages (a Luma's "TRANSFORM!" cry) played no sound.
+#ifdef __3DS__
+            const u16 c = static_cast< u16 >(*pSrc);
+            if (c == 0 || c > 0xFF) {
+                break;
+            }
+            *pDst = static_cast< char >(c);
+            continue;
+#endif
             const char* p = reinterpret_cast< const char* >(pSrc);
 
             if (p[0] != '\0') {

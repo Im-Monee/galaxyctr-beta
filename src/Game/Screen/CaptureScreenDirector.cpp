@@ -7,6 +7,10 @@
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <cstring>
+// 3DS: JUTTexture3DS.hpp, whether a capture really copied the screen.
+#ifdef __3DS__
+#include "JUTTexture3DS.hpp"
+#endif
 
 namespace {
     const TimingInfo cTimingInfo[] = {{"GameScreen", 32, true, 1}, {"Indirect", 1, false, 0},    {"Camera", 4, true, 1},
@@ -25,7 +29,16 @@ void CaptureScreenDirector::captureIfAllow(const char* pName) {
     if (getUsingTiming() == pInfo && (getUsingTiming()->_C == 0 || _18)) {
         capture();
 
+        // 3DS: a requested capture stays pending until the screen is really copied. In a frame the
+        // renderer skips nothing is copied, and the texture would keep an old capture: entering a
+        // planetarium, the closing wipe showed Gateway's Pull Star tutorial (a tester, Nov 2026).
+#ifdef __3DS__
+        if (rvl3DSLastCaptureDone()) {
+            _18 = false;
+        }
+#else
         _18 = false;
+#endif
     }
 }
 

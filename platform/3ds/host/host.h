@@ -99,7 +99,11 @@ void hostGfxRequestShot(const char* path);
 // pixels) into a texture, in drawing order (EFB copies). `reuse` is the texture of an
 // earlier copy to the same place, or NULL. Fills `coeffs` so that a coordinate (s, t)
 // over the copied rectangle samples the texture at u = c0 + c1 t, v = c2 + c3 s (the
-// render target is the screen on its side). Returns NULL when nothing was copied.
+// render target is the screen on its side). Returns NULL when nothing was copied (a frame
+// the renderer skips, no room in the GPU queue or in memory); `reuse` then stays valid.
+void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs);
+// As hostGfxCaptureToTexture, but when nothing was copied it returns `reuse` (its last image),
+// for callers that store the result over their texture.
 void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs);
 int hostGfxReadRgb565(unsigned x, unsigned y, unsigned width, unsigned height, unsigned short* pixels);
 // Copies the depth buffer as it is now for the next frame's EFB depth reads (the frame's end would
@@ -340,7 +344,7 @@ void hostCaptureClose(void* file);
 // # hands them to citro3d.                                                                     #
 // ##############################################################################################
 // Rendering on the top screen (gfx.c). Positions are in clip space; colour is RGBA. Texture
-// unit 0 samples with (s0, t0), units 1 and 2 with (s1, t1).
+// unit n samples with (sn, tn).
 typedef struct {
     float x, y, z, w;
     unsigned char rgba[4];

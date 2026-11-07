@@ -12,14 +12,30 @@ It is one program per system, downloaded from [Releases](../../../releases/lates
 | 2. Extracting | Checks the free space, extracts the disc and checks that `main.dol` is the original (SHA-1). Takes the HOME Menu icon and banner from the game's own save icon. | `extract_disc`, `make_icon_and_banner` |
 | 3. Converting | Converts the game files for the 3DS: byte order, textures, models, music, movies (H.264, with FFmpeg, downloaded if missing), the game data inside `main.dol`, and the SD file cache. The longest step. | `convert_files`, which runs [`convert_smg_files.py`](../tools/3ds/convert_smg_files.py) |
 | 4. Building the CIA | Makes the icon and banner with bannertool, then the CIA with makerom from the port's program. | `make_cia`, [`cia_showcase.rsf`](../tools/3ds/cia_showcase.rsf) |
-| 5. Copying to the SD card | Asks for the SD card and checks that it is writable and has room. Replaces the game files in `smg/`, **keeps your saves** (`smg/nand`), copies the CIA to `cias/GalaxyCTR.cia`, and warns if the sound firmware is missing. | `choose_sd_card`, `copy_to_sd`, `check_dsp_firmware` |
-| 6. Cleaning up | Deletes the temporary folder, also when a step failed. | `build` |
+| Settings | Asks once whether to keep the game files between builds, and saves the answer in `settings.txt`. | `ask_keep_files`, `Settings` |
+| 5. Copying to the 3DS | Says the build is complete and asks whether to copy now. Then asks how: over Wi-Fi with FTP (the address an FTP app on the 3DS shows, as `ip:port`) or to the SD card in this computer (its drive letter). Replaces the game files in `smg/`, **keeps your saves** (`smg/nand`), copies the CIA to `cias/GalaxyCTR.cia`, and warns if the sound firmware is missing. If you copy later, it prints the steps to do it by hand and saves them in `install_guide.txt`. | `copy_now`, `copy_over_ftp`, `choose_sd_card`, `copy_to_sd`, `write_install_guide` |
+| 6. Cleaning up | Deletes the temporary folder, also when a step failed. It keeps the folder when you copy later, or when you chose to keep the game files. | `build` |
 
 Steps 1 to 6 are in [`galaxyctr_builder.py`](../tools/beta/galaxyctr_builder.py). The last
 column names its functions.
 
 If something goes wrong, the builder says what and why. Everything it printed is also in
 `galaxyctr-builder-log.txt`, in your user folder.
+
+## Your Settings
+
+Next to the builder, two text files are made:
+
+| File | |
+|---|---|
+| `settings.txt` | your answers: `keep_files` (yes or no), `work_folder` (where the kept files are), `ftp_address` and `last_sd_letter`. Edit it, or delete it to be asked again. |
+| `install_guide.txt` | the steps to copy the files by hand, when you chose to copy later |
+
+With `keep_files = yes` the builder keeps the extracted disc and the converted game in a folder
+you choose the first time (by default `GalaxyCTR-files`, next to the disc image). The next builds
+do not ask for the disc image again, and they convert only the files a new release changes, so they
+are much faster. The folder takes about 5 GB, and up to 9 GB while converting: the builder checks
+the free space on its drive before it starts.
 
 ## Running It on macOS
 

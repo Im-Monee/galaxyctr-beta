@@ -21,6 +21,10 @@
 #include "Game/Util/SequenceUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
+// 3DS: Pad3DS.hpp, the remote's tilt from the circle pad.
+#ifdef __3DS__
+#include "Pad3DS.hpp"
+#endif
 
 namespace NrvSurfRay {
     NEW_NERVE(SurfRayNrvWaitPlayer, SurfRay, WaitPlayer);
@@ -834,7 +838,13 @@ void SurfRay::updateRotate() {
 
     if (isRotateStart()) {
         TVec3f accel(0.0f, 0.0f, 0.0f);
+        // 3DS: the remote's tilt from the circle pad (Pad3DS.hpp, rvl3DSSurfRayAcceleration); the
+        // remote kpad.cpp reports never tilts, and the manta did not steer.
+#ifdef __3DS__
+        rvl3DSSurfRayAcceleration(&accel.x, &accel.y, &accel.z);
+#else
         MR::getCorePadAcceleration(&accel, mPadChannel);
+#endif
 
         if (accel.z > -0.7f || MR::abs(accel.x) > 0.15f) {
             f32 twistAngle = accel.x;

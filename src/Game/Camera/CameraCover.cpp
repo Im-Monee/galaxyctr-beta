@@ -29,8 +29,20 @@ CameraCover::CameraCover(const char* pName) : NameObj(pName) {
 void CameraCover::movement() {
     if (isCameraHopping()) {
         if (!_3C) {
+            // ##############################################################################################
+            // # No still picture over a camera cut on the 3DS                                              #
+            // #                                                                                            #
+            // # The Wii copies the screen here, outside the draw, while it still holds the last frame,     #
+            // # and draw() shows that copy for a few frames to hide the cut. On the 3DS the copy opens     #
+            // # the new frame first (platform/3ds/host/gfx.c, beginFrame), which clears the screen: the    #
+            // # copy was empty, and while the "Camera" timing held, the water that shows the screen behind #
+            // # it (OceanRing, Loopdeeloop) went dark. So no copy is made, draw() shows nothing and the    #
+            // # "Indirect" copy of each frame goes on.                                                     #
+            // ##############################################################################################
+#ifndef __3DS__
             MR::startToCaptureScreen("Camera");
             CategoryList::execute((MR::DrawType)0x2E);
+#endif
             _3C = _44 + 1;
         }
     }
@@ -45,6 +57,10 @@ void CameraCover::movement() {
 }
 
 void CameraCover::draw() const {
+    // 3DS: no copy of the screen to show over a camera cut (movement, above).
+#ifdef __3DS__
+    return;
+#endif
     if (_3C) {
         JUTTexture texture(MR::getScreenResTIMG(), 0);
 

@@ -109,6 +109,51 @@ namespace WaterRender3DS {
         return state;
     }
 
+    // The screen capture coordinate (s2, t2) of a vertex made by makeVertex: the position through
+    // MR::loadTexProjectionMtx (0 to 1 over the screen, t down), then onto the capture stored on its
+    // side (map from rvl3DSGetNativeTIMGCapture: u = c0 + c1 t, v = c2 + c3 s). Per vertex, where GX
+    // projects per pixel: close to the camera the capture is only near the right place.
+    inline void mapScreen(HostGfxVertex& vertex, const float* map) {
+        if (vertex.w <= 0.0001f) {
+            return;
+        }
+        const float s = 0.5f + 0.5f * vertex.x / vertex.w, t = 0.5f - 0.5f * vertex.y / vertex.w;
+        vertex.s2 = map[0] + map[1] * t;
+        vertex.t2 = map[2] + map[3] * s;
+    }
+
+    // The stages of the Wii's water materials (OceanRingDrawer, OceanBowl loadMaterial) the 3DS
+    // can do: the waves on units 0 and 1 averaged, then, with a screen capture on unit 2, the
+    // capture times the water's colour added, clamped. Alpha from the vertices. The indirect warp
+    // of the capture and the compare stage (glints) have no 3DS equivalent.
+    inline HostGfxState makeWaterState(void* waves, void* screen, unsigned char red, unsigned char green, unsigned char blue,
+                                       bool additive) {
+        HostGfxState state = makeState(waves, waves, screen, true, false);
+        std::memset(state.stages, 0, sizeof(state.stages));
+        HostGfxStage& average = state.stages[0];
+        average.colorSrc[0] = 0x03;  // texture 0
+        average.colorSrc[1] = 0x04;  // texture 1
+        average.colorSrc[2] = 0x0E;  // constant 0.5
+        average.colorFunc = 4;       // interpolate
+        average.alphaSrc[0] = 0x00;  // vertex alpha
+        average.alphaFunc = 0;       // replace
+        average.constant = 0x80808080ul;
+        HostGfxStage& behind = state.stages[1];
+        behind.colorSrc[0] = 0x05;  // texture 2, the screen
+        behind.colorSrc[1] = 0x0E;  // the water's colour
+        behind.colorSrc[2] = 0x0F;  // previous
+        behind.colorFunc = 8;       // multiply-add
+        behind.alphaSrc[0] = 0x0F;
+        behind.alphaFunc = 0;
+        behind.constant = 0xFF000000ul | (static_cast< unsigned long >(blue) << 16) | (static_cast< unsigned long >(green) << 8) | red;
+        state.stageCount = screen != nullptr ? 2 : 1;
+        state.textures[2] = screen;
+        state.blendDst = additive ? 1 : 7;  // GPU_ONE or GPU_ONE_MINUS_SRC_ALPHA
+        state.alphaTestFunc = 6;            // GPU_GREATER than 0, as GXSetAlphaCompare(GX_GREATER, 0)
+        state.alphaRef = 0;
+        return state;
+    }
+
     inline void draw(const HostGfxVertex* vertices, unsigned long count, const unsigned short* indices, unsigned long indexCount,
                      int primitive, const HostGfxState& state) {
         hostGfxDraw(vertices, count, indices, indexCount, primitive, &state);

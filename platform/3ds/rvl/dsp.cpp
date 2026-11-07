@@ -269,10 +269,15 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
     const s32 rampL = ((endL - startL) << 8) / samples, rampR = ((endR - startR) << 8) / samples;
     s32 s0 = v.s0, s1 = v.s1;
     u32 frac = v.frac;
+    // A voice is added at volume / 0x10000, as the DSP program does (Dolphin, Zelda.h,
+    // AddBuffersWithVolumeRamp: ((vol >> 16) * src) >> 16): a volume of 0x8000 is half. Adding at
+    // volume / 0x8000 made every sound twice as loud as on the Wii; with the mixer level (x3.6
+    // below) loud sounds went past full scale and were clipped into a harsh buzz (a tester's
+    // video: the black Luma's "mmh" at the start of a talk, CIA 0.21.3).
     for (int i = 0; i < samples; i++) {
         s32 sample = s0 + (((s1 - s0) * static_cast< s32 >(frac >> 1)) >> 15);
-        left[i] += (sample * (volL >> 8)) >> 15;
-        right[i] += (sample * (volR >> 8)) >> 15;
+        left[i] += (sample * (volL >> 8)) >> 16;
+        right[i] += (sample * (volR >> 8)) >> 16;
         volL += rampL;
         volR += rampR;
         frac += step;
@@ -324,7 +329,9 @@ static void mixSubframe(u32 index) {
     MixTimer timer;
     const int samples = kSubframeSamples;
     // Mixer level (DSP_MIXERLEVEL = 4096 * the DSP level, dspproc.cpp): 0x1000 is unity gain (the game
-    // sends about 0x3999; read as 0x4000 = 1 the output was four times too quiet).
+    // sends about 0x3999; read as 0x4000 = 1 the output was four times too quiet). Dolphin applies it
+    // the same way (Zelda.cpp, FinalizeFrame, ApplyVolumeInPlace_4_12), after voices added at half
+    // their 1.15 volume (mixChannel).
     u32 level = sFrameLevel;
 
     static s32 sLeft[kSubframeSamples], sRight[kSubframeSamples];

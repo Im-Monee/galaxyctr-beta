@@ -25,8 +25,11 @@ AccessControlInfo:
     - CategoryFileSystemTool
     - DirectSdmc
   MemoryType               : Application
-  # The Old 3DS reads this field, the New models the extended one below.
-  SystemMode               : 96MB
+  # The Old 3DS reads this field, the New models the extended one below. 64MB is the Old 3DS's
+  # normal mode: with 96MB the HOME Menu itself ran out of memory and crashed before the game
+  # started (a tester's Luma dump, 6 Nov 2026), so the game's "needs a New 3DS" message never
+  # showed. build_cia_showcase.ps1 sets 96MB back for the developer's Old 3DS test build only.
+  SystemMode               : 64MB
   IdealProcessor           : 0
   # Cores 0 and 1: the Old 3DS's audio mixing runs on core 1 (rvl/dsp.cpp).
   AffinityMask             : 3

@@ -2234,15 +2234,17 @@ int hostGfxPeekEfb(unsigned short x, unsigned short y, int depth, unsigned long*
 // rows (y = x * 400 / 640), frame buffer y along target columns, reversed (x = 240 - y * 240
 // / 456). A copy takes whole tiles: the tile rectangle covering the copy goes into the top
 // left of a power-of-two texture, with GX_TextureCopy queued after the drawing so far.
-void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs) {
+// NULL when nothing was copied; `reuse` then stays the caller's, with its last image.
+void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs) {
     beginFrame();
     if (coeffs == NULL || sSkipFrame) {
         return NULL;
     }
     // The copy, the edge copies (up to 2 * log2 of the sides) and its list take queue entries, and
-    // the frame end four more: with no room the texture keeps its last image.
+    // the frame end four more: with no room the texture keeps its last image (null: no copy, and
+    // the caller keeps the texture and mapping it had).
     if (__C3D_Context.numEntries + 24 > __C3D_Context.maxEntries) {
-        return reuse;
+        return NULL;
     }
 
     const u32 targetWidth = 240;
@@ -2274,18 +2276,21 @@ void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, 
         potH <<= 1;
     }
 
+    // The reused texture is released only once its replacement exists: on a failure the caller
+    // still holds it, with its last image.
     C3D_Tex* tex = (C3D_Tex*)reuse;
     if (tex == NULL || tex->width != potW || tex->height != potH) {
+        C3D_Tex* made = malloc(sizeof(C3D_Tex));
+        if (made == NULL || !C3D_TexInit(made, potW, potH, GPU_RGBA8)) {
+            free(made);
+            return NULL;
+        }
+        C3D_TexSetFilter(made, GPU_LINEAR, GPU_LINEAR);
+        C3D_TexSetWrap(made, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         if (tex != NULL) {
             hostGfxTextureDestroy(tex);
         }
-        tex = malloc(sizeof(C3D_Tex));
-        if (tex == NULL || !C3D_TexInit(tex, potW, potH, GPU_RGBA8)) {
-            free(tex);
-            return NULL;
-        }
-        C3D_TexSetFilter(tex, GPU_LINEAR, GPU_LINEAR);
-        C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        tex = made;
     }
 
     // Everything drawn so far must reach the render target before the copy.
@@ -2349,6 +2354,20 @@ void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, 
     coeffs[2] = 1.0f - (x0 * kx - rowLo) / potH;
     coeffs[3] = -(x1 - x0) * kx / potH;
     return tex;
+}
+
+// ##############################################################################################
+// # Copies that keep their texture                                                             #
+// #                                                                                            #
+// # MarioShadow and MarioActorSpecialDraw store the result over their texture                  #
+// # (sCorner = hostGfxCopyToTexture(sCorner, ...)): a NULL in a frame the renderer skips lost  #
+// # the texture without freeing it, linear memory gone for the rest of the game. Here a copy   #
+// # that does not happen gives the texture back, with its last image and mapping; only the     #
+// # first copy can give NULL.                                                                  #
+// ##############################################################################################
+void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs) {
+    void* copy = hostGfxCaptureToTexture(reuse, x0, y0, x1, y1, coeffs);
+    return copy != NULL ? copy : reuse;
 }
 
 int hostGfxReadRgb565(unsigned x, unsigned y, unsigned width, unsigned height, unsigned short* pixels) {

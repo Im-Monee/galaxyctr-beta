@@ -191,36 +191,96 @@ void OceanRingPartDrawer::drawGD(f32* pTexCoordU0, f32* pTexCoordU1, f32* pTexCo
 }
 #endif
 
+// ##############################################################################################
+// # The ring of water on the 3DS                                                               #
+// #                                                                                            #
+// # loadMaterial's recipe as far as the 3DS GPU goes: the waves sampled twice with the scrolls #
+// # update() moves (texture matrices 0x1E and 0x21) and averaged, then the screen capture      #
+// # behind the water tinted with color2 and added on top, alpha from the vertices. The 3DS has #
+// # no indirect textures, so the screen is not warped by WaterIndirect, and no compare stage,  #
+// # so the glints of stage 2 (colour 1 where the average's red equals 20) are left out. The    #
+// # capture is projected per vertex, not per pixel: close to the camera it is only near the    #
+// # right place. This drew the waves still, multiplied by the indirect texture, with no screen #
+// # behind (Loopdeeloop, a tester).                                                            #
+// ##############################################################################################
+// ##############################################################################################
+// # Only the parts in view, as one grid each                                                   #
+// #                                                                                            #
+// # The Wii draws far parts from display lists made once; the 3DS sends every vertex each      #
+// # frame, into a room of 16384 vertices a frame (gfx.c, ARENA_TRANSIENT). Drawing the whole   #
+// # Loopdeeloop track as strips, each row twice, filled it: about 400 draws a frame were       #
+// # dropped, effects and parts of the HUD vanished (a tester). So a part out of the view is    #
+// # skipped, its rows share their vertices in one indexed draw, and a part farther than        #
+// # sDistancePartDL from the camera keeps every other row and column.                          #
+// ##############################################################################################
 void OceanRingPartDrawer::drawDynamic() const {
     // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
-    void* water = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterTex);
-    void* indirect = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterIndTex);
-    f32 u0 = _1C, u1 = _20, u2 = _24;
-    const f32 rate = 0.05f, rate2 = 0.1f;
-    for (s32 i = 0; i < _14 - 1; i++) {
-        s32 index = _10 + i;
-        s32 next = (i == _14 - 2 && _18) ? 0 : index + 1;
-        HostGfxVertex vertices[mOceanRing->mStride * 2];
-        f32 v0 = 0.0f, v1 = 0.0f, v2 = 0.0f;
-        f32 v0b = 0.0f, v1b = 0.0f, v2b = 0.0f;
-        for (s32 j = 0; j < mOceanRing->mStride; j++) {
-            WaterPoint* a = mOceanRing->getPoint(j, index);
-            WaterPoint* b = mOceanRing->getPoint(j, next);
-            vertices[j * 2] = WaterRender3DS::makeVertex(a->mPosition, u0, v0, u1, v1, u2, v2, a->mAlpha);
-            vertices[j * 2 + 1] = WaterRender3DS::makeVertex(b->mPosition, u0 + rate, v0b, u1 + rate, v1b, u2 + rate2, v2b, b->mAlpha);
-            v0 += rate;
-            v1 += rate;
-            v2 += rate2;
-            v0b += rate;
-            v1b += rate;
-            v2b += rate2;
-        }
-        WaterRender3DS::drawStrip(vertices, mOceanRing->mStride * 2, water, water, indirect, true, false);
-        u0 += rate;
-        u1 += rate;
-        u2 += rate2;
+    const OceanRingDrawer* ring = mOceanRing->mRingDrawer;
+    void* water = rvl3DSGetJUTTexture(ring->mWaterTex);
+    f32 screenMap[4];
+    void* screen = rvl3DSGetNativeTIMGCapture(MR::getScreenResTIMG(), screenMap);
+
+    const s32 rows = _14, stride = mOceanRing->mStride;
+    if (rows < 2) {
+        return;
     }
+    // Row r of this part is ring row _10 + r; a looped ring's last part ends on row 0.
+#define OCEAN_RING_ROW(r) (((r) == rows - 1 && _18) ? 0 : _10 + (r))
+
+    // Out of the view: nothing to draw. The radius reaches the part's two end rows from its
+    // centre, plus the ring's width and the waves.
+    const s32 middle = stride / 2;
+    f32 radius = mPosition.distance(mOceanRing->getPoint(middle, OCEAN_RING_ROW(0))->mOrigPos);
+    const f32 radiusEnd = mPosition.distance(mOceanRing->getPoint(middle, OCEAN_RING_ROW(rows - 1))->mOrigPos);
+    radius = (radius > radiusEnd ? radius : radiusEnd) + mOceanRing->mWidthMax + 1000.0f;
+    if (MR::isJudgedToClipFrustum(mPosition, radius)) {
+        return;
+    }
+
+    // Far from the camera (the Wii's distance for its display lists), every other row and column.
+    const s32 step = mPosition.distance(MR::getCamPos()) >= ::sDistancePartDL ? 2 : 1;
+    const s32 gridRows = (rows - 1 + step - 1) / step + 1, gridColumns = (stride - 1 + step - 1) / step + 1;
+
+    const HostGfxState state = WaterRender3DS::makeWaterState(water, screen, ::color2.r, ::color2.g, ::color2.b, false);
+    const f32 rate = 0.05f;
+    HostGfxVertex vertices[gridRows * gridColumns];
+    for (s32 k = 0; k < gridRows; k++) {
+        const s32 r = k * step < rows - 1 ? k * step : rows - 1;
+        const s32 index = OCEAN_RING_ROW(r);
+        // TEXCOORD0 and 1 with the scrolls of the texture matrices 0x1E and 0x21: u grows by
+        // rate a row, v by rate a column, as drawGD's strips.
+        const f32 u = _1C + r * rate, u1 = _20 + r * rate;
+        for (s32 c = 0; c < gridColumns; c++) {
+            const s32 j = c * step < stride - 1 ? c * step : stride - 1;
+            const WaterPoint* point = mOceanRing->getPoint(j, index);
+            const f32 v = j * rate;
+            HostGfxVertex& vertex = vertices[k * gridColumns + c];
+            vertex = WaterRender3DS::makeVertex(point->mPosition, u + ring->_C, v + ring->_10, u1 + ring->_14, v + ring->_18, 0.0f, 0.0f,
+                                                point->mAlpha);
+            if (screen != nullptr) {
+                // TEXCOORD3: the position through MR::loadTexProjectionMtx.
+                WaterRender3DS::mapScreen(vertex, screenMap);
+            }
+        }
+    }
+#undef OCEAN_RING_ROW
+
+    // Two triangles for each square of the grid, the vertices shared.
+    u16 indices[(gridRows - 1) * (gridColumns - 1) * 6];
+    u32 count = 0;
+    for (s32 k = 0; k + 1 < gridRows; k++) {
+        for (s32 c = 0; c + 1 < gridColumns; c++) {
+            const u16 a = k * gridColumns + c, b = a + gridColumns;
+            indices[count++] = a;
+            indices[count++] = b;
+            indices[count++] = a + 1;
+            indices[count++] = b;
+            indices[count++] = b + 1;
+            indices[count++] = a + 1;
+        }
+    }
+    WaterRender3DS::draw(vertices, gridRows * gridColumns, indices, count, HOST_GFX_TRIANGLES, state);
 #else
     f32 f30 = 0.05f;
     f32 f29;
@@ -297,7 +357,8 @@ void OceanRingPartDrawer::drawDynamic() const {
 void OceanRingPartDrawer::drawDynamicBloom() const {
     // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
-    void* water = rvl3DSGetJUTTexture(mOceanRing->mRingDrawer->mWaterTex);
+    const OceanRingDrawer* ring = mOceanRing->mRingDrawer;
+    void* water = rvl3DSGetJUTTexture(ring->mWaterTex);
     f32 u = _1C, v = _20;
     for (s32 i = 0; i < _14 - 1; i++) {
         s32 index = _10 + i;
@@ -307,8 +368,10 @@ void OceanRingPartDrawer::drawDynamicBloom() const {
         for (s32 j = 0; j < mOceanRing->mStride; j++) {
             WaterPoint* a = mOceanRing->getPoint(j, index);
             WaterPoint* b = mOceanRing->getPoint(j, next);
-            vertices[j * 2] = WaterRender3DS::makeVertex(a->mPosition, u, rowV, v, rowV);
-            vertices[j * 2 + 1] = WaterRender3DS::makeVertex(b->mPosition, u + 0.05f, rowVNext, v + 0.05f, rowVNext);
+            // With the scrolls of loadMaterialBloom's texture matrices 0x1E and 0x21.
+            vertices[j * 2] = WaterRender3DS::makeVertex(a->mPosition, u + ring->_C, rowV + ring->_10, v + ring->_14, rowV + ring->_18);
+            vertices[j * 2 + 1] = WaterRender3DS::makeVertex(b->mPosition, u + 0.05f + ring->_C, rowVNext + ring->_10, v + 0.05f + ring->_14,
+                                                             rowVNext + ring->_18);
             rowV += 0.05f;
             rowVNext += 0.05f;
         }

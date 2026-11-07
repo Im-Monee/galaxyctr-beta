@@ -359,6 +359,17 @@ void OceanBowl::moveToLower() {
     mTexU2 += ::sTexRate2;
 }
 
+// ##############################################################################################
+// # The bowl of water on the 3DS                                                               #
+// #                                                                                            #
+// # loadMaterial's recipe as far as the 3DS GPU goes (WaterRender3DS::makeWaterState): the     #
+// # waves at TEXCOORD0 and 1 averaged, then, out of the water, the screen capture behind       #
+// # tinted with sOceanBowlTevReg1 and added. The water's alpha is the vertex alpha times the   #
+// # mask, as stage 2 gives it; the mask is read here at the vertices, since the 3DS has three  #
+// # texture units and the Wii recipe uses four. No indirect warp and no glints (no 3DS         #
+// # equivalent). This multiplied the waves by the indirect texture and the mask, with no       #
+// # screen behind.                                                                             #
+// ##############################################################################################
 void OceanBowl::draw() const {
     if (mIsClipped || !MR::isValidDraw(this)) {
         return;
@@ -367,8 +378,38 @@ void OceanBowl::draw() const {
     // 3DS: the same drawing through DirectDraw (Citro3D) instead of GX.
 #ifdef __3DS__
     void* water = rvl3DSGetJUTTexture(mWaterTex);
-    void* indirect = rvl3DSGetJUTTexture(mWaterIndirectTex);
-    void* mask = rvl3DSGetJUTTexture(mMaskTex);
+    const bool inWater = MR::isCameraInWater();
+    f32 screenMap[4];
+    void* screen = inWater ? nullptr : rvl3DSGetNativeTIMGCapture(MR::getScreenResTIMG(), screenMap);
+    const HostGfxState state = WaterRender3DS::makeWaterState(water, screen, ::sOceanBowlTevReg1.r, ::sOceanBowlTevReg1.g,
+                                                              ::sOceanBowlTevReg1.b, inWater);
+
+    // The mask (TEXCOORD4: TEX3 moved by TEXMTX4 with the player's place, clamped) as loadMaterial
+    // reads it, sampled here at the vertices: its alpha times the vertex alpha is the water's.
+    const ResTIMG* maskTIMG = mMaskTex->mTIMG;
+    const u8* maskImage = maskTIMG != nullptr && maskTIMG->mFormat == GX_TF_I8
+                              ? reinterpret_cast< const u8* >(maskTIMG) + maskTIMG->mImageDataOffset
+                              : nullptr;
+    const s32 maskWidth = maskImage != nullptr ? maskTIMG->mWidth : 0, maskHeight = maskImage != nullptr ? maskTIMG->mHeight : 0;
+    const f32 maskT = ((getPoint(0, 0)->mVertexPosition.x - MR::getPlayerPos()->x) + 2400.0f) / 4800.0f;
+    const f32 maskS = ((getPoint(0, 0)->mVertexPosition.z - MR::getPlayerPos()->z) + 2400.0f) / 4800.0f;
+    const auto maskTexel = [&](s32 x, s32 y) -> f32 {
+        x = x < 0 ? 0 : x >= maskWidth ? maskWidth - 1 : x;
+        y = y < 0 ? 0 : y >= maskHeight ? maskHeight - 1 : y;
+        return maskImage[((y >> 2) * (maskWidth >> 3) + (x >> 3)) * 32 + (y & 3) * 8 + (x & 7)];  // I8 tiles of 8 x 4
+    };
+    const auto maskedAlpha = [&](u32 index, u8 alpha) -> u8 {
+        if (maskImage == nullptr) {
+            return alpha;
+        }
+        const f32 x = (mVtxTex3Array[index] + maskS) * maskWidth - 0.5f, y = (mVtxTex3Array[index + 1] + maskT) * maskHeight - 0.5f;
+        const s32 x0 = static_cast< s32 >(floorf(x)), y0 = static_cast< s32 >(floorf(y));
+        const f32 fx = x - x0, fy = y - y0;
+        const f32 value = (maskTexel(x0, y0) * (1.0f - fx) + maskTexel(x0 + 1, y0) * fx) * (1.0f - fy) +
+                          (maskTexel(x0, y0 + 1) * (1.0f - fx) + maskTexel(x0 + 1, y0 + 1) * fx) * fy;
+        return static_cast< u8 >(alpha * value / 255.0f + 0.5f);
+    };
+
     for (s32 x = 0; x < 24; x++) {
         HostGfxVertex vertices[50];
         u16 even = static_cast<u16>(x * 50);
@@ -378,16 +419,22 @@ void OceanBowl::draw() const {
             OceanBowlPoint* pointB = getPoint(x, y);
             u32 a = static_cast<u32>(even) * 2;
             u32 b = static_cast<u32>(odd) * 2;
-            vertices[y * 2] = WaterRender3DS::makeVertex(
-                pointA->mVertexPosition, mVtxTex0Array[a] + mTexU0, mVtxTex0Array[a + 1] + mTexV0,
-                mVtxTex2Array[a] + mTexU2, mVtxTex2Array[a + 1] + mTexV2, mVtxTex3Array[a], mVtxTex3Array[a + 1], pointA->mAlpha);
-            vertices[y * 2 + 1] = WaterRender3DS::makeVertex(
-                pointB->mVertexPosition, mVtxTex0Array[b] + mTexU0, mVtxTex0Array[b + 1] + mTexV0,
-                mVtxTex2Array[b] + mTexU2, mVtxTex2Array[b + 1] + mTexV2, mVtxTex3Array[b], mVtxTex3Array[b + 1], pointB->mAlpha);
+            // TEXCOORD0 and 1: TEX0 and TEX1 with the scrolls of TEXMTX0 and TEXMTX1.
+            vertices[y * 2] = WaterRender3DS::makeVertex(pointA->mVertexPosition, mVtxTex0Array[a] + mTexU0, mVtxTex0Array[a + 1] + mTexV0,
+                                                         mVtxTex1Array[a] + mTexU1, mVtxTex1Array[a + 1] + mTexV1, 0.0f, 0.0f,
+                                                         maskedAlpha(a, pointA->mAlpha));
+            vertices[y * 2 + 1] = WaterRender3DS::makeVertex(pointB->mVertexPosition, mVtxTex0Array[b] + mTexU0, mVtxTex0Array[b + 1] + mTexV0,
+                                                             mVtxTex1Array[b] + mTexU1, mVtxTex1Array[b + 1] + mTexV1, 0.0f, 0.0f,
+                                                             maskedAlpha(b, pointB->mAlpha));
+            if (screen != nullptr) {
+                // TEXCOORD3: the position through MR::loadTexProjectionMtx.
+                WaterRender3DS::mapScreen(vertices[y * 2], screenMap);
+                WaterRender3DS::mapScreen(vertices[y * 2 + 1], screenMap);
+            }
             even += 2;
             odd += 2;
         }
-        WaterRender3DS::drawStrip(vertices, 50, water, indirect, mask, true, false);
+        WaterRender3DS::draw(vertices, 50, nullptr, 50, HOST_GFX_STRIP, state);
     }
 #else
     loadMaterial();

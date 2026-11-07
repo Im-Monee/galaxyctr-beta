@@ -1236,3 +1236,77 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 - 18 empty `#ifdef __3DS__ ... #endif` blocks (leftovers of earlier edits) were removed.
 - `src/Game/Screen/WipeFade.cpp`: a dead copy of `GXSetColorUpdate`/`GXSetBlendMode` under `#ifdef __3DS__` inside the Wii branch (never compiled by either build) was removed; the Wii's own calls stay above it, under `#ifndef __3DS__`.
 - Wii SHA-1 unchanged (full Wii rebuild); the Wii view of the 197 files (each file as the Wii compiler sees it) differs in comments only.
+
+## Screen captures retried until they copy (Nov 7 2026)
+
+- `src/Game/Screen/CaptureScreenDirector.cpp` (`captureIfAllow`): under `__3DS__`, a requested capture (`_18`) is cleared only when `rvl3DSLastCaptureDone()` (`platform/3ds/rvl/jut_texture.cpp`) says the screen was really copied.
+- `src/Game/Screen/GalaxyMapController.cpp` (`draw`): under `__3DS__`, the map's capture of the `ReadyGame` nerve is retried each frame of that nerve until it copies.
+  - **Why:** in a frame the renderer skips (`host/gfx.c`, `sSkipFrame`, more frequent when the game runs behind, as after a pause in the HOME Menu) `hostGfxCopyToTexture` copies nothing, but the game had already marked the one-time request as done. The capture texture then kept an old image: a tester entering a planetarium saw the closing wipe show Gateway's Pull Star tutorial, captured earlier by `CameraCover`.
+  - Wii SHA-1 unchanged (Wii rebuild); the Wii view of both files differs in comments only.
+
+## The Star Pointer's world position (Nov 7 2026)
+
+- `src/Game/Screen/StarPointerDirector.cpp` (`StarPointerPeekZ`): under `__3DS__`, `setDrawSyncToken` fills `mProjectionParameters` and `mViewportParameters` from `MR::getCameraProjectionMtx()` as `GXGetProjectionv` lays them out (the same mapping `TDDraw::project2D` uses on the Wii), with the whole frame buffer as viewport; `drawSyncCallback` ignores a depth of 0 (a frame the renderer skips) and keeps the last position.
+  - **Why:** the Wii fills both arrays here with `GXGetProjectionv`/`GXGetViewportv`; the 3DS branch only read the depth and left them at zero, so `TDDraw::invProject` made the pointer's world position NaN. A tester saw Star Bits shot with the pointer fly unseen (only their sound) and not follow the cursor, and the planetarium's hungry Luma eat Star Bits shot anywhere.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## Star Bits shoot with R only (Nov 7 2026)
+
+- `src/Game/MapObj/StarPieceDirector.cpp` (`StarPieceShooter`, the shot and "no Star Bits" checks) and `src/Game/NPC/TicoFat.cpp` (feeding the hungry Luma): under `__3DS__`, the remote's B counts only when the 3DS R button is held (`rvl3DSStarBitKeyHeld`, `platform/3ds/include/Pad3DS.hpp`).
+  - **Why:** on the 3DS, A + B together is also the remote's B (`platform/3ds/rvl/kpad.cpp`), for the title screen and the menus' back; a tester shot Star Bits with A + B. The owner chose R as the only Star Bit button.
+  - With it `kpad.cpp` gives R as the remote's B whenever the pointer shows (touch screen or C-Stick cursor), no longer Z with the C-Stick cursor.
+  - Wii SHA-1 unchanged; the Wii view of both files differs in comments only.
+
+## The first-transformation message of each form (Nov 7 2026)
+
+- `src/Game/Player/MarioActor.cpp` (`calcAnimInMovement`): under `__3DS__`, the switch that calls `MR::explain...MarioIfAtFirst` uses the `PlayerMode` cases of the original code (`jumptable_805A386C`): Invincible, Fire (`PlayerMode_2`), Ice, Bee, Hopper, Teresa, Foo (flying).
+  - **Why:** the decomp's C++ (non-matching, so built only for the 3DS) had the forms in the wrong cases, for example mode 4 (Bee) called `explainFireMarioIfAtFirst`. A tester's first Bee Mario showed the Fire Mario message and fanfare, then `BGM_FIRE_B` started and never stopped, since only leaving Fire Mario stops it. Every other first transformation showed the wrong message too.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The ring of water follows the Wii's recipe (Nov 7 2026)
+
+- `src/Game/Map/OceanRingDrawer.cpp` (`OceanRingPartDrawer::drawDynamic`, `drawDynamicBloom`): the existing `__3DS__` branches now add the scrolls `OceanRingDrawer::update` moves (`_C`, `_10`, `_14`, `_18`, the texture matrices 0x1E and 0x21 of `loadMaterial`), and `drawDynamic` draws `loadMaterial's stages: the two wave samples averaged, then the screen capture (`MR::getScreenResTIMG`, projected per vertex as `MR::loadTexProjectionMtx` does) times `color2` added on top, alpha from the vertices, alpha test greater than 0.
+  - **Why:** the branch multiplied the wave texture by itself and by `WaterIndirect.bti`, without the scrolls or the screen behind the water: in Loopdeeloop the water stood still and lacked its see-through look (a tester). The indirect warp and the compare stage have no 3DS equivalent and are left out.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The bowl of water follows the Wii's recipe (Nov 7 2026)
+
+- `src/Game/Map/OceanBowl.cpp` (`OceanBowl::draw`): the existing `__3DS__` branch draws `loadMaterial`'s stages through `WaterRender3DS::makeWaterState` (shared with `OceanRingDrawer.cpp`, which now uses it too): the waves at TEXCOORD0 and TEXCOORD1 (`mVtxTex1Array`, scrolls `mTexU1`, `mTexV1`) averaged, then, out of the water, the screen capture (`MR::getScreenResTIMG`, projected per vertex) times `sOceanBowlTevReg1` added; in the water, no capture and additive blending, as on the Wii. Alpha is the vertex alpha times `Mask.bti` at TEXCOORD4, sampled on the CPU at the vertices (the 3DS has three texture units, the recipe four).
+  - **Why:** the branch multiplied the waves by `WaterIndirect.bti` and the mask, with no screen behind the water and the second wave sample read from the indirect coordinates. The indirect warp and the compare stage have no 3DS equivalent and are left out.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The ring of water draws only the parts in view (Nov 7 2026)
+
+- `src/Game/Map/OceanRingDrawer.cpp` (`OceanRingPartDrawer::drawDynamic`, `__3DS__` branch): a part outside the view frustum (`MR::isJudgedToClipFrustum`, radius from its centre to its end rows plus `mWidthMax`) is skipped; the part's rows share their vertices in one indexed triangle draw instead of one strip per row pair; a part farther than `sDistancePartDL` from the camera keeps every other row and column.
+  - **Why:** the 3DS sends every vertex each frame into 16384 transient vertices (`gfx.c`, `ARENA_TRANSIENT`). The whole Loopdeeloop track drawn as strips filled it and about 400 draws a frame were dropped (effects and HUD parts vanished, tester log 7 Nov). The Wii draws far parts from display lists.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The moving spider thread maps its texture across the ribbon (Nov 7 2026)
+
+- `src/Game/MapObj/SpiderThreadPart.cpp` (`appendThreadRibbonSegment`, `makeThreadRibbonVertex`, `__3DS__` block): s is 0 on a ribbon's edge 0 and 1 on edge 1, as the Wii's `sendPoints*`, not 0 at a segment's start and 1 at its end; the left lower ribbon's edge 0 goes 18 to the front, as `leftLowerPoint1`, not 15.
+  - **Why:** a moving thread is drawn in many segments, and each showed the texture's transparent sides at its ends: the thread looked dashed after Mario had hung on it (owner, 7 Nov). A still thread is one segment, so it looked whole.
+  - Wii SHA-1 unchanged; the Wii view of the file is unchanged.
+
+## Sound names in messages read in the 3DS byte order (Nov 7 2026)
+
+- `src/Game/Util/StringUtil.cpp` (`MR::convertUTF16ToASCII`, `__3DS__` branch): each character is read as a `u16` value, stopping at 0 or above 0xFF, instead of its two bytes in the Wii's order.
+  - **Why:** the converter stores the game's text little-endian (`tools/3ds/builder/bmg.py`, sound tags of group 2 included), so the first byte was the character and the loop stopped at once: `CustomTagProcessor::exeSoundGroup` played an empty name. The Lumas' "TRANSFORM!" cry, and any sound a message names, was silent (owner, 7 Nov). The function's only caller.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The Observatory's map board shows the map from the start (Nov 7 2026)
+
+- `src/Game/Screen/GalaxyMapController.cpp` (constructor, `draw`, `__3DS__` branches): the constructor still clears the map texture and now sets `sInitialCapturePending`; `draw`, while the controller is dead, makes the Wii's first copy of the map (`capture`) at the scene's first drawn frame (first written for frames with `MR::isWipeBlank()`, which never came: the Observatory's fade opens from the first frame; changed the same day), retried until `rvl3DSLastCaptureDone()`, then `killAllLayout()` as the constructor's `kill()` after the Wii's copy.
+  - **Why:** the copy made in the constructor took the last 3D frame left in the render target, so it had been replaced by a black texture: the map board (`AstroMapBoard`) stayed black until the map was opened and closed once (owner, 7 Nov). Behind the closed wipe the map drawn for the copy is not seen.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## No still picture over a camera cut (Nov 7 2026)
+
+- `src/Game/Camera/CameraCover.cpp` (`movement`, `draw`, `__3DS__` branches): a camera cut no longer requests the "Camera" capture timing nor runs the capture (`DrawType_CaptureScreenCamera`), and `draw` shows nothing.
+  - **Why:** the Wii copies the screen in `movement`, outside the draw, while it still holds the last frame. On the 3DS the copy opens the new frame first (`platform/3ds/host/gfx.c`, `beginFrame`), which clears the screen, so the copy was empty; while the "Camera" timing held, the water that shows the screen behind it (OceanRing, Loopdeeloop) went dark (owner, 7 Nov). Without it the "Indirect" copy is made every frame and the cut is seen directly.
+  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+
+## The manta steered with the circle pad (Nov 7 2026)
+
+- `src/Game/Ride/SurfRay.cpp` (`updateRotate`) and `src/Game/Ride/SurfRayTutorial.cpp` (`update`), `__3DS__` branches: the remote's acceleration comes from `rvl3DSSurfRayAcceleration` (`platform/3ds/include/Pad3DS.hpp`, `platform/3ds/rvl/kpad.cpp`) instead of `MR::getCorePadAcceleration`: the remote held upright and tilted by the circle pad across, fully over 90 degrees (x = sin, y = 0, z = -cos).
+  - **Why:** on the Wii the manta is steered by tilting the upright remote. `kpad.cpp` reports a remote at rest, held level, so the manta did not steer and the penguin's lesson saw no tilt (owner's request, 7 Nov: steer with the circle pad).
+  - Wii SHA-1 unchanged; the Wii view of both files differs in comments only.

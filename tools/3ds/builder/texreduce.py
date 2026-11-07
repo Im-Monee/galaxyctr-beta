@@ -311,9 +311,20 @@ def _etc1_half(px, base):
     return error, best_table, indices
 
 
+# ##############################################################################################
+# # Transparent texels keep their colour                                                       #
+# #                                                                                            #
+# # Every texel's colour is encoded, also where its alpha is zero. Many materials read a       #
+# # texture's colour and never its alpha: the penguin coach's open eye (PenguinCoach) is a     #
+# # texture with no alpha at all, so it came out black; the cloud trail of the Honeyhive sky   #
+# # (HalfGalaxySky) is added to the sky by colour, and its clamped bottom row, transparent and #
+# # black in the file, got its neighbours' colour and was repeated down the sky in vertical    #
+# # streaks. Bilinear filtering also reads transparent texels next to visible ones, on the Wii #
+# # as here.                                                                                   #
+# ##############################################################################################
 def _etc1_block(block, memo={}):
-    """The 64-bit ETC1 word of a block: 16 (r, g, b, visible) texels, as texel number x * 4 + y.
-    Both orientations and both kinds of base are tried. Texels with no alpha cost nothing."""
+    """The 64-bit ETC1 word of a block: 16 (r, g, b) texels, as texel number x * 4 + y.
+    Both orientations and both kinds of base are tried."""
     key = tuple(block)
     word = memo.get(key)
     if word is not None:
@@ -325,8 +336,7 @@ def _etc1_block(block, memo={}):
         for p, texel in enumerate(block):
             h = (p & 3) >= 2 if flip else (p >> 2) >= 2
             positions[h].append(p)
-            if texel[3]:
-                halves[h].append(texel)
+            halves[h].append(texel)
         averages = []
         for px in halves:
             n = len(px)
@@ -353,10 +363,8 @@ def _etc1_block(block, memo={}):
             hi |= table0 << 5 | table1 << 2 | diff << 1 | flip
             lo = 0
             for h, indices in enumerate((indices0, indices1)):
-                visible = iter(indices)
-                for p in positions[h]:
+                for p, m in zip(positions[h], indices):
                     # Index m (0 +a, 1 +b, 2 -a, 3 -b) as its MSB (sign) and LSB (large).
-                    m = next(visible) if block[p][3] else 0
                     lo |= (m & 1) << p | (m >> 1) << (p + 16)
             best_word, best_error = hi << 32 | lo, error
     memo[key] = best_word
@@ -393,7 +401,7 @@ def _encode_native(fmt, image, size):
                     for y in range(4):
                         i = (height - 1 - (by + y)) * width + bx + x
                         alpha |= _q(a[i], 15) << ((x * 4 + y) * 4)
-                        texels.append((r[i], g[i], b[i], a[i] != 0))
+                        texels.append((r[i], g[i], b[i]))
                 if fmt == ETC1A4:
                     out += struct.pack("<Q", alpha)
                 out += struct.pack("<Q", _etc1_block(texels))

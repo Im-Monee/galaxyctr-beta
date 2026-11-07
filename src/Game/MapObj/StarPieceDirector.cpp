@@ -5,6 +5,19 @@
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Screen/StarPointerDirector.hpp"
 #include "Game/Util.hpp"
+// 3DS: Star Bits shoot with the 3DS R button only (Pad3DS.hpp, the owner's choice): A + B, which is
+// the remote's B for the title screen and the menus' back, must not shoot them.
+#ifdef __3DS__
+#include "Pad3DS.hpp"
+namespace {
+    bool isStarBitButton(s32 channel) {
+        return MR::testCorePadButtonB(channel) && rvl3DSStarBitKeyHeld();
+    }
+    bool isStarBitTrigger(s32 channel) {
+        return MR::testCorePadTriggerB(channel) && rvl3DSStarBitKeyHeld();
+    }
+};  // namespace
+#endif
 
 namespace NrvStarPieceShooter {
     NEW_NERVE(HostTypeNrvWait, StarPieceShooter, Wait);
@@ -469,8 +482,14 @@ bool StarPieceShooter::tryShoot() {
         _A4 = -1;
         MR::deleteEffect(this, "Charge");
 
+        // 3DS: the shooting button is R only (isStarBitTrigger, above).
+#ifdef __3DS__
+        if ((MR::getStarPieceNum() <= 0) && MR::isStarPointerInScreen(_A0) && MR::isStarPointerValid(_A0) && isStarBitTrigger(_A0) &&
+            (MR::isEnableStarPointerShootStarPiece(_A0) || MR::isStarPointerModeStarPieceTarget())) {
+#else
         if ((MR::getStarPieceNum() <= 0) && MR::isStarPointerInScreen(_A0) && MR::isStarPointerValid(_A0) && MR::testCorePadTriggerB(_A0) &&
             (MR::isEnableStarPointerShootStarPiece(_A0) || MR::isStarPointerModeStarPieceTarget())) {
+#endif
             MR::startCSSound("CS_NO_SPIECE", "SE_SY_CS_NO_PIECE", _A0);
         }
 
@@ -479,6 +498,33 @@ bool StarPieceShooter::tryShoot() {
 
     calcShootGoalUsingPointingDepth();
 
+    // 3DS: the same steps, with the shooting button R only (isStarBitButton, isStarBitTrigger).
+#ifdef __3DS__
+    if (_A4 < 0) {
+        if (!isStarBitButton(_A0)) {
+            _A4 = 0;
+        }
+    } else if (!isStarBitButton(_A0)) {
+        if (_A4 > 0) {
+            MR::deleteEffect(this, "Charge");
+        }
+
+        _A4 = 0;
+    } else {
+        if (_A4 == 0) {
+            if (isStarBitTrigger(_A0)) {
+                if (StarPointerFunction::canShoot(_A0)) {
+                    MR::emitEffect(this, "Charge");
+                    MR::startCSSound("CS_STARDUST_CHARGE", nullptr, _A0);
+                    _A4++;
+                } else {
+                    _A4 = -1;
+                }
+            }
+        } else if (isStarBitButton(_A0)) {
+            _A4++;
+        }
+#else
     if (_A4 < 0) {
         if (!MR::testCorePadButtonB(_A0)) {
             _A4 = 0;
@@ -503,6 +549,7 @@ bool StarPieceShooter::tryShoot() {
         } else if (MR::testCorePadButtonB(_A0)) {
             _A4++;
         }
+#endif
 
         s32 shootStep;
 

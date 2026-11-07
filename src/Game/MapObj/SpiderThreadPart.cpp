@@ -674,7 +674,7 @@ namespace {
             frontAmount = edge == 0 ? 18.0f : -18.0f;
         } else {
             sideAmount = edge == 0 ? 15.0f : -18.0f;
-            frontAmount = edge == 0 ? -15.0f : 18.0f;
+            frontAmount = edge == 0 ? -18.0f : 18.0f;  // leftLowerPoint1 (15, 18), leftLowerPoint2 (18, 18)
         }
         return TVec3f(position.x + sideAmount * side.x + frontAmount * front.x,
                       position.y + sideAmount * side.y + frontAmount * front.y,
@@ -698,7 +698,11 @@ namespace {
         for (int i = 0; i < 6; i++) {
             const u8 idx = order[i];
             positions[count + i].set(p[idx]);
-            texcoords[count + i].set(idx < 2 ? 0.0f : 1.0f, (idx == 0 || idx == 1) ? texA : texB);
+            // s across the ribbon (0 on edge 0, 1 on edge 1), t along the thread, as the Wii's
+            // sendPoints*. With s along each segment, every segment of a moving thread showed the
+            // texture's transparent sides at its ends: the thread looked dashed once Mario had hung
+            // on it (a tester).
+            texcoords[count + i].set((idx == 0 || idx == 2) ? 0.0f : 1.0f, (idx == 0 || idx == 1) ? texA : texB);
             colors[count + i] = c[idx];
         }
         count += 6;

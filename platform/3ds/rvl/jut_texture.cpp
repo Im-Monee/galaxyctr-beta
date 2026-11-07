@@ -106,6 +106,8 @@ namespace {
         const void* image;  // the texture's: JUTTextures made on the screen's ResTIMG (MR::getScreenResTIMG) share it
         void* handle;
         float coeffs[4];  // hostGfxCopyToTexture's mapping: u = c0 + c1 t, v = c2 + c3 s
+        u16 width, height;  // the texture's when it was captured (captureMatches)
+        u8 format;
     };
     static CaptureEntry sCaptures[32];
     // Bumped whenever sCaptures changes.
@@ -526,10 +528,49 @@ u32 rvl3DSTexBufferSize(u16 width, u16 height, u32 format) {
 // # A JUTTexture's GPU texture: a capture's when it is one, else the cached one, decoded and   #
 // # uploaded on first use. A texture whose image changes is invalidated.                       #
 // ##############################################################################################
+
+// ##############################################################################################
+// # Captures whose texture is gone                                                             #
+// #                                                                                            #
+// # A capture is known by its texture's address and image. Textures of the image effects live  #
+// # in the scene heap, which is released whole at the end of the scene: no destructor runs, so #
+// # their captures stayed here. A texture of a later scene made at the same address (the       #
+// # spider web's thread in Space Junk) was then drawn as that old capture, with its            #
+// # coordinates turned for the sideways screen copy: the web showed in broken dashes. A        #
+// # capture now also keeps its texture's size and format, and counts only while they still     #
+// # match; one that does not is dropped.                                                       #
+// ##############################################################################################
+static bool captureMatchesTIMG(const CaptureEntry& capture, const ResTIMG* timg) {
+    return timg != nullptr && capture.width == timg->mWidth && capture.height == timg->mHeight && capture.format == timg->mFormat;
+}
+
+// Drops a capture whose texture is gone (released with its whole heap, so no destructor ran).
+static void forgetCapture(CaptureEntry& capture) {
+    if (capture.handle != nullptr) {
+        hostGfxTextureDestroy(capture.handle);
+    }
+    std::memset(&capture, 0, sizeof(capture));
+    sCaptureEpoch++;
+}
+
+static bool captureMatches(CaptureEntry& capture, const JUTTexture* texture) {
+    if (texture == nullptr || capture.handle == nullptr || capture.texture == nullptr) {
+        return false;
+    }
+    if (capture.texture != texture && (texture->mImage == nullptr || capture.image != texture->mImage)) {
+        return false;
+    }
+    if (captureMatchesTIMG(capture, texture->mTIMG)) {
+        return true;
+    }
+    forgetCapture(capture);
+    return false;
+}
+
 bool rvl3DSIsEfbCopy(const JUTTexture* texture) {
     if (texture == nullptr) return false;
-    for (const CaptureEntry& capture : sCaptures) {
-        if (capture.texture == texture) return true;
+    for (CaptureEntry& capture : sCaptures) {
+        if (capture.texture == texture && captureMatches(capture, texture)) return true;
     }
     return false;
 }
@@ -592,7 +633,7 @@ void* rvl3DSGetJUTTexture(const JUTTexture* texture) {
         sLastTexture = nullptr;
     }
     for (CaptureEntry& capture : sCaptures) {
-        if (capture.texture == texture || (capture.texture != nullptr && texture->mImage != nullptr && capture.image == texture->mImage)) {
+        if (captureMatches(capture, texture)) {
             return capture.handle;
         }
     }
@@ -690,9 +731,8 @@ void rvl3DSMapJUTTextureCoord(const JUTTexture* texture, f32 s, f32 t, f32& u, f
         v = t;
         return;
     }
-    for (const CaptureEntry& capture : sCaptures) {
-        if (texture != nullptr && capture.handle != nullptr &&
-            (capture.texture == texture || (texture->mImage != nullptr && capture.image == texture->mImage))) {
+    for (CaptureEntry& capture : sCaptures) {
+        if (captureMatches(capture, texture)) {
             u = capture.coeffs[0] + capture.coeffs[1] * t;
             v = capture.coeffs[2] + capture.coeffs[3] * s;
             return;
@@ -702,13 +742,16 @@ void rvl3DSMapJUTTextureCoord(const JUTTexture* texture, f32 s, f32 t, f32& u, f
     v = t;
 }
 
+// Whether the last rvl3DSCaptureJUTTextureRegion copied anything (rvl3DSLastCaptureDone).
+static bool sLastCaptureDone;
+
+bool rvl3DSLastCaptureDone() {
+    return sLastCaptureDone;
+}
+
 void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1) {
+    sLastCaptureDone = false;
     if (texture == nullptr) {
-        return;
-    }
-    float coeffs[4];
-    void* handle = hostGfxCopyToTexture(nullptr, x0, y0, x1, y1, coeffs);
-    if (handle == nullptr) {
         return;
     }
     CaptureEntry* slot = nullptr;
@@ -721,17 +764,42 @@ void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, 
             slot = &capture;
         }
     }
+
+    // ##############################################################################################
+    // # A capture copies into its own texture again                                                #
+    // #                                                                                            #
+    // # The texture's last copy is passed for reuse: the GPU runs the copy after the draws queued  #
+    // # before it, so draws that read the last image still see it. A new texture each time kept    #
+    // # two of them in a frame (the old one is freed when the next frame begins). The bloom's two  #
+    // # full-screen copies of 512 KB each then could not be made in scenes with little linear      #
+    // # memory left, and the bloom drew an image of earlier frames: blurred copies of the scene in #
+    // # Dino Piranha's galaxy, green stripes carried from Battlerock into the Observatory (tester  #
+    // # report, 7 Nov 2026).                                                                       #
+    // ##############################################################################################
+    void* reuse = slot != nullptr && slot->texture == texture ? slot->handle : nullptr;
+    float coeffs[4];
+    // Null in a frame the renderer skips (or with the command queue full): no copy, and the
+    // texture keeps the image of its last capture.
+    void* handle = hostGfxCaptureToTexture(reuse, x0, y0, x1, y1, coeffs);
+    if (handle == nullptr) {
+        return;
+    }
+    sLastCaptureDone = true;
     if (slot == nullptr) {
         slot = &sCaptures[0];
         if (slot->handle != nullptr) {
             hostGfxTextureDestroy(slot->handle);
         }
-    } else if (slot->handle != nullptr && slot->handle != handle) {
+    } else if (slot->handle != nullptr && slot->handle != handle && slot->handle != reuse) {
+        // (A reused texture of another size was released by hostGfxCaptureToTexture.)
         hostGfxTextureDestroy(slot->handle);
     }
     slot->texture = texture;
     slot->image = texture->mImage;
     slot->handle = handle;
+    slot->width = texture->mTIMG != nullptr ? texture->mTIMG->mWidth : 0;
+    slot->height = texture->mTIMG != nullptr ? texture->mTIMG->mHeight : 0;
+    slot->format = texture->mTIMG != nullptr ? texture->mTIMG->mFormat : 0;
     for (int c = 0; c < 4; c++) {
         slot->coeffs[c] = coeffs[c];
     }
@@ -741,8 +809,10 @@ void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, 
 void* rvl3DSGetNativeTIMGCapture(const ResTIMG* timg, f32* coeffs) {
     if (timg == nullptr) return nullptr;
     const u8* image = reinterpret_cast<const u8*>(timg) + (timg->mImageDataOffset ? timg->mImageDataOffset : 0x20);
+    // By the image kept at the capture (the texture itself may be gone) and the TIMG's size and
+    // format, as captureMatches.
     for (const CaptureEntry& capture : sCaptures) {
-        if (capture.texture != nullptr && capture.handle != nullptr && capture.texture->mImage == image) {
+        if (capture.texture != nullptr && capture.handle != nullptr && capture.image == image && captureMatchesTIMG(capture, timg)) {
             for (int c = 0; c < 4; c++) {
                 coeffs[c] = capture.coeffs[c];
             }
@@ -814,6 +884,16 @@ void* rvl3DSGetNativeTIMGTexture(const ResTIMG* timg) {
     return handle;
 }
 
+// ##############################################################################################
+// # A replaced cache entry forgets its texture                                                 #
+// #                                                                                            #
+// # The oldest entry's texture is destroyed before the new one is made, and its handle cleared #
+// # at once, as the other two caches here do. This one kept it: when the new texture could not #
+// # be made (little linear memory), the entry still named the destroyed texture, layouts drew  #
+// # with it, and the next replacement destroyed it again. The C3D_Tex was freed twice and the  #
+// # heap corrupted; the game crashed later in linearSpaceFree, which walks libctru's block     #
+// # list in that heap (Honeyhive, collecting Star Chips on the Queen Bee, a tester).           #
+// ##############################################################################################
 void* rvl3DSGetNativeTexture(const void* image, u16 width, u16 height, u32 format, const void* palette, u32 paletteFormat,
                              u16 paletteEntries, u8 wrapS, u8 wrapT, u8 magFilter) {
     static u32 sInvalidTextureReports;
@@ -842,6 +922,7 @@ void* rvl3DSGetNativeTexture(const void* image, u16 width, u16 height, u32 forma
     if (slot->handle != nullptr) {
         sReplaced++;
         hostGfxTextureDestroy(slot->handle);
+        slot->handle = nullptr;
     }
     u32 decodedWidth = width, decodedHeight = height;
     decodeToScratch(reinterpret_cast<const u8*>(image), decodedWidth, decodedHeight, format,

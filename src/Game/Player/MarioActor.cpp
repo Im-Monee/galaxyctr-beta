@@ -1959,6 +1959,34 @@ void MarioActor::calcAnimInMovement() {
             MR::releaseAnimFrame(this);
             _3DE = 1;
 
+            // 3DS: the first-transformation message for each form. The C++ below has the forms in the
+            // wrong cases (Bee Mario got the Fire Mario message and music, which then never stopped).
+            // These are the cases of the original code (jumptable_805A386C).
+#ifdef __3DS__
+            switch (mPlayerMode) {
+            case PlayerMode_Invincible:
+                MR::explainInvincibleMarioIfAtFirst();
+                break;
+            case PlayerMode_2:
+                MR::explainFireMarioIfAtFirst();
+                break;
+            case PlayerMode_Ice:
+                MR::explainIceMarioIfAtFirst();
+                break;
+            case PlayerMode_Bee:
+                MR::explainBeeMarioIfAtFirst();
+                break;
+            case PlayerMode_Hopper:
+                MR::explainHopperMarioIfAtFirst();
+                break;
+            case PlayerMode_Teresa:
+                MR::explainTeresaMarioIfAtFirst();
+                break;
+            case PlayerMode_Foo:
+                MR::explainFlyingMarioIfAtFirst();
+                break;
+            }
+#else
             switch (mPlayerMode) {
             case 1:
                 MR::explainBeeMarioIfAtFirst();
@@ -1982,6 +2010,7 @@ void MarioActor::calcAnimInMovement() {
                 MR::explainInvincibleMarioIfAtFirst();
                 break;
             }
+#endif
 
             if (_336 != 0) {
                 _338 = 10;

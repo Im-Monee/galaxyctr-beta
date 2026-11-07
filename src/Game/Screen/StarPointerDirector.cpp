@@ -158,8 +158,28 @@ StarPointerPeekZ::StarPointerPeekZ() {
 }
 
 void StarPointerPeekZ::setDrawSyncToken() {
-    // 3DS: the depth is read straight from the render target, at the next draw sync.
+    // 3DS: the depth is read straight from the render target, at the next draw sync. The Wii also
+    // keeps GX's projection and viewport here, which StarPointerController::movement uses to turn
+    // the pointer and its depth into a world position (TDDraw::invProject). Without GX they are
+    // made from the camera's projection as GXGetProjectionv lays them out (as project2D does in
+    // DirectDraw.cpp), over the whole frame buffer. Left at zero they made that position NaN:
+    // Star Bits flew to no point (unseen, only their sound) and, most likely for the same reason,
+    // a hungry Luma ate Star Bits shot anywhere on the screen (a tester, Nov 2026).
 #ifdef __3DS__
+    const TProj3f& rProjection = MR::getCameraProjectionMtx();
+    mProjectionParameters[0] = 0.0f;  // GX_PERSPECTIVE
+    mProjectionParameters[1] = rProjection.mMtx[0][0];
+    mProjectionParameters[2] = rProjection.mMtx[0][2];
+    mProjectionParameters[3] = rProjection.mMtx[1][1];
+    mProjectionParameters[4] = rProjection.mMtx[1][2];
+    mProjectionParameters[5] = rProjection.mMtx[2][2];
+    mProjectionParameters[6] = rProjection.mMtx[2][3];
+    mViewportParameters[0] = 0.0f;
+    mViewportParameters[1] = 0.0f;
+    mViewportParameters[2] = static_cast< f32 >(MR::getFrameBufferWidth());
+    mViewportParameters[3] = static_cast< f32 >(MR::getScreenHeight());
+    mViewportParameters[4] = 0.0f;
+    mViewportParameters[5] = 1.0f;
     drawSyncCallback(0);
     return;
 #else
@@ -180,8 +200,10 @@ void StarPointerPeekZ::drawSyncCallback(u16 token) {
             MR::isInRange(mInfos[channel]->mPos.y, 0.0f, MR::getScreenHeight() - 1)) {
             TVec2f pos;
             MR::convertScreenPosToFrameBufferPos(&pos, mInfos[channel]->mPos);
+            // A frame the renderer skips reads depth 0 (the camera's plane): the pointer then keeps
+            // the world position of the last frame drawn.
             unsigned long depth = 0;
-            if (hostGfxPeekEfb(static_cast<unsigned short>(pos.x), static_cast<unsigned short>(pos.y), 1, &depth)) {
+            if (hostGfxPeekEfb(static_cast<unsigned short>(pos.x), static_cast<unsigned short>(pos.y), 1, &depth) && depth != 0) {
                 mInfos[channel]->mZDepth = depth;
                 mInfos[channel]->mDrawReady = true;
             }

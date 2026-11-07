@@ -1,12 +1,28 @@
 # Contributing
 
-To report a bug, post in the **#bug-reports** channel of the
-[Discord server](https://discord.gg/Fftp79uaJ7) (preferred), or open an [issue](../../../issues)
-on GitHub.
+To report a bug, create a new post in the **#bug-reports** forum of the
+[Discord server](https://discord.gg/Fftp79uaJ7) (preferred), one post for each problem, or open an
+[issue](../../../issues) on GitHub.
 
 > [!IMPORTANT]
 > The game rewrites its log every time it starts. After a crash or a bug, **copy the log and the
 > crash file to your computer before you play again**, or they are lost.
+
+## What a Report Must Include
+
+- **What happened, from the last time you started the game.** Step by step: where you went and
+  what you did **before** the problem, then what happened. The log only covers that last start.
+- **Screenshots taken only with the Rosalina menu** (see below). Photos of the screen are not
+  accepted.
+- **Videos**, only when the problem is **not** about graphics, taken with a phone or a capture
+  device.
+- **The crash file** after a crash. It **must** be the one that matches the log, from the same
+  start of the game.
+- Your console model and the game's version. The version is on the first lines of `log.txt`.
+
+> [!WARNING]
+> Screenshots, logs and anything else from **emulators** are not accepted. The port is tested on
+> real consoles only.
 
 ## Files to Send
 
@@ -20,17 +36,18 @@ on GitHub.
 ## Taking a Screenshot
 
 When the problem is on screen, press **L + Down + Select** to open the Rosalina menu, choose
-**Take screenshot**, then press **B** to go back to the game. Both screens are saved.
+**Take screenshot**, then press **B** to go back to the game. Both screens are saved in
+`sdmc:/luma/screenshots/`.
 
 ## Sending the Files
 
 1. Turn the console off and put the SD card into your computer. You can also copy the files
    over the network with an FTP app such as ftpd.
 2. Copy the files from the paths above.
-3. Write what you were doing, what went wrong, your console model and the version. The version
-   is on the first lines of `log.txt`.
-4. Attach the files by dragging them into the message. On GitHub, put the `.dmp` file in a
-   `.zip` first.
+3. Create a post in the **#bug-reports** forum. Give it a short title that says what went wrong,
+   then write the steps from the list above.
+4. Attach the files by dragging them into the post. On GitHub, put the `.dmp` file in a `.zip`
+   first.
 
 ## Code
 

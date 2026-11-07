@@ -38,6 +38,10 @@
 #include "Game/Util/TalkUtil.hpp"
 #include "revolution/os.h"
 #include <cstdio>
+// 3DS: Pad3DS.hpp, the 3DS button behind the remote's B.
+#ifdef __3DS__
+#include "Pad3DS.hpp"
+#endif
 
 namespace NrvTicoFat {
     NEW_NERVE(TicoFatNrvReaction, TicoFat, Reaction);
@@ -342,7 +346,13 @@ void TicoFat::control() {
 
         if (_178 > 0) {
             if (MR::isIntervalStep(this, _1F0)) {
+                // 3DS: feeding shoots Star Bits, so it is R only (Pad3DS.hpp): A + B, the remote's B
+                // elsewhere, does not feed.
+#ifdef __3DS__
+                if (MR::testCorePadButtonB(WPAD_CHAN0) && rvl3DSStarBitKeyHeld()) {
+#else
                 if (MR::testCorePadButtonB(WPAD_CHAN0)) {
+#endif
                     if (!MR::isDemoActive() && !isNerve(GET_NERVE(TicoFat, TicoFatNrvReaction))) {
                         if (_1E0 && MR::getStarPieceNum() > 0) {
                             shootStarPiece();

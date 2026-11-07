@@ -29,6 +29,10 @@ void rvl3DSInvalidateTextureImage(const void* image);
 void rvl3DSCaptureJUTTexture(JUTTexture* texture);
 // Captures the Wii frame buffer rectangle [x0, x1) x [y0, y1) (640x456) into the texture.
 void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1);
+// Whether the last capture above really copied the screen. In a frame the renderer skips
+// (host/gfx.c, sSkipFrame) nothing is copied and the texture keeps its old image: a one-time
+// capture request (CaptureScreenDirector, GalaxyMapController) must then stay pending.
+bool rvl3DSLastCaptureDone();
 // The texture coordinate to sample for (s, t) over the texture: a capture is stored on its side
 // (the top screen's frame buffer is portrait), other textures as they are.
 void rvl3DSMapJUTTextureCoord(const JUTTexture* texture, f32 s, f32 t, f32& u, f32& v);
