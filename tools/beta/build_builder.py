@@ -161,6 +161,8 @@ def main():
         if exe == "":
             staged.chmod(0o755)
     added.append(f"{stage / 'tools'}{sep}tools")
+    # The helper programs' license texts travel with them (licenses/README.md).
+    added.append(f"{REPO / 'licenses'}{sep}licenses")
 
     for name in SOURCE_FILES:
         paths = sorted(REPO.glob(name))

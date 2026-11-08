@@ -10,4 +10,6 @@
 | [Project_CTR](https://github.com/3DSGuy/Project_CTR) (makerom), [bannertool](https://github.com/diasurgical/bannertool) | building the CIA |
 | [FFmpeg](https://ffmpeg.org/) | encoding the movies |
 
+The builder carries nodtool, makerom, bannertool, Python and certifi. Their licenses are in [licenses/](../licenses/README.md).
+
 Super Mario Galaxy is a trademark of Nintendo. This project is not affiliated with Nintendo.
