@@ -160,7 +160,9 @@ void MiiFacePartsHolder::drawEachActor(DrawPartsFuncPtr pDrawFunc, const RFLDraw
 
 void MiiFacePartsHolder::drawExtra() const {
 #ifdef __3DS__
-    // RFLDrawOpa reads the selected MiiData and the system CFL_Res.dat mesh archive.
+    // RFLDrawOpa reads the selected MiiData and the system CFL_Res.dat mesh archive. The heads
+    // are lit by the scene's light as on the Wii (platform/3ds/rvl/rfl.cpp, drawHead).
+    MR::loadLight(1);
     drawEachActor(&MiiFaceParts::drawOpa, nullptr);
 #else
     RFLDrawCoreSetting setting;

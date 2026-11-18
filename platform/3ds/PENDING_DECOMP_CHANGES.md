@@ -1310,3 +1310,9 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 - `src/Game/Ride/SurfRay.cpp` (`updateRotate`) and `src/Game/Ride/SurfRayTutorial.cpp` (`update`), `__3DS__` branches: the remote's acceleration comes from `rvl3DSSurfRayAcceleration` (`platform/3ds/include/Pad3DS.hpp`, `platform/3ds/rvl/kpad.cpp`) instead of `MR::getCorePadAcceleration`: the remote held upright and tilted by the circle pad across, fully over 90 degrees (x = sin, y = 0, z = -cos).
   - **Why:** on the Wii the manta is steered by tilting the upright remote. `kpad.cpp` reports a remote at rest, held level, so the manta did not steer and the penguin's lesson saw no tilt (owner's request, 7 Nov: steer with the circle pad).
   - Wii SHA-1 unchanged; the Wii view of both files differs in comments only.
+
+## Miis lit by the scene's light (Nov 17 2026)
+
+- `src/Game/NPC/MiiFacePartsHolder.cpp` (`drawExtra`, `__3DS__` branch): `MR::loadLight(1)` before the heads are drawn, as the Wii's branch does. `platform/3ds/rvl/rfl.cpp` (`drawHead`) lights the heads with that light (`rvlNativeLoadedLight`) the way `setTevOpa` and `setTevXlu` do: material 165 times ambient 128 plus lights 0 and 1, doubled, and for the opaque parts a rim from light 2 (the camera) that brightens what turns away from the camera.
+  - **Why:** the heads were lit by one fixed light from the front with a 55% floor, so they looked flat next to the Wii's, without its shading and the bright edges.
+  - The Wii view of the file differs in comments only.

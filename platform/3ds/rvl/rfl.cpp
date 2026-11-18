@@ -8,6 +8,8 @@
 // # small CPU rasteriser from the same parts. Nothing of the Mii data is shipped with the      #
 // # port.                                                                                      #
 // ##############################################################################################
+#include "Game/Map/LightDataHolder.hpp"
+#include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DirectDraw.hpp"
 #include "GXToCitro3D.hpp"
 #include "JUTTexture3DS.hpp"
@@ -18,6 +20,9 @@
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <revolution.h>
 #include <string.h>
+
+// The light the game loaded last (LightFunction::loadActorLightInfo), platform/3ds/gx/native.cpp.
+const ActorLightInfo* rvlNativeLoadedLight();
 
 extern "C" {
 
@@ -584,9 +589,10 @@ void buildFacelineCanvas(u32 skin) {
 }
 
 // A texture straight from the file, coloured: noseline (colour with the texture's alpha) and
-// glasses (LA4, the colour times the luminance). Laid straight on a shape, whose t counts from
-// the first row in memory: the rows go back to memory order, bottom row first, to meet the
-// shape's t turned for hostGfxTextureCreate.
+// glasses (LA4, the colour times the luminance). Laid straight on a shape. The file's rows are
+// top row first, as hostGfxTextureCreate takes them and as the mask and faceline canvases are
+// made, and the shape's t is turned the same way (appendCflShape): turning the rows over as
+// well drew the nose's line and the glasses upside down (seen on a New 3DS XL).
 void* cflColoredTexture(u32 section, u32 item, u32 color, bool luminance, u32* pCopy, CflImage* pImage, bool gpu) {
     u32 width, height, potWidth, potHeight, wrapS, wrapT;
     pImage->pixels = nullptr;
@@ -597,13 +603,6 @@ void* cflColoredTexture(u32 section, u32 item, u32 color, bool luminance, u32* p
         const f32 level = luminance ? colorChannel(sCflSource[i], 0) : 1.0f;
         sCflSource[i] = packColor(colorChannel(color, 0) * level, colorChannel(color, 1) * level,
                                   colorChannel(color, 2) * level, colorChannel(sCflSource[i], 3));
-    }
-    for (u32 y = 0; y < potHeight / 2; y++) {
-        for (u32 x = 0; x < potWidth; x++) {
-            const u32 top = sCflSource[y * potWidth + x];
-            sCflSource[y * potWidth + x] = sCflSource[(potHeight - 1 - y) * potWidth + x];
-            sCflSource[(potHeight - 1 - y) * potWidth + x] = top;
-        }
     }
     const u8 modeS = wrapS == 2 ? 2 : wrapS == 1 ? 1 : 0;
     const u8 modeT = wrapT == 2 ? 2 : wrapT == 1 ? 1 : 0;
@@ -823,11 +822,76 @@ CflHead* headFor(const u8* mii) {
     return slot;
 }
 
+// The Wii's Mii shading (MiiFacePartsHolder::drawExtra: MR::loadLight(1), then setTevOpa and
+// setTevXlu). The colour channel is the material 165 times the ambient 128 plus lights 0 and 1
+// (clamped diffuse, no attenuation); the TEV doubles it. Opaque parts also add a rim: the alpha
+// channel is the ambient 128 plus light 2, the camera, with the light's alpha2 and a signed
+// diffuse, and (246 (1 - alpha) + 64 alpha - 89) / 255 brightens what turns away from the camera:
+//   opaque  2 (base chan + chan rim)      over them (mask, noseline, glasses)  2 base chan
+struct MiiLight {
+    bool valid;
+    TVec3f pos[2];  // view space
+    f32 color[2][3];
+    f32 alpha2;
+};
+
+const f32 kMiiMaterial = 165.0f / 255.0f;
+const f32 kMiiAmbient = 128.0f / 255.0f;
+
+MiiLight sceneMiiLight() {
+    MiiLight light = {};
+    const ActorLightInfo* info = rvlNativeLoadedLight();
+    if (info == nullptr) {
+        return light;
+    }
+    for (u32 i = 0; i < 2; i++) {
+        const LightInfo& source = i == 0 ? info->mInfo0 : info->mInfo1;
+        TVec3f position(source.mPos);
+        if (!source.mIsFollowCamera) {
+            MR::getCameraViewMtx().mult(position, position);
+        }
+        light.pos[i] = position;
+        light.color[i][0] = source.mColor.r / 255.0f;
+        light.color[i][1] = source.mColor.g / 255.0f;
+        light.color[i][2] = source.mColor.b / 255.0f;
+    }
+    light.alpha2 = info->mAlpha2 / 255.0f;
+    light.valid = true;
+    return light;
+}
+
+f32 clamp01(f32 v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
+
+// setTevOpa's rim from the alpha channel.
+f32 miiRim(f32 alpha) { return clamp01((246.0f * (1.0f - alpha) + 64.0f * alpha - 89.0f) / 255.0f); }
+
+// The colour channel (chan, per component) and the rim at a view-space point and unit normal.
+void shadeMii(const MiiLight& light, const TVec3f& p, const TVec3f& n, f32* chan, f32* rim) {
+    f32 sum[3] = {kMiiAmbient, kMiiAmbient, kMiiAmbient};
+    for (u32 i = 0; i < 2; i++) {
+        TVec3f toLight(light.pos[i].x - p.x, light.pos[i].y - p.y, light.pos[i].z - p.z);
+        const f32 length = sqrtf(toLight.x * toLight.x + toLight.y * toLight.y + toLight.z * toLight.z);
+        const f32 diffuse = length > 0.0f ? (n.x * toLight.x + n.y * toLight.y + n.z * toLight.z) / length : 0.0f;
+        if (diffuse > 0.0f) {
+            for (u32 c = 0; c < 3; c++) {
+                sum[c] += light.color[i][c] * diffuse;
+            }
+        }
+    }
+    for (u32 c = 0; c < 3; c++) {
+        chan[c] = kMiiMaterial * clamp01(sum[c]);
+    }
+    const f32 distance = sqrtf(p.x * p.x + p.y * p.y + p.z * p.z);
+    const f32 facing = distance > 0.0f ? -(n.x * p.x + n.y * p.y + n.z * p.z) / distance : 1.0f;
+    *rim = miiRim(clamp01(kMiiAmbient + light.alpha2 * facing));
+}
+
 void drawHead(const MiiModelState& rState) {
     sHead = headFor(rState.mii);
     if (sHead->vertexCount == 0) {
         return;
     }
+    const MiiLight sceneLight = sceneMiiLight();
     Mtx identity;
     PSMTXIdentity(identity);
     TDDraw::setupDirect(1, 1, 0);
@@ -842,7 +906,7 @@ void drawHead(const MiiModelState& rState) {
     const f32 matrixScale = sqrtf(rState.matrix[0][0] * rState.matrix[0][0] + rState.matrix[1][0] * rState.matrix[1][0] +
                                   rState.matrix[2][0] * rState.matrix[2][0]);
     const f32 overlayPull = matrixScale * (32.0f / 30.0f);
-    // A light from the front, a little above and to the right, as the Mii's own shading.
+    // Without a scene light: a light from the front, a little above and to the right.
     const f32 lightX = 0.2611f;
     const f32 lightY = 0.4352f;
     const f32 lightZ = 0.8616f;
@@ -855,6 +919,11 @@ void drawHead(const MiiModelState& rState) {
         const bool overlay = partIndex >= kPartMask;
         TDDraw::setDirectDepthMode(true, GXToCitro3D::depthTest(GX_LEQUAL), !overlay);
         HostGfxState state = {};
+        // With the scene light, a textured part's vertex colour is chan (times the part's
+        // colour), and the stages make the TEV's doubling; an opaque one (the faceline) carries
+        // its rim in the vertex alpha and adds chan times rim.
+        const bool shaded = sceneLight.valid;
+        const bool rimStage = shaded && !overlay;
         if (part.texture != nullptr) {
             state.textures[0] = part.texture;
             state.stageCount = 1;
@@ -863,13 +932,49 @@ void drawHead(const MiiModelState& rState) {
             state.stages[0].colorFunc = 1;
             state.stages[0].alphaSrc[0] = 0x03;
             state.stages[0].alphaSrc[1] = 0x00;
-            state.stages[0].alphaFunc = 1;
+            state.stages[0].alphaFunc = rimStage ? 0 : 1;  // the rim in the vertex alpha is not an alpha
+            if (shaded && overlay) {
+                state.stages[0].colorScale = 1;  // GPU_TEVSCALE_2
+            } else if (rimStage) {
+                // (vertex colour times vertex alpha) plus the previous stage, doubled.
+                HostGfxStage& add = state.stages[1];
+                add.colorSrc[0] = 0x00;
+                add.colorSrc[1] = 0x00;
+                add.colorSrc[2] = 0x0F;
+                add.colorOp[1] = 0x02;  // GPU_TEVOP_RGB_SRC_ALPHA
+                add.colorFunc = 8;      // GPU_MULTIPLY_ADD
+                add.colorScale = 1;     // GPU_TEVSCALE_2
+                add.alphaSrc[0] = 0x0F;
+                add.alphaFunc = 0;
+                state.stageCount = 2;
+            }
         }
         for (u32 offset = 0; offset < part.count; offset += 192) {
             const u32 count = part.count - offset > 192 ? 192 : part.count - offset;
             for (u32 i = 0; i < count; i++) {
                 const u32 v = part.first + offset + i;
                 PSMTXMultVec(rState.matrix, &sHead->positions[v], &sTransformed[i]);
+                u32 color = part.color;
+                if (shaded) {
+                    TVec3f normal;
+                    PSMTXMultVecSR(rState.matrix, &sHead->normals[v], &normal);
+                    const f32 length = sqrtf(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+                    if (length > 0.0f) {
+                        normal.set(normal.x / length, normal.y / length, normal.z / length);
+                    }
+                    f32 chan[3], rim;
+                    shadeMii(sceneLight, sTransformed[i], normal, chan, &rim);
+                    f32 out[3];
+                    for (u32 c = 0; c < 3; c++) {
+                        const f32 base = colorChannel(part.color, c);
+                        if (part.texture != nullptr) {
+                            out[c] = base * chan[c];  // the texture and the doubling come in the stages
+                        } else {
+                            out[c] = 2.0f * (clamp01(base * chan[c]) + chan[c] * rim);
+                        }
+                    }
+                    color = packColor(out[0], out[1], out[2], rimStage && part.texture != nullptr ? rim : colorChannel(part.color, 3));
+                }
                 if (overlay) {
                     TVec3f& p = sTransformed[i];
                     const f32 distance = sqrtf(p.x * p.x + p.y * p.y + p.z * p.z);
@@ -878,8 +983,7 @@ void drawHead(const MiiModelState& rState) {
                         p.set(p.x * keep, p.y * keep, p.z * keep);
                     }
                 }
-                u32 color = part.color;
-                if (part.lit) {
+                if (!shaded && part.lit) {
                     TVec3f normal;
                     PSMTXMultVecSR(rState.matrix, &sHead->normals[v], &normal);
                     const f32 length = sqrtf(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
@@ -911,7 +1015,7 @@ void drawHead(const MiiModelState& rState) {
 // ##############################################################################################
 // Icons (RFLMakeIcon): the head from the front, drawn by the CPU into the caller's RGB5A3 picture.
 // The Wii renders them with the GPU into the frame buffer and copies them out; here a small
-// rasteriser draws the same parts as drawHead, with the same light, the head fitted to the picture.
+// rasteriser draws the same parts as drawHead with RFLiMakeIcon's camera and light (rasterPart).
 
 const u32 kFavoriteColors[12] = {0xd21e14ff, 0xff6e19ff, 0xffd820ff, 0x78d220ff, 0x007830ff, 0x0a48b4ff,
                                  0x3caadeff, 0xf55a7dff, 0x7328adff, 0x483818ff, 0xe0e0e0ff, 0x181814ff};
@@ -936,23 +1040,46 @@ u32 sampleImage(const CflImage& image, f32 s, f32 t) {
     return image.pixels[static_cast< u32 >(coords[1] * image.height) * image.width + static_cast< u32 >(coords[0] * image.width)];
 }
 
-void rasterPart(const CflPart& part, bool overlay, u32 size, f32 scale, f32 centerX, f32 centerY) {
-    const f32 lightX = 0.2611f;
-    const f32 lightY = 0.4352f;
-    const f32 lightZ = 0.8616f;
+// RFLiMakeIcon's camera, light and colours (read from Super Mario Galaxy's main.dol, RMGE01
+// 0x8045E344): C_MTXPerspective with fovy 2 atan2(43.2, 500) for a square or wide icon, near 500,
+// far 700; C_MTXLookAt from (0, 34.5, 600) to (0, 34.5, 0), up (0, 1, 0), the head's own matrix
+// the identity; GX_LIGHT0 white at (1600, 1500, 6000); RFLLoadDrawSetting with that light,
+// GX_DF_CLAMP, GX_AF_NONE, the ambient 160 and a white material: every part is its colour (times
+// its texture) times clamp(ambient + diffuse), with no doubling and no rim.
+const f32 kIconEyeY = 34.5f;
+const f32 kIconEyeZ = 600.0f;
+const f32 kIconFocal = 500.0f / 43.2f;  // 1 / tan(fovy / 2)
+const f32 kIconLight[3] = {1600.0f, 1500.0f, 6000.0f};
+const f32 kIconAmbient = 160.0f / 255.0f;
+
+void rasterPart(const CflPart& part, bool overlay, u32 size) {
     const bool textured = part.image.pixels != nullptr;
     for (u32 t = 0; t + 2 < part.count; t += 3) {
-        f32 sx[3], sy[3], sz[3], level[3];
+        // Screen place, depth, 1 / distance (perspective-correct interpolation) and light level.
+        f32 sx[3], sy[3], sz[3], inv[3], level[3];
+        bool behind = false;
         for (u32 k = 0; k < 3; k++) {
             const u32 v = part.first + t + k;
             const TVec3f& p = sHead->positions[v];
-            sx[k] = size * 0.5f + (p.x - centerX) * scale;
-            sy[k] = size * 0.5f - (p.y - centerY) * scale;
+            const f32 distance = kIconEyeZ - p.z;
+            if (distance <= 1.0f) {
+                behind = true;
+                break;
+            }
+            inv[k] = 1.0f / distance;
+            sx[k] = size * 0.5f * (1.0f + p.x * kIconFocal * inv[k]);
+            sy[k] = size * 0.5f * (1.0f - (p.y - kIconEyeY) * kIconFocal * inv[k]);
             sz[k] = p.z + (overlay ? 1.0f : 0.0f);
             const TVec3f& n = sHead->normals[v];
-            const f32 length = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
-            f32 diffuse = length > 0.0f ? (n.x * lightX + n.y * lightY + n.z * lightZ) / length : 1.0f;
-            level[k] = part.lit ? 0.55f + 0.45f * (diffuse < 0.0f ? 0.0f : diffuse) : 1.0f;
+            const f32 lx = kIconLight[0] - p.x;
+            const f32 ly = kIconLight[1] - p.y;
+            const f32 lz = kIconLight[2] - p.z;
+            const f32 lengths = sqrtf((n.x * n.x + n.y * n.y + n.z * n.z) * (lx * lx + ly * ly + lz * lz));
+            const f32 diffuse = lengths > 0.0f ? (n.x * lx + n.y * ly + n.z * lz) / lengths : 1.0f;
+            level[k] = clamp01(kIconAmbient + (diffuse > 0.0f ? diffuse : 0.0f));
+        }
+        if (behind) {
+            continue;
         }
         const f32 area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
         if (fabsf(area) < 1e-6f) {
@@ -973,12 +1100,16 @@ void rasterPart(const CflPart& part, bool overlay, u32 size, f32 scale, f32 cent
             for (s32 x = x0; x <= x1; x++) {
                 const f32 px = x + 0.5f;
                 const f32 py = y + 0.5f;
-                const f32 w0 = ((sx[1] - px) * (sy[2] - py) - (sx[2] - px) * (sy[1] - py)) / area;
-                const f32 w1 = ((sx[2] - px) * (sy[0] - py) - (sx[0] - px) * (sy[2] - py)) / area;
-                const f32 w2 = 1.0f - w0 - w1;
-                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) {
+                const f32 b0 = ((sx[1] - px) * (sy[2] - py) - (sx[2] - px) * (sy[1] - py)) / area;
+                const f32 b1 = ((sx[2] - px) * (sy[0] - py) - (sx[0] - px) * (sy[2] - py)) / area;
+                const f32 b2 = 1.0f - b0 - b1;
+                if (b0 < 0.0f || b1 < 0.0f || b2 < 0.0f) {
                     continue;
                 }
+                // The screen weights turned perspective-correct, as the GPU interpolates.
+                const f32 q0 = b0 * inv[0], q1 = b1 * inv[1], q2 = b2 * inv[2];
+                const f32 qs = q0 + q1 + q2;
+                const f32 w0 = q0 / qs, w1 = q1 / qs, w2 = q2 / qs;
                 const u32 pixel = y * size + x;
                 const f32 z = w0 * sz[0] + w1 * sz[1] + w2 * sz[2];
                 if (z < sIconDepth[pixel]) {
@@ -1039,8 +1170,9 @@ void makeIcon(const u8* mii, u8* image, u32 width, u32 height, u32 background) {
         sIconDepth[i] = -1e30f;
     }
     if (sIconHead.vertexCount != 0) {
-        // The head's outline from the front (the opaque parts), fitted with a small margin.
-        f32 minX = 1e30f, maxX = -1e30f, minY = 1e30f, maxY = -1e30f;
+        // The Wii's camera frames the head (rasterPart); the head's extent is logged to check
+        // that the parts' places match the Wii's units.
+        f32 minX = 1e30f, maxX = -1e30f, minY = 1e30f, maxY = -1e30f, minZ = 1e30f, maxZ = -1e30f;
         for (u32 partIndex = 0; partIndex < kPartMask; partIndex++) {
             const CflPart& part = sIconHead.parts[partIndex];
             for (u32 i = 0; i < part.count; i++) {
@@ -1049,13 +1181,14 @@ void makeIcon(const u8* mii, u8* image, u32 width, u32 height, u32 background) {
                 maxX = p.x > maxX ? p.x : maxX;
                 minY = p.y < minY ? p.y : minY;
                 maxY = p.y > maxY ? p.y : maxY;
+                minZ = p.z < minZ ? p.z : minZ;
+                maxZ = p.z > maxZ ? p.z : maxZ;
             }
         }
-        const f32 extent = (maxX - minX) > (maxY - minY) ? (maxX - minX) : (maxY - minY);
-        const f32 scale = extent > 0.0f ? drawn * 0.94f / extent : 1.0f;
+        hostLog("mii: icon %lux%lu, head x %.1f..%.1f y %.1f..%.1f z %.1f..%.1f\n", (unsigned long)width,
+                (unsigned long)height, minX, maxX, minY, maxY, minZ, maxZ);
         for (u32 partIndex = 0; partIndex < kPartCount; partIndex++) {
-            rasterPart(sIconHead.parts[partIndex], partIndex >= kPartMask, drawn, scale, (minX + maxX) * 0.5f,
-                       (minY + maxY) * 0.5f);
+            rasterPart(sIconHead.parts[partIndex], partIndex >= kPartMask, drawn);
         }
     }
     // Into 4x4 tiles of big-endian texels, scaled when the icon is larger than the drawing.
