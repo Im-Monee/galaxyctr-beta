@@ -60,7 +60,7 @@ void DepthOfFieldBlur::draw() const {
     const f32 minDist = mBlurMinDist >= 0 ? mBlurMinDist : 242;
     const f32 intensity = mIntensity * get_10() > 1.0f ? 1.0f : mIntensity * get_10();
     const f32 radius = intensity * 0.008f;  // the Wii's 0.005 at a quarter of the size, then scaled up
-    const f32 vertical = 0.866f * (MR::isScreen16Per9() ? 1.333f : 1.0f) * radius;
+    const f32 vertical = 0.866f * (MR::isScreen16Per9() ? 1.25f : 1.0f) * radius;
     const f32 offsets[3][2] = {{radius, 0.0f}, {-0.5f * radius, vertical}, {-0.5f * radius, -vertical}};
     ImageEffectLocalUtil::setupDrawTexture();
     TDDraw::setDirectAlphaTest(1, 0);

@@ -21,7 +21,9 @@ u8 SCGetLanguage(void) {
     }
 }
 
-// The top screen (400x240) is wide, so the game uses its 16:9 layouts.
+// The top screen (400x240) is exactly 5:3, between the original game's 4:3 and 16:9 layouts.
+// The wide path is kept, and its aspect constants are the 5:3 values (see the
+// MR::isScreen16Per9 call sites).
 u8 SCGetAspectRatio(void) {
     return SC_ASPECT_RATIO_16x9;
 }
