@@ -206,7 +206,7 @@ def main():
         "  description = EMBED $in",
         "",
         "rule check3dsx",
-        f"  command = {quote(sys.executable)} tools/3ds/check_3dsx.py $in $elf --stamp $out",
+        f"  command = {quote(sys.executable)} tools/3ds/check_3dsx.py $in $elf --nm {quote(bin_dir / f'arm-none-eabi-nm{EXE}')} --stamp $out",
         "  description = CHECK $in",
         "",
     ]
