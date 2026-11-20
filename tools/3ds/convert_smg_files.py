@@ -1982,6 +1982,12 @@ def main():
 
         def write_port_data(root, originals):
             """Extract and convert the three data files embedded in the selected release's DOL."""
+            marker = _port_data_folder(root) / "GameVersion.txt"
+            if marker.is_file():
+                stored_version = marker.read_text(encoding="ascii").strip()
+                if stored_version != args.version:
+                    raise SystemExit(f"Converted files are for {stored_version}, but {args.version} was selected. "
+                                     "Use files extracted from the same game release.")
             if not _port_data_missing(root):
                 return
             dol_path = _main_dol_for(originals, root)
