@@ -29,7 +29,7 @@ The game is a **public beta**. It targets 30 FPS, and the busiest areas still ru
 | | |
 |---|---|
 | **Console** | New 3DS, New 3DS XL or New 2DS XL with [Luma3DS](https://github.com/LumaTeam/Luma3DS) and a CIA installer such as FBI. The original 3DS and 2DS are not supported ([why](docs/DETAILS.md#11-new-3ds-only)). |
-| **Game** | your own disc image of *Super Mario Galaxy*, USA release (`RMGE01`): ISO, WBFS, RVZ or another common format |
+| **Game** | your own disc image of *Super Mario Galaxy*, USA (`RMGE01`) or Japan (`RMGJ01`), revision 0: ISO, WBFS, RVZ or another common format |
 | **Computer** | Windows, Linux or macOS, with about 9 GB free |
 | **SD card** | about 2 GB free |
 | **Sound** | the file `sdmc:/3ds/dspfirm.cdc`. Run the homebrew app DSP1 once to create it. |

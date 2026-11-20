@@ -26,9 +26,8 @@ from pathlib import Path
 # ##############################################################################################
 # # What is built                                                                              #
 # #                                                                                            #
-# # The decompiled source trees and the parts of the Wii SDK that are compiled as they are;    #
-# # everything else of the Wii SDK is replaced by platform/3ds/rvl. Only RMGE01 (USA) is       #
-# # supported; the other versions exist because Petari's sources test VERSION.                 #
+# # The common source has region conditionals for the four Wii releases; the builder currently #
+# # supports USA and Japan data extraction. RMGP01/RMGK01 remain compile-time targets for later work. #
 # ##############################################################################################
 VERSIONS = ["RMGJ01", "RMGE01", "RMGP01", "RMGK01"]
 

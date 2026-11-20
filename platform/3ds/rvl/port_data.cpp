@@ -71,3 +71,22 @@ extern "C" void rvlLoadPortData(void) {
     loadPortFile("GalaxyInfoTable.bcsv", cGalaxyInfoTable, sizeof(cGalaxyInfoTable));
     loadPortFile("ErrorMessageArchive.arc", cErrorMessageArchive, sizeof(cErrorMessageArchive));
 }
+
+extern "C" int rvlIsJapaneseRelease(void) {
+    char path[96];
+    snprintf(path, sizeof(path), "sdmc:/smg/port/GameVersion.txt");
+    void* file = hostFileOpenMode(path, 1);
+    if (file == nullptr) {
+#if (VERSION == RMGJ01)
+        return 1;
+#else
+        return 0;  // pre-version-marker installs were USA builds
+#endif
+    }
+    char version[8] = {};
+    long size = hostFileSizeMode(file);
+    long read = size == 6 ? hostFileReadNext(file, version, sizeof(version) - 1) : -1;
+    hostFileCloseMode(file);
+    return read == 6 && version[0] == 'R' && version[1] == 'M' && version[2] == 'G' &&
+           version[3] == 'J' && version[4] == '0' && version[5] == '1';
+}

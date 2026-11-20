@@ -1,7 +1,7 @@
 """GalaxyCTR builder: everything the New 3DS port needs, made from the user's own game disc.
 
 Run it with no arguments and answer its questions. It:
-  1. asks for a disc image of Super Mario Galaxy (USA, RMGE01) and checks it is that game;
+  1. asks for a disc image of Super Mario Galaxy (USA, RMGE01, or Japan, RMGJ01) and checks it is supported;
   2. extracts the disc's data partition (nodtool);
   3. checks main.dol is the original one (SHA-1);
   4. converts the game files for the 3DS (tools/3ds/convert_smg_files.py, the same pipeline the
@@ -59,11 +59,11 @@ RELEASE = os.environ.get("GALAXYCTR_RELEASE", "dev")
 for folder in (REPO / "tools" / "3ds", REPO / "tools" / "3ds" / "builder"):
     sys.path.insert(0, str(folder))
 
-# The disc this port is built for. The main.dol hash is the one the decomp's Wii build matches
-# (config/RMGE01/build.sha1), so a modified or damaged disc is refused here.
-GAME_ID = "RMGE01"
-GAME_REVISION = 0
-MAIN_DOL_SHA1 = "9a71008ae1ee9010e267fa67d1f0b0d4f0e895dd"
+from game_versions import SUPPORTED_VERSIONS, game_version_for_main_dol_sha1
+
+# Game data and executable checks shared with the converter. The port's 3DS build defaults to
+# RMGE01, but the builder accepts the Wii USA and Japan releases.
+GAME_VERSIONS_BY_ID = SUPPORTED_VERSIONS
 
 # Rough space needs, in bytes: the extracted disc plus everything the converter writes next to
 # it (models, cache), and what ends up on the SD card.
@@ -247,7 +247,7 @@ def read_disc_info(image):
 
 def choose_disc(given=None):
     while True:
-        path = Path(given or ask("Disc image of Super Mario Galaxy (USA), or drag it here: ")).expanduser()
+        path = Path(given or ask("Disc image of Super Mario Galaxy, or drag it here: ")).expanduser()
         if given:
             say(f"  {path}")
             given = None  # a refused --disc falls back to asking
@@ -260,16 +260,14 @@ def choose_disc(given=None):
             say("  This file is not a Wii disc image that can be read. Try another one.")
             continue
         say(f"  {fmt} image: {title} ({game_id}, revision {revision})")
-        if game_id != GAME_ID:
-            region = {"RMGJ01": "the Japanese release", "RMGP01": "the European release",
-                      "RMGK01": "the Korean release"}.get(game_id)
-            say(f"  This is {region} of Super Mario Galaxy. Only the USA release (RMGE01) is supported."
-                if region else "  This is not Super Mario Galaxy. Only the USA release (RMGE01) is supported.")
+        version = GAME_VERSIONS_BY_ID.get(game_id)
+        if version is None:
+            say(f"  {game_id} is not supported. Supported releases: {', '.join(GAME_VERSIONS_BY_ID)}.")
             continue
-        if revision != GAME_REVISION:
-            say(f"  Revision {revision} of the disc is not supported, only revision {GAME_REVISION}.")
+        if revision != version.revision:
+            say(f"  Revision {revision} of {version.name} is not supported, only revision {version.revision}.")
             continue
-        return path
+        return path, version.game_id
 
 
 # ############################################################################
@@ -284,14 +282,20 @@ def free_space(path):
     return shutil.disk_usage(path).free
 
 
-def extraction_ok(target):
-    """An extraction with the game's files and the original main.dol."""
-    dol = target / "sys" / "main.dol"
-    return (target / "files" / "ObjectData").is_dir() and dol.is_file() \
-        and hashlib.sha1(dol.read_bytes()).hexdigest() == MAIN_DOL_SHA1
+def game_version_from_extraction(target):
+    dol = Path(target) / "sys" / "main.dol"
+    return game_version_for_main_dol_sha1(hashlib.sha1(dol.read_bytes()).hexdigest()) if dol.is_file() else None
 
 
-def extract_disc(image, work, name="disc", check_space=True):
+def extraction_ok(target, game_id=None):
+    """An extraction with game files and a DOL matching one of the supported releases."""
+    if not (target / "files" / "ObjectData").is_dir():
+        return False
+    version = game_version_from_extraction(target)
+    return version is not None and (game_id is None or version.game_id == game_id)
+
+
+def extract_disc(image, work, name="disc", check_space=True, expected_game_id=None):
     if check_space and free_space(work) < WORK_SPACE:
         raise BuildError(f"Not enough free space in {work}: about {WORK_SPACE >> 30} GB are needed, "
                          f"{free_space(work) >> 30} GB are free. Free some space and run the builder again.")
@@ -301,11 +305,12 @@ def extract_disc(image, work, name="disc", check_space=True):
     dol = target / "sys" / "main.dol"
     if not (target / "files" / "ObjectData").is_dir() or not dol.is_file():
         raise BuildError("The disc was extracted, but its files are not where they should be.")
-    if not extraction_ok(target):
-        raise BuildError("This disc's main.dol is not the original one: the disc image is modified or damaged. "
-                         "Make a new copy of your disc.")
-    say("  Extracted, and main.dol is the original.")
-    return target
+    version = game_version_from_extraction(target)
+    if version is None or (expected_game_id is not None and version.game_id != expected_game_id):
+        raise BuildError("The extracted main.dol does not match a supported, unmodified game release. "
+                         "Make a fresh copy of the selected disc.")
+    say(f"  Extracted, and {version.name} main.dol is the original.")
+    return target, version.game_id
 
 
 # ############################################################################
@@ -352,13 +357,14 @@ class ConverterOutput:
         return getattr(self.stream, name)
 
 
-def convert_files(disc, originals=None):
-    """Converts disc/files in place, or, with the kept original extraction, fills and updates the
-    kept converted tree from it: only the files a new release converts differently are redone."""
+def convert_files(disc, originals=None, game_id="RMGE01"):
+    """Converts the selected release's files for the 3DS, updating a kept tree from its originals."""
     import convert_smg_files as converter
 
     saved_argv, saved_out, saved_err = sys.argv, sys.stdout, sys.stderr
-    sys.argv = ["convert_smg_files", "--source", str(disc / "files"), "--native", str(disc / "native"), "--validated"]
+    game_version = GAME_VERSIONS_BY_ID[game_id]
+    sys.argv = ["convert_smg_files", "--source", str(disc / "files"), "--native", str(disc / "native"),
+                "--version", game_version.game_id, "--validated"]
     if originals is not None:
         sys.argv += ["--originals", str(originals / "files")]
     sys.stdout = sys.stderr = ConverterOutput(saved_out)
@@ -845,7 +851,7 @@ def copy_now(disc, cia, settings):
 
 def build(disc_arg=None, sd_arg=None, work_arg=None):
     say("GalaxyCTR builder: Super Mario Galaxy for New Nintendo 3DS (beta)")
-    say("Everything is made from your own copy of the game. Only the USA release (RMGE01) is supported.")
+    say("Supported game releases: RMGE01 (USA), RMGJ01 (Japan).")
     say("The game needs a New 3DS, New 3DS XL or New 2DS XL.")
     settings = Settings()
     keep = ask_keep_files(settings)
@@ -853,18 +859,29 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
     total = 6
     step(1, total, "Disc image")
     kept = kept_folder(settings) if keep else None
+    image = None
     if kept:
-        image = None
-        say(f"  Using the game files kept from the last build, in {kept}. The disc image is not needed.")
-        work = kept
-    else:
-        image = choose_disc(disc_arg)
+        game_id = game_version_from_extraction(kept / "original").game_id
+        if disc_arg:
+            selected_image, selected_game_id = choose_disc(disc_arg)
+            if selected_game_id != game_id:
+                kept = None
+                image, game_id = selected_image, selected_game_id
+            else:
+                say(f"  Using the {game_id} game files kept from the last build, in {kept}.")
+        else:
+            say(f"  Using the {game_id} game files kept from the last build, in {kept}. The disc image is not needed.")
+    if not kept:
+        if image is None:
+            image, game_id = choose_disc(disc_arg)
         # Work next to the disc image by default: it is on a drive that already holds 4.7 GB of game.
         parent = work_arg or (image.parent if os.access(image.parent, os.W_OK) else None)
         if keep:
-            work = choose_keep_folder(settings, Path(parent or builder_home()) / "GalaxyCTR-files")
+            work = choose_keep_folder(settings, Path(parent or builder_home()) / f"GalaxyCTR-files-{game_id}")
         else:
             work = Path(tempfile.mkdtemp(prefix="galaxyctr-", dir=parent))
+    else:
+        work = kept
     say(f"  {'Folder of the kept files' if keep else 'Temporary folder'}: {work}")
     if kept:
         check_keep_space(work)
@@ -879,17 +896,18 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
                 originals = work / "original"
             else:
                 step(2, total, "Extracting the disc (about a minute)")
-                originals = extract_disc(image, work, "original", check_space=False)  # checked for the whole folder
+                originals, game_id = extract_disc(image, work, "original", check_space=False,
+                                                  expected_game_id=game_id)  # checked for the whole folder
             disc = work / "game"
             make_icon_and_banner(originals, work)
             step(3, total, "Converting the game files for the 3DS (only what changed)")
-            convert_files(disc, originals)
+            convert_files(disc, originals, game_id)
         else:
             step(2, total, "Extracting the disc (about a minute)")
-            disc = extract_disc(image, work)
+            disc, game_id = extract_disc(image, work, expected_game_id=game_id)
             make_icon_and_banner(disc, work)
             step(3, total, "Converting the game files for the 3DS (this takes a while)")
-            convert_files(disc)
+            convert_files(disc, game_id=game_id)
         step(4, total, "Building the CIA")
         cia = make_cia(work)
         failed = False

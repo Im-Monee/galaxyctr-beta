@@ -24,7 +24,7 @@ is not answered here, report it.
 
 | It is | It is not |
 |---|---|
-| A homebrew native port of *Super Mario Galaxy* (USA, `RMGE01`) for New 3DS, New 3DS XL and New 2DS XL. | A project of SMGCommunity, or endorsed by them. |
+| A homebrew native port of *Super Mario Galaxy* (USA, `RMGE01`, and Japan, `RMGJ01`) for New 3DS, New 3DS XL and New 2DS XL. | A project of SMGCommunity, or endorsed by them. |
 | Built on [Petari](https://github.com/SMGCommunity/Petari). The game's logic is Petari's C++, compiled for the 3DS's ARM CPU. | An emulator. No Wii machine code or GPU command is interpreted while the game runs. |
 | | A source of game data. No texture, model, sound or code from the disc is in this repository or in the CIA. |
 
