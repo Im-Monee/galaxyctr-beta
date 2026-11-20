@@ -10,6 +10,8 @@ Exits with an error if any are found; --stamp writes a file on success (for ninj
 """
 
 import bisect
+import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -23,9 +25,24 @@ import sys
 BASE = 0x00100000
 
 
+def find_nm():
+    """arm-none-eabi-nm of the devkitARM in use: --nm, then DEVKITARM, then PATH."""
+    if "--nm" in sys.argv:
+        return sys.argv[sys.argv.index("--nm") + 1]
+    exe = ".exe" if os.name == "nt" else ""
+    devkitarm = os.environ.get("DEVKITARM")
+    if devkitarm:
+        candidate = os.path.join(devkitarm, "bin", "arm-none-eabi-nm" + exe)
+        if os.path.isfile(candidate):
+            return candidate
+    found = shutil.which("arm-none-eabi-nm")
+    if found:
+        return found
+    return r"C:\devkitPro\devkitARM\bin\arm-none-eabi-nm.exe"
+
+
 def load_symbols(elf):
-    nm = r"C:\devkitPro\devkitARM\bin\arm-none-eabi-nm.exe"
-    out = subprocess.run([nm, "-C", "-n", "-S", elf], capture_output=True, text=True).stdout
+    out = subprocess.run([find_nm(), "-C", "-n", "-S", elf], capture_output=True, text=True).stdout
     addrs, names = [], []
     for line in out.splitlines():
         parts = line.split(None, 3)
@@ -38,6 +55,9 @@ def load_symbols(elf):
 def main():
     args = sys.argv[1:]
     stamp = None
+    if "--nm" in args:
+        i = args.index("--nm")
+        del args[i : i + 2]
     if "--stamp" in args:
         i = args.index("--stamp")
         stamp = args[i + 1]

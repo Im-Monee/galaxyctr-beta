@@ -8,8 +8,8 @@ It is one program per system, downloaded from [Releases](../../../releases/lates
 | Step | What it does | Source code |
 |---|---|---|
 | Update | Checks GitHub for a newer release. If there is one, downloads its source code and port program into `GalaxyCTR-Builder-files`. Without internet, uses the newest copy it already has. | [`launcher.py`](../tools/beta/launcher.py) |
-| 1. Disc image | Asks for the disc image, in any format [nod-rs](https://github.com/encounter/nod-rs) reads (ISO, WBFS, RVZ and others). Checks that it is *Super Mario Galaxy*, USA, revision 0. | `choose_disc`, `read_disc_info` |
-| 2. Extracting | Checks the free space, extracts the disc and checks that `main.dol` is the original (SHA-1). Takes the HOME Menu icon and banner from the game's own save icon. | `extract_disc`, `make_icon_and_banner` |
+| 1. Disc image | Asks for the disc image, in any format [nod-rs](https://github.com/encounter/nod-rs) reads (ISO, WBFS, RVZ and others). Checks that it is *Super Mario Galaxy*, USA (`RMGE01`) or Japan (`RMGJ01`), revision 0. | `choose_disc`, `read_disc_info` |
+| 2. Extracting | Checks the free space, extracts the disc and checks that `main.dol` matches the original for that release (SHA-1). Takes the HOME Menu icon and banner from the game's own save icon. | `extract_disc`, `make_icon_and_banner` |
 | 3. Converting | Converts the game files for the 3DS: byte order, textures, models, music, movies (H.264, with FFmpeg, downloaded if missing), the game data inside `main.dol`, and the SD file cache. The longest step. | `convert_files`, which runs [`convert_smg_files.py`](../tools/3ds/convert_smg_files.py) |
 | 4. Building the CIA | Makes the icon and banner with bannertool, then the CIA with makerom from the port's program. | `make_cia`, [`cia_showcase.rsf`](../tools/3ds/cia_showcase.rsf) |
 | Settings | Asks once whether to keep the game files between builds, and saves the answer in `settings.txt`. | `ask_keep_files`, `Settings` |

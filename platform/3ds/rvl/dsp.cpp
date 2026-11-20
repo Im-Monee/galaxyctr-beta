@@ -24,7 +24,7 @@
 
 #include <revolution/dsp.h>
 
-#include "JSystem/JAudio2/JASDspInterface.hpp"
+#include "JSystem/JAudio2/JASDSPInterface.hpp"
 #include "host.h"
 #include "rvl_internal.h"
 

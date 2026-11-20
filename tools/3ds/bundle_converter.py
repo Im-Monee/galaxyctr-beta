@@ -25,7 +25,7 @@ SCRIPT = TOOLS / "convert_smg_files.py"
 BUNDLES = {"_BUILDER_ZIP_B64": TOOLS / "builder", "_NATIVE_ZIP_B64": TOOLS / "native"}
 # Modules the bundle must hold besides those it already has: far models (far.py evaluates the Wii
 # combiners with tevcheck.gx_eval, which imports build_native).
-REQUIRED = {"_NATIVE_ZIP_B64": ["far.py", "tevcheck.py", "build_native.py"]}
+REQUIRED = {"_BUILDER_ZIP_B64": ["game_versions.py"], "_NATIVE_ZIP_B64": ["far.py", "tevcheck.py", "build_native.py"]}
 
 
 # ##############################################################################################

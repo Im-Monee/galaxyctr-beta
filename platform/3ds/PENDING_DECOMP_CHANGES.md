@@ -6,6 +6,8 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 
 ## Pending
 
+- **Japanese release selection on 3DS**: `Language.cpp` uses the release marker written to `sdmc:/smg/port/GameVersion.txt` to choose the RMGJ01 system-language table while keeping the USA table for RMGE01. The non-3DS preprocessor branch retains the original compile-time mapping.
+
 - **Mii heads on 3DS**: `MiiFacePartsHolder::drawExtra()` skips the Wii RFL GX material setup
   and draws each head through `RFLDrawOpa`. The 3DS implementation reads the system
   `CFL_Res.dat` component archive through the host FS bridge and submits the real face, hair,

@@ -191,6 +191,8 @@ void hostQuit(void) __attribute__((noreturn));
 void rvlInit(void);
 // Reads the data files the Wii keeps inside main.dol from sdmc:/smg/port/ (platform/3ds/rvl/port_data.cpp).
 void rvlLoadPortData(void);
+// True when the files on sdmc:/smg were extracted from the Japanese RMGJ01 release.
+int rvlIsJapaneseRelease(void);
 // Called by hostQuit so registered Wii shutdown callbacks run before app teardown.
 void rvlShutdown(void);
 

@@ -5,7 +5,24 @@
 #include "Game/Util/StringUtil.hpp"
 #include "Game/Util/SystemUtil.hpp"
 #include <revolution/sc.h>
+#if defined(__3DS__)
+#include "host.h"
+#endif
 
+namespace {
+#if defined(__3DS__)
+    s32 getSCLanguageTableIndex() {
+#if (VERSION == RMGJ01 || VERSION == RMGE01)
+        return rvlIsJapaneseRelease() ? 0 : 1;
+#elif (VERSION == RMGP01)
+        return 2;
+#elif (VERSION == RMGK01)
+        return 4;
+#else
+        return -1;
+#endif
+    }
+#else
 #if (VERSION == RMGJ01)
 #define SCLanguage2GameLanguageTableIndex 0
 #elif (VERSION == RMGE01)
@@ -17,8 +34,7 @@
 #else
 #define SCLanguage2GameLanguageTableIndex -1
 #endif
-
-namespace {
+#endif
     const u8 cSCLanguage2GameLanguageTable[][10] = {
         {
             LANGUAGE_JPJAPANESE,
@@ -132,7 +148,12 @@ u32 MR::getDecidedLanguageFromIPL() {
     if (language < 0) {
         i = 0;
     } else {
+#if defined(__3DS__)
+        s32 index = getSCLanguageTableIndex();
+        s32 size = ARRAY_SIZE(::cSCLanguage2GameLanguageTable[index]);
+#else
         s32 size = ARRAY_SIZE(::cSCLanguage2GameLanguageTable[SCLanguage2GameLanguageTableIndex]);
+#endif
 
         if (language <= size) {
             i = language;
@@ -141,7 +162,11 @@ u32 MR::getDecidedLanguageFromIPL() {
         }
     }
 
+#if defined(__3DS__)
+    return ::cSCLanguage2GameLanguageTable[getSCLanguageTableIndex()][i];
+#else
     return ::cSCLanguage2GameLanguageTable[SCLanguage2GameLanguageTableIndex][i];
+#endif
 }
 
 u32 MR::getLanguage() {
