@@ -25,6 +25,7 @@
 #include <JSystem/J3DGraphAnimator/J3DModel.hpp>
 
 #ifdef __3DS__
+#include "Game/LiveActor/HitSensorInfo.hpp"
 #include <JSystem/J3DGraphAnimator/J3DJoint.hpp>
 
 // Set by GameScene::calcAnim around the scene's list on a frame that will not be drawn.
@@ -37,6 +38,25 @@ namespace {
         const J3DModelData* data = MR::getJ3DModel(pActor)->getModelData();
         for (u16 i = 0; i < data->getJointNum(); i++) {
             if (data->getJointNodePointer(i)->getCallBack() != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // An enemy attack sensor that follows a joint (MR::addHitSensorAtJointEnemyAttack) is valid
+    // now. Such sensors are often valid for a few loops only: with the joints of the last drawn
+    // frame the blow came from where the joint was before it. The Octoombas' attack in Good Egg
+    // (valid 5 loops) did not hurt Mario (owner, 9 Nov).
+    bool hasValidJointAttackSensor3DS(const LiveActor* pActor) {
+        const HitSensorKeeper* keeper = pActor->mSensorKeeper;
+        if (keeper == nullptr) {
+            return false;
+        }
+        for (s32 i = 0; i < keeper->mSensorCount; i++) {
+            const HitSensorInfo* info = keeper->mSensorInfos[i];
+            if (info != nullptr && info->_1C != nullptr && info->mSensor != nullptr && info->mSensor->mType == ATYPE_ENEMY_ATTACK &&
+                info->mSensor->isValid()) {
                 return true;
             }
         }
@@ -204,7 +224,7 @@ void LiveActor::calcAnmMtx() {
     // (Dino Piranha's tail nodes take their joints' places and directions; with them a loop or two
     // old the tail shook and stretched, CIA 0.19.10).
     if (gRvl3DSSkipJointCalc && (mCollisionParts == nullptr || mModelManager->mXanimePlayer == nullptr) && !hasJointCallBack3DS(this) &&
-        mModelManager->calcAnimSkipped()) {
+        !hasValidJointAttackSensor3DS(this) && mModelManager->calcAnimSkipped()) {
         return;
     }
 #endif

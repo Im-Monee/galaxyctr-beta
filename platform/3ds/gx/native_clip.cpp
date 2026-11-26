@@ -46,6 +46,7 @@ namespace {
     };
 
     u32 sClipDraws, sClipTriangles, sInvalidTriangles, sInvalidReports, sCulledDraws;
+    u32 sRunCullDraws, sRunCullTriangles;  // rvlNativeRunCullSubmit: draws cut, triangles left out
     u32 sSmallDraws;  // draws under the lowered detail's size (rvlNativeClipNeeded)
     u32 sInvalidMatrixDraws, sMatrixReports;  // draws dropped whole for their matrices
 
@@ -128,8 +129,11 @@ namespace {
                 c[i][1] = r1[2] * r2[0] - r1[0] * r2[2];
                 c[i][2] = r1[0] * r2[1] - r1[1] * r2[0];
             }
+            // Times the determinant, as the shader does: a mirrored matrix (negative determinant)
+            // reversed the normals (gx.v.pica, nrmcofactor).
+            const f32 det = m[0][0] * c[0][0] + m[0][1] * c[0][1] + m[0][2] * c[0][2];
             for (u32 i = 0; i < 3; i++) {
-                out[i] = c[i][0] * n[0] + c[i][1] * n[1] + c[i][2] * n[2];
+                out[i] = det * (c[i][0] * n[0] + c[i][1] * n[1] + c[i][2] * n[2]);
             }
         } else {
             for (u32 i = 0; i < 3; i++) {
@@ -177,7 +181,7 @@ namespace {
             return true;
         }
         HostGfxModelVertex* out;
-        unsigned long first = hostGfxArenaAlloc(used, 0, &out);
+        unsigned long first = hostGfxArenaAlloc(used, HOST_GFX_ARENA_MODEL_FRAME, &out);
         if (first == HOST_GFX_NO_ARENA) {
             if (!sReportedOverflow) {
                 hostLog("native clip: no transient vertices left, clipped triangles dropped\n");
@@ -200,9 +204,10 @@ namespace {
     // # Is a draw inside, outside, or across?                                                      #
     // #                                                                                            #
     // # rvlNativeClipNeeded tests each slot's bounding sphere against the planes in view space:    #
-    // # every sphere outside one screen edge culls the draw, a sphere across the near plane or the #
-    // # guard band sends it to the clipper, and draws too small on screen at the lowered detail    #
-    // # level are dropped. A draw with NaN or infinite matrices is dropped whole.                  #
+    // # every sphere outside the same screen edge culls the draw, a sphere across the near plane  #
+    // # or the guard band sends it to the clipper (debug option cpuclip=1), and draws too small on #
+    // # screen at the lowered detail level are dropped. A draw with NaN or infinite matrices is    #
+    // # dropped whole.                                                                             #
     // ##############################################################################################
     // The clip planes of clip.c as planes of view space (clip-space plane p becomes p * clip),
     // normalized: [0] with the guard band, [1] with the screen's edges instead (a draw whose every
@@ -240,10 +245,10 @@ namespace {
     }
 
     // Where a model-space sphere (centre, radius) of position matrix row `row` lies against the
-    // guard-band planes: inside all, wholly outside one, or crossing; *pSeen (optional) whether it
-    // reaches the screen. Invalid with NaN or infinite values.
+    // guard-band planes: inside all, wholly outside one, or crossing; *pOutside (optional) the
+    // screen planes it is wholly outside, one bit each. Invalid with NaN or infinite values.
     enum { SPHERE_INSIDE, SPHERE_OUTSIDE, SPHERE_CROSSING, SPHERE_INVALID };
-    int classifySphere(const HostGfxTransform& t, const f32 (*planes)[HOST_CLIP_PLANES][4], u32 row, const f32* s, bool* pSeen,
+    int classifySphere(const HostGfxTransform& t, const f32 (*planes)[HOST_CLIP_PLANES][4], u32 row, const f32* s, u32* pOutside,
                        f32* pPixels = nullptr) {
         f32 centre[3];
         toView(t, row, s, centre);
@@ -274,13 +279,15 @@ namespace {
                 crossing = true;
             }
         }
-        if (pSeen != nullptr) {
-            bool seen = !outside;
-            for (u32 p = 0; p < HOST_CLIP_PLANES && seen; p++) {
+        if (pOutside != nullptr) {
+            u32 mask = 0;
+            for (u32 p = 0; p < HOST_CLIP_PLANES; p++) {
                 const f32* q = planes[1][p];
-                seen = q[0] * centre[0] + q[1] * centre[1] + q[2] * centre[2] + q[3] >= -radius;
+                if (q[0] * centre[0] + q[1] * centre[1] + q[2] * centre[2] + q[3] < -radius) {
+                    mask |= 1u << p;
+                }
             }
-            *pSeen = seen;
+            *pOutside = mask;
         }
         return outside ? SPHERE_OUTSIDE : crossing ? SPHERE_CROSSING : SPHERE_INSIDE;
     }
@@ -291,6 +298,82 @@ namespace {
     u16 sStampNow;
 
 }  // namespace
+
+// ##############################################################################################
+// # Cells of large groups                                                                      #
+// #                                                                                            #
+// # A large persistent group (512 triangles or more) has runs of 128 triangles with their own   #
+// # spheres (native.cpp computeChunks). Drawn by the GPU, the runs wholly outside one screen   #
+// # edge are left out: the rest of the indices go in one transient copy. A dome of the Comet   #
+// # Observatory seen in part sends only the part on screen (owner's idea of cells, 23 Nov).    #
+// ##############################################################################################
+bool rvlNativeRunCullSubmit(const RvlNativeDraw& d, const HostGfxState* pState, const HostGfxTransform& t, u32 version,
+                            bool* pSubmitted) {
+    if (d.chunks == nullptr || d.chunkCount < 2 || d.chunkCount > 1024) {
+        return false;
+    }
+    static bool sOut[1024];
+    const f32(*planes)[HOST_CLIP_PLANES][4] = viewPlanes(t);
+    const u32 runIndices = RVL_NATIVE_CHUNK_TRIANGLES * 3;
+    u32 kept = 0, dropped = 0;
+    for (u32 c = 0; c < d.chunkCount; c++) {
+        const RvlNativeChunk& chunk = d.chunks[c];
+        const u32 k0 = c * runIndices;
+        const u32 k1 = k0 + runIndices < d.indexCount ? k0 + runIndices : d.indexCount;
+        u32 outside = 0;
+        sOut[c] = chunk.row < 28 && classifySphere(t, planes, chunk.row, chunk.sphere, &outside) != SPHERE_INVALID && outside != 0;
+        (sOut[c] ? dropped : kept) += k1 > k0 ? k1 - k0 : 0;
+    }
+    if (dropped == 0) {
+        return false;
+    }
+    const u32 tail = d.indexCount > d.chunkCount * runIndices ? d.indexCount - d.chunkCount * runIndices : 0;
+    kept += tail;
+    sRunCullDraws++;
+    sRunCullTriangles += dropped / 3;
+    if (kept == 0) {
+        *pSubmitted = true;
+        return true;
+    }
+    u16* indices = hostGfxIndexAllocTransient(kept);
+    if (indices == nullptr) {
+        return false;
+    }
+    u32 at = 0;
+    for (u32 c = 0; c < d.chunkCount; c++) {
+        const u32 k0 = c * runIndices;
+        const u32 k1 = k0 + runIndices < d.indexCount ? k0 + runIndices : d.indexCount;
+        if (!sOut[c] && k1 > k0) {
+            memcpy(indices + at, d.indices + k0, (k1 - k0) * sizeof(u16));
+            at += k1 - k0;
+        }
+    }
+    if (tail != 0) {
+        memcpy(indices + at, d.indices + d.chunkCount * runIndices, tail * sizeof(u16));
+        at += tail;
+    }
+    *pSubmitted = hostGfxDrawNativeIndexed(d.first, indices, at, pState, &t, version) != 0;
+    return true;
+}
+
+bool rvlNativeOutsideView(const HostGfxTransform& t, const f32 (*spheres)[4], u32 slotMask) {
+    if (slotMask == 0) {
+        return false;
+    }
+    const f32(*planes)[HOST_CLIP_PLANES][4] = viewPlanes(t);
+    u32 outsideAll = (1u << HOST_CLIP_PLANES) - 1;
+    for (u32 slot = 0; slot < 10 && outsideAll != 0; slot++) {
+        if (!(slotMask & (1u << slot))) {
+            continue;
+        }
+        u32 outside;
+        if (classifySphere(t, planes, slot * 3, spheres[slot], &outside) == SPHERE_INVALID) {
+            return false;
+        }
+        outsideAll &= outside;
+    }
+    return outsideAll != 0;
+}
 
 int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
     // A draw whose every position matrix holds NaN or infinite values has no shape to draw: it
@@ -332,7 +415,11 @@ int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
     }
     const f32(*planes)[HOST_CLIP_PLANES][4] = viewPlanes(t);
     int needed = NATIVE_CLIP_NONE;
-    bool visible = false;
+    // The screen planes every sphere so far is wholly outside. Only a plane all of them are
+    // outside hides the draw: a triangle may join vertices of two slots, and a pole stretched
+    // between its top and bottom joints has its shaft on screen while both ends are off it, one
+    // above and one below (it vanished seen from near its middle, AppleBerries, 10 Nov).
+    u32 outsideAll = (1u << HOST_CLIP_PLANES) - 1;
     // With the 96 MB of an Old 3DS, while the game runs behind the clock (hostPerfDetail under 1), a perspective draw whose every
     // sphere is under minPixels in radius on screen is not drawn: up to 2 pixels (4 wide) at the
     // lowest detail. Far small objects are most of a dense scene's draws (the Comet Observatory:
@@ -344,9 +431,9 @@ int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
         if (!(d.slotMask & (1u << slot))) {
             continue;
         }
-        bool seen;
+        u32 outside;
         f32 pixels;
-        const int where = classifySphere(t, planes, slot * 3, d.spheres[slot], &seen, large ? nullptr : &pixels);
+        const int where = classifySphere(t, planes, slot * 3, d.spheres[slot], &outside, large ? nullptr : &pixels);
         if (!large && pixels >= minPixels) {
             large = true;
         }
@@ -361,9 +448,9 @@ int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
         if (where == SPHERE_CROSSING && hostDebugCpuClip()) {
             needed = NATIVE_CLIP_CPU;
         }
-        visible |= seen;
+        outsideAll &= outside;
     }
-    if (!visible) {
+    if (outsideAll != 0) {
         sCulledDraws++;
         return NATIVE_CLIP_CULL;
     }
@@ -392,7 +479,7 @@ int rvlNativeClipNeeded(const RvlNativeDraw& d, const HostGfxTransform& t) {
 // ##############################################################################################
 namespace {
     const u32 kSubMaxN = 8;
-    // Grid vertices a frame may make (it has 16384 transient ones). Without this limit and the
+    // Grid vertices a frame may make (it has 24576 transient ones, gfx.c). Without this limit and the
     // screen sizes below, the Comet Observatory's draws made about 200000 triangles a frame
     // (CIA 0.20.5, 3 FPS).
     const u32 kSubBudget = 4000;
@@ -436,6 +523,25 @@ namespace {
     u64 sSubSetupTicks, sSubLoopTicks, sSubSubmitTicks;
     u32 sSubLooked, sSubCopied, sSubWholePasses;
 
+    // The vertices of an arena window (gfx.c), whole or compact: front() reads the fields before
+    // tex[1] in place (position, normal, colour, rows, unit 0), whole() copies a vertex out with
+    // units 1 and 2 as the GPU reads a compact one's (0, 0, 1).
+    struct ArenaVertices {
+        explicit ArenaVertices(u32 windowStart) { base = hostGfxArenaBytes(windowStart, &stride); }
+        const HostGfxModelVertex& front(u32 i) const { return *reinterpret_cast< const HostGfxModelVertex* >(base + i * stride); }
+        HostGfxModelVertex whole(u32 i) const {
+            HostGfxModelVertex v;
+            memcpy(&v, base + i * stride, stride);
+            for (u32 u = stride == sizeof(HostGfxModelVertex) ? 3u : 1u; u < 3; u++) {
+                v.tex[u][0] = v.tex[u][1] = 0.0f;
+                v.tex[u][2] = 1.0f;
+            }
+            return v;
+        }
+        const u8* base;
+        unsigned long stride;
+    };
+
     // The vertex's q for unit u, as the shader computes it (matrix, then the dual transform's row).
     f32 vertexQ(const HostGfxTransform& t, u32 u, const HostGfxModelVertex& v) {
         const f32* in = v.tex[u];
@@ -472,7 +578,7 @@ namespace {
     void flushGrid(u32& vertices, u32& indices, const HostGfxState* pState, const HostGfxTransform& t, u32 version) {
         if (indices != 0) {
             HostGfxModelVertex* out;
-            const unsigned long first = hostGfxArenaAlloc(vertices, 0, &out);
+            const unsigned long first = hostGfxArenaAlloc(vertices, HOST_GFX_ARENA_MODEL_FRAME, &out);
             u16* gpuIndices = first != HOST_GFX_NO_ARENA ? hostGfxIndexAllocTransient(indices) : nullptr;
             if (gpuIndices != nullptr) {
                 memcpy(out, sOut, vertices * sizeof(HostGfxModelVertex));
@@ -524,7 +630,7 @@ bool rvlNativeSubdivideSubmit(const RvlNativeDraw& d, const HostGfxState* pState
     const u64 start = hostGetTick();
     sSubDraws++;
     const u32 windowStart = d.first - d.first % 65536;
-    const HostGfxModelVertex* vertices = hostGfxArenaVertex(windowStart);
+    const ArenaVertices vertices(windowStart);
     u32 units[2], unitCount = 0;
     for (u32 u = 1; u < 3; u++) {
         if (t.divide[u] && !t.normalize[u] && !t.vtxmtx[u]) {
@@ -563,7 +669,7 @@ bool rvlNativeSubdivideSubmit(const RvlNativeDraw& d, const HostGfxState* pState
     if (qCached) {
         for (u32 i = 0; i < unitCount; i++) {
             for (u32 index = lowest; index <= highest; index++) {
-                sVertexQ[i][index - lowest] = vertexQ(t, units[i], vertices[index]);
+                sVertexQ[i][index - lowest] = vertexQ(t, units[i], vertices.whole(index));
             }
         }
     }
@@ -597,14 +703,27 @@ bool rvlNativeSubdivideSubmit(const RvlNativeDraw& d, const HostGfxState* pState
         // First the vertices' q, which is cheap: most triangles change it too little to be cut and
         // go whole without their screen positions (about 8 ms a drawn frame in the Comet
         // Observatory, CIA 0.20.6, when those came first).
-        const HostGfxModelVertex* p[3] = {&vertices[d.indices[k]], &vertices[d.indices[k + 1]], &vertices[d.indices[k + 2]]};
+        // The whole vertices only when needed (q not cached, or the triangle is cut).
+        HostGfxModelVertex whole[3];
+        bool wholeRead = false;
+        auto readWhole = [&]() {
+            if (!wholeRead) {
+                for (u32 j = 0; j < 3; j++) {
+                    whole[j] = vertices.whole(d.indices[k + j]);
+                }
+                wholeRead = true;
+            }
+        };
+        if (!qCached) {
+            readWhole();
+        }
         // n from the largest ratio of the vertices' q over the divided units: 1.1 gives 2, 1.5 gives
         // 5, 1.8 and more the most; none when q changes sign.
         f32 ratio = 1.0f;
         for (u32 i = 0; i < unitCount; i++) {
             f32 q[3];
             for (u32 j = 0; j < 3; j++) {
-                q[j] = qCached ? sVertexQ[i][d.indices[k + j] - lowest] : vertexQ(t, units[i], *p[j]);
+                q[j] = qCached ? sVertexQ[i][d.indices[k + j] - lowest] : vertexQ(t, units[i], whole[j]);
             }
             f32 low = q[0] < q[1] ? (q[0] < q[2] ? q[0] : q[2]) : (q[1] < q[2] ? q[1] : q[2]);
             f32 high = q[0] > q[1] ? (q[0] > q[2] ? q[0] : q[2]) : (q[1] > q[2] ? q[1] : q[2]);
@@ -629,8 +748,9 @@ bool rvlNativeSubdivideSubmit(const RvlNativeDraw& d, const HostGfxState* pState
         ClipVertex cv[3];
         if (n > 1) {
             unsigned codes[3];
+            readWhole();
             for (u32 j = 0; j < 3; j++) {
-                v[j] = *p[j];
+                v[j] = whole[j];
                 cv[j].v = v[j];
                 setClip(t, cv[j]);
                 codes[j] = hostClipOutcode(cv[j].clip);
@@ -790,7 +910,7 @@ bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, con
     const u64 start = hostGetTick();
     sClipDraws++;
     u32 windowStart = d.first - d.first % 65536;
-    const HostGfxModelVertex* vertices = hostGfxArenaVertex(windowStart);
+    const ArenaVertices vertices(windowStart);
     u16* inside = hostGfxIndexAllocTransient(d.indexCount);
     if (inside == nullptr) {
         return false;
@@ -804,7 +924,7 @@ bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, con
     u32 foldedMask = 0;
     auto outcode = [&](u32 i) -> unsigned {
         if (sStamp[i] != sStampNow) {
-            const HostGfxModelVertex& v = vertices[i];
+            const HostGfxModelVertex& v = vertices.front(i);  // position and row only
             const u32 row = v.matrix < 28 ? v.matrix : 0;
             f32(*m)[4] = folded[row];
             if (!(foldedMask & (1u << row))) {
@@ -849,7 +969,7 @@ bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, con
                     sInvalidReports++;
                     // The first invalid vertex, its position matrix rows and the clip matrix's w row.
                     const u32 j = codes[0] & HOST_CLIP_INVALID_BIT ? 0 : codes[1] & HOST_CLIP_INVALID_BIT ? 1 : 2;
-                    const HostGfxModelVertex& v = vertices[d.indices[k + j]];
+                    const HostGfxModelVertex& v = vertices.front(d.indices[k + j]);  // position and row only
                     const u32 row = v.matrix < 28 ? v.matrix : 0;
                     hostLog("native clip: draw with NaN or infinite vertices (first %lu, %lu indices), its triangles dropped; vertex %u, "
                             "matrix row %u\n",
@@ -865,7 +985,7 @@ bool rvlNativeClipSubmit(const RvlNativeDraw& d, const HostGfxState* pState, con
                 continue;
             }
             for (u32 j = 0; j < 3; j++) {
-                polygon[j].v = vertices[d.indices[k + j]];
+                polygon[j].v = vertices.whole(d.indices[k + j]);
                 setClip(t, polygon[j]);
             }
             u32 row = polygon[0].v.matrix < 28 ? polygon[0].v.matrix : 0;
@@ -943,6 +1063,9 @@ void rvlNativeClipTakeStats(u32& draws, u32& triangles, u32& invalid, u32& inval
     sCulledDraws = 0;
     hostLog("native clip: %lu draws too small to draw at the lowered detail\n", static_cast< unsigned long >(sSmallDraws));
     sSmallDraws = 0;
+    hostLog("native cells: %lu draws of large groups partly off screen, %lu triangles of their runs off screen not sent\n",
+            static_cast< unsigned long >(sRunCullDraws), static_cast< unsigned long >(sRunCullTriangles));
+    sRunCullDraws = sRunCullTriangles = 0;
     if (sSubDraws != 0) {
         hostLog("native subdivide: %lu draws with projected coordinates beyond unit 0, %lu triangles from %lu new vertices\n",
                 static_cast< unsigned long >(sSubDraws), static_cast< unsigned long >(sSubTriangles), static_cast< unsigned long >(sSubMade));

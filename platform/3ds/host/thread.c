@@ -138,6 +138,10 @@ int hostInterruptPending(void) {
     return __atomic_load_n(&sPendingIrqs, __ATOMIC_RELAXED) != 0;
 }
 
+unsigned hostInterruptPeek(void) {
+    return __atomic_load_n(&sPendingIrqs, __ATOMIC_RELAXED);
+}
+
 static volatile unsigned long sVBlankCount;
 static volatile unsigned long long sVBlankTick;  // system tick of the last vertical blank
 

@@ -10,6 +10,7 @@
 // 3DS: JUTTexture3DS.hpp, whether a capture really copied the screen.
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
+#include "host.h"
 #endif
 
 namespace {
@@ -63,6 +64,11 @@ void CaptureScreenDirector::requestCaptureTiming(const char* pName) {
     if (getCurrentTiming() == nullptr || getCurrentTiming()->mTiming < pInfo->mTiming) {
         _C = pName;
         _18 = true;
+        // 3DS: the next frame is drawn, the capture is taken in it while the scene still draws
+        // (host/gfx.c, hostGfxDrawNextFrame).
+#ifdef __3DS__
+        hostGfxDrawNextFrame();
+#endif
     }
 }
 

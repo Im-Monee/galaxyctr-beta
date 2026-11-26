@@ -66,7 +66,12 @@ void HomeButtonMenuContext::initHomeButtonInfo() {
     mHomeButtonInfo->sound_callback = &::SoundCallback;
     mHomeButtonInfo->backFlag = 0;
     mHomeButtonInfo->cursor = 0;
+#ifdef __3DS__
+    // 3DS: the 5:3 screen width (MR::getScreenWidth).
+    mHomeButtonInfo->adjust.x = 760.0f / 608.0f;
+#else
     mHomeButtonInfo->adjust.x = 832.0f / 608.0f;
+#endif
     mHomeButtonInfo->adjust.y = 1.0f;
     mHomeButtonInfo->frameDelta = 1.0f;
 }

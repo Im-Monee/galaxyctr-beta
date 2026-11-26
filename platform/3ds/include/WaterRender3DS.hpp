@@ -109,45 +109,81 @@ namespace WaterRender3DS {
         return state;
     }
 
-    // The screen capture coordinate (s2, t2) of a vertex made by makeVertex: the position through
-    // MR::loadTexProjectionMtx (0 to 1 over the screen, t down), then onto the capture stored on its
-    // side (map from rvl3DSGetNativeTIMGCapture: u = c0 + c1 t, v = c2 + c3 s). Per vertex, where GX
-    // projects per pixel: close to the camera the capture is only near the right place.
+    // ##########################################################################################
+    // # The screen behind the water, divided per pixel                                         #
+    // #                                                                                        #
+    // # The capture coordinate is the position through MR::loadTexProjectionMtx (0 to 1 over  #
+    // # the screen, t down), then onto the capture stored on its side (map from                #
+    // # rvl3DSGetNativeTIMGCapture: u = c0 + c1 t, v = c2 + c3 s). GX divides it per pixel.    #
+    // # Divided at the vertices, Loopdeeloop's track went grey: its triangles are large and    #
+    // # reach past the screen, so between the vertices the capture was read far from the      #
+    // # water's place, past the image (owner, CIA 0.22.0 and 0.22.10 videos; azure only where  #
+    // # the triangles were small). So the capture goes on unit 0, the one the GPU divides per   #
+    // # pixel, as homogeneous (s, t, q) with q = w, and the waves move to units 1 and 2         #
+    // # (makeWaterState).                                                                      #
+    // ##########################################################################################
+    // A vertex made by makeVertex with the waves on (s0, t0) and (s1, t1): the waves to (s1, t1)
+    // and (s2, t2), the capture to (s0, t0, q0).
     inline void mapScreen(HostGfxVertex& vertex, const float* map) {
-        if (vertex.w <= 0.0001f) {
-            return;
-        }
-        const float s = 0.5f + 0.5f * vertex.x / vertex.w, t = 0.5f - 0.5f * vertex.y / vertex.w;
-        vertex.s2 = map[0] + map[1] * t;
-        vertex.t2 = map[2] + map[3] * s;
+        vertex.s2 = vertex.s1;
+        vertex.t2 = vertex.t1;
+        vertex.s1 = vertex.s0;
+        vertex.t1 = vertex.t0;
+        // s * w and t * w of the screen position, then the capture's affine map times w.
+        const float w = vertex.w, sw = 0.5f * w + 0.5f * vertex.x, tw = 0.5f * w - 0.5f * vertex.y;
+        vertex.s0 = map[0] * w + map[1] * tw;
+        vertex.t0 = map[2] * w + map[3] * sw;
+        vertex.q0 = w;
     }
 
+    // ##########################################################################################
+    // # The waves multiplied, as the Wii's stage 1                                             #
+    // #                                                                                        #
+    // # The Wii's stage 1 (GX_CC_ZERO, GX_CC_TEXC, GX_CC_CPREV, GX_CC_ZERO, divided by 2) is   #
+    // # the two wave samples multiplied and halved. They were averaged here instead, a much    #
+    // # lighter grey that hid the blue of the screen behind: Loopdeeloop's track stayed grey   #
+    // # (owner, CIA 0.22.0 to 0.22.11). The 3DS has no halving scale, so it takes a stage of   #
+    // # its own.                                                                               #
+    // ##########################################################################################
     // The stages of the Wii's water materials (OceanRingDrawer, OceanBowl loadMaterial) the 3DS
-    // can do: the waves on units 0 and 1 averaged, then, with a screen capture on unit 2, the
+    // can do: the waves sampled twice, multiplied and halved, then, with a screen capture, the
     // capture times the water's colour added, clamped. Alpha from the vertices. The indirect warp
-    // of the capture and the compare stage (glints) have no 3DS equivalent.
+    // of the capture and the compare stage (glints) have no 3DS equivalent. Without a capture the
+    // waves are on units 0 and 1; with one (vertices through mapScreen) on units 1 and 2, the
+    // capture on unit 0 in projection mode.
     inline HostGfxState makeWaterState(void* waves, void* screen, unsigned char red, unsigned char green, unsigned char blue,
                                        bool additive) {
         HostGfxState state = makeState(waves, waves, screen, true, false);
         std::memset(state.stages, 0, sizeof(state.stages));
-        HostGfxStage& average = state.stages[0];
-        average.colorSrc[0] = 0x03;  // texture 0
-        average.colorSrc[1] = 0x04;  // texture 1
-        average.colorSrc[2] = 0x0E;  // constant 0.5
-        average.colorFunc = 4;       // interpolate
-        average.alphaSrc[0] = 0x00;  // vertex alpha
-        average.alphaFunc = 0;       // replace
-        average.constant = 0x80808080ul;
-        HostGfxStage& behind = state.stages[1];
-        behind.colorSrc[0] = 0x05;  // texture 2, the screen
+        const unsigned char wavesA = screen != nullptr ? 0x04 : 0x03, wavesB = screen != nullptr ? 0x05 : 0x04;
+        HostGfxStage& product = state.stages[0];
+        product.colorSrc[0] = wavesA;  // the waves' first sample
+        product.colorSrc[1] = wavesB;  // the second
+        product.colorFunc = 1;         // modulate
+        product.alphaSrc[0] = 0x00;    // vertex alpha
+        product.alphaFunc = 0;         // replace
+        HostGfxStage& half = state.stages[1];
+        half.colorSrc[0] = 0x0F;  // previous
+        half.colorSrc[1] = 0x0E;  // constant 0.5
+        half.colorFunc = 1;       // modulate
+        half.alphaSrc[0] = 0x0F;
+        half.alphaFunc = 0;
+        half.constant = 0x80808080ul;
+        HostGfxStage& behind = state.stages[2];
+        behind.colorSrc[0] = 0x03;  // texture 0, the screen
         behind.colorSrc[1] = 0x0E;  // the water's colour
         behind.colorSrc[2] = 0x0F;  // previous
         behind.colorFunc = 8;       // multiply-add
         behind.alphaSrc[0] = 0x0F;
         behind.alphaFunc = 0;
         behind.constant = 0xFF000000ul | (static_cast< unsigned long >(blue) << 16) | (static_cast< unsigned long >(green) << 8) | red;
-        state.stageCount = screen != nullptr ? 2 : 1;
-        state.textures[2] = screen;
+        state.stageCount = screen != nullptr ? 3 : 2;
+        if (screen != nullptr) {
+            state.textures[0] = screen;
+            state.textures[1] = waves;
+            state.textures[2] = waves;
+            state.projectUnit0 = 1;
+        }
         state.blendDst = additive ? 1 : 7;  // GPU_ONE or GPU_ONE_MINUS_SRC_ALPHA
         state.alphaTestFunc = 6;            // GPU_GREATER than 0, as GXSetAlphaCompare(GX_GREATER, 0)
         state.alphaRef = 0;

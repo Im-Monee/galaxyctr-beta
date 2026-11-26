@@ -21,3 +21,14 @@ bool rvl3DSStarBitKeyHeld();
 // # tilted 90 degrees, the acceleration in g as a Wii Remote reads it (x = sin, z = -cos).     #
 // ##############################################################################################
 void rvl3DSSurfRayAcceleration(float* x, float* y, float* z);
+
+// ##############################################################################################
+// # B as the menus' back                                                                       #
+// #                                                                                            #
+// # On the Wii the "Back" buttons of the menus (BackButton: scenario select, galaxy confirm,   #
+// # the map; the album's close button, PictureBookCloseButton) also answer the remote's B.     #
+// # On the 3DS, B is the remote's A (jump) everywhere else; while one of those buttons shows,   #
+// # kpad.cpp makes it the remote's B instead (the owner's request). The buttons report every   #
+// # update in which they show.                                                                 #
+// ##############################################################################################
+void rvl3DSNoteBackButtonShown();

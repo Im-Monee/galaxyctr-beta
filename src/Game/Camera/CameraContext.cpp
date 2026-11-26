@@ -38,7 +38,12 @@ const TPos3f& CameraContext::getInvViewMtx() const {
 
 f32 CameraContext::getAspect() const {
     if (MR::isScreen16Per9()) {
+#ifdef __3DS__
+        // 3DS: the top screen (400x240) is 5:3, not 16:9.
+        return 5.0f / 3.0f;
+#else
         return 16.0f / 9.0f;
+#endif
     } else {
         return static_cast< f32 >(MR::getScreenWidth()) / MR::getScreenHeight();
     }

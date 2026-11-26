@@ -35,6 +35,12 @@ void FileSelectButton::appear() {
     for (int i = 0; i < ARRAY_SIZE(mButtonCtrl); i++) {
         mButtonCtrl[i]->appear();
     }
+#ifdef __3DS__
+    // #### No co-star button (owner's request) ####
+    // The 3DS has one player, so the P2 button (index 4, the co-star's manual) stays hidden: the
+    // Hidden nerve keeps its pane off and never points or selects. Same in disappear() below.
+    mButtonCtrl[4]->forceToHide();
+#endif
 
     setNerve(GET_NERVE_ANON(FileSelectButtonNrvSelect));
 }
@@ -47,6 +53,10 @@ void FileSelectButton::disappear() {
     for (int i = 0; i < ARRAY_SIZE(mButtonCtrl); i++) {
         mButtonCtrl[i]->disappear();
     }
+#ifdef __3DS__
+    // The P2 button was never shown: straight back to hidden (see appear()).
+    mButtonCtrl[4]->forceToHide();
+#endif
 
     setNerve(GET_NERVE_ANON(FileSelectButtonNrvDisappear));
 }
@@ -104,9 +114,13 @@ void FileSelectButton::control() {
         mButtonCtrl[i]->update();
     }
 
+#ifdef __3DS__
+    // No P2 button, so no "2PGuidanceIcon" plate to show (it is not created, see createOthers()).
+#else
     if (mButtonCtrl[4]->isPointing()) {
         _48->show(MR::getGameMessageDirect("2PGuidanceIcon"), "P2Button");
     }
+#endif
 }
 
 void FileSelectButton::createPaneControl() {
@@ -130,8 +144,14 @@ void FileSelectButton::createButtonController() {
 }
 
 void FileSelectButton::createOthers() {
+#ifdef __3DS__
+    // The plate only explained the P2 button (control()): not created, so its GalaxyNamePlate
+    // layout is never loaded.
+    _48 = nullptr;
+#else
     _48 = new GalaxyMapGalaxyPlain(this);
     _48->initWithoutIter();
 
     MR::connectToSceneLayoutDecoration(_48);
+#endif
 }

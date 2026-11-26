@@ -21,6 +21,8 @@ extern "C" void rvlGXCategoryEnd(int kind, int type, const unsigned long long* p
 // and head points, at-field, ceiling; 60 walls, ground, floor and wall damage; 61 press damage,
 // slider, forced jump, swimming, 2D and first-person checks, stick and lock-on; 62 actionMain;
 // 63 front floor, slopes, pushes, areas, rails, steps, bumps, cube warp, spin punch, timers.
+// Interrupts (rvl/os_thread.cpp): 64 all handlers, 65 the threads they wake, 66 alarms, 67 retrace,
+// 68 disc and files, 69 audio output, 70 DSP.
 struct SysPhase3DS {
     SysPhase3DS() : mType(-1) {}
     ~SysPhase3DS() {

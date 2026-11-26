@@ -3,6 +3,10 @@
 #include "Game/Util/LayoutUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
+#ifdef __3DS__
+// 3DS: while this button shows, the 3DS B button is the remote's B, the back (Pad3DS.hpp).
+#include "Pad3DS.hpp"
+#endif
 
 BackButton::BackButton(const char* pName, bool param2) : LayoutActor(pName, true), mPaneCtrl(), _24(), _25(true) {
     if (param2) {
@@ -48,6 +52,12 @@ void BackButton::init(const JMapInfoIter& rIter) {
 }
 
 void BackButton::control() {
+#ifdef __3DS__
+    // 3DS: tells the controls that a "Back" button shows (Pad3DS.hpp).
+    if (!mPaneCtrl->isHidden()) {
+        rvl3DSNoteBackButtonShown();
+    }
+#endif
     if (mPaneCtrl->isPointingTrigger()) {
         MR::startSystemSE("SE_SY_BUTTON_CURSOR_ON");
     }

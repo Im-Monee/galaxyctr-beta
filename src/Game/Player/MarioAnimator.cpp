@@ -1,7 +1,3 @@
-// 3DS: no joint calculation in loops that are not drawn (GameScene.cpp).
-#ifdef __3DS__
-extern bool gRvl3DSSkipJointCalc;
-#endif
 #include "Game/Player/MarioAnimator.hpp"
 #include "Game/Animation/XanimeCore.hpp"
 #include "Game/Animation/XanimePlayer.hpp"
@@ -830,19 +826,11 @@ void MarioAnimator::calc() {
         return;
     }
 
-#ifdef __3DS__
-    // A frame that will not be drawn (GameScene::calcAnim): no joints, the animation still advances
-    // (ModelManager::calcAnimSkipped). The first calculation of a Mario is always made.
-    static const MarioAnimator* sCalculated;
-    if (gRvl3DSSkipJointCalc && sCalculated == this) {
-        mXanimePlayer->_88 = false;
-        if (_6C) {
-            mXanimePlayerUpper->_88 = false;
-        }
-        return;
-    }
-    sCalculated = this;
-#endif
+    // 3DS: Mario's joints are calculated in every loop, also one that will not be drawn
+    // (gRvl3DSSkipJointCalc, GameScene::calcAnim). Effects that follow his joints are emitted in
+    // every loop: the spin's trail, made from his hands' places, had them only every third loop
+    // while the game was behind and drew a zig-zag of straight pieces instead of an arc (owner,
+    // 8 Nov). His joint hit sensors read them too.
 
     Mario* player = getPlayer();
     TVec3f playerPos(player->_13C);
@@ -1155,7 +1143,15 @@ void MarioAnimator::switchMirrorMode() {
     J3DModelX* model = static_cast< J3DModelX* >(MR::getJ3DModel(mActor));
     if (isMirrorAnimation()) {
         u32* modelFlags = (u32*)&model->mFlags;
+#ifdef __3DS__
+        // The Wii's bit 0 (mode list 0: cull front, for the mirrored model) is bit 31 here:
+        // Metrowerks allocates bitfields from the top bit, GCC from the bottom (J3DModelX::drawIn).
+        // At bit 0 the culling stayed as it was and a wall slide seen from the front showed the
+        // inside of Mario's back, pale and pinkish (Honeyhive, 24 Nov 2026).
+        *modelFlags |= 1u << 31;
+#else
         *modelFlags |= 1;
+#endif
         XjointTransform* jt = mXanimePlayer->mCore->getJointTransform(0);
         TVec3f mirrorScale;
         mirrorScale.x = scale;
@@ -1174,7 +1170,12 @@ void MarioAnimator::switchMirrorMode() {
         jt->_6C = _DC;
     } else {
         u32* modelFlags = (u32*)&model->mFlags;
+#ifdef __3DS__
+        // The mirror's bit, as set above.
+        *modelFlags &= ~(1u << 31);
+#else
         *modelFlags &= ~1;
+#endif
         XjointTransform* jt = mXanimePlayer->mCore->getJointTransform(0);
         TVec3f normalScale;
         normalScale.x = scale;

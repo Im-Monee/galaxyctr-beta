@@ -2,7 +2,7 @@
 
 To report a bug, create a new post in the **#bug-reports** forum of the
 [Discord server](https://discord.gg/Fftp79uaJ7) (preferred), one post for each problem, or open an
-[issue](../../../issues) on GitHub.
+[issue](https://github.com/Im-Monee/galaxyctr-beta/issues) on GitHub.
 
 > [!IMPORTANT]
 > The game rewrites its log every time it starts. After a crash or a bug, **copy the log and the
@@ -51,7 +51,14 @@ When the problem is on screen, press **L + Down + Select** to open the Rosalina 
 
 ## Code
 
-The port's code and its design are described in [the documentation](README.md). Every change to
-Petari's decompiled code must stay under `#ifdef __3DS__` and be listed in
-[PENDING_DECOMP_CHANGES.md](../platform/3ds/PENDING_DECOMP_CHANGES.md), as explained in
-[DETAILS.md](DETAILS.md#3-the-wii-build-stays-identical).
+Pull requests are welcome. The port's code and its design are described in
+[the documentation](https://github.com/Im-Monee/galaxyctr-beta/blob/main/docs/README.md).
+
+- Every change to Petari's decompiled code stays under `#ifdef __3DS__`, so the Wii build stays
+  identical, and is listed in
+  [PENDING_DECOMP_CHANGES.md](https://github.com/Im-Monee/galaxyctr-beta/blob/main/platform/3ds/PENDING_DECOMP_CHANGES.md)
+  ([why](https://github.com/Im-Monee/galaxyctr-beta/blob/main/docs/DETAILS.md#3-the-wii-build-stays-identical)).
+- Each new block of port code opens with a section box that says in plain English what it does
+  and why, and lines whose purpose is not obvious get a comment
+  ([how](https://github.com/Im-Monee/galaxyctr-beta/blob/main/docs/DETAILS.md#9-reading-the-code)).
+- Commit messages say what changed and why, in full sentences.

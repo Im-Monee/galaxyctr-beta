@@ -34,4 +34,10 @@ public:
 private:
     /* 0x9C */ f32 mAngle;
     /* 0xA0 */ JointControlDelegator< BossBegomanHead >* mJointDelegator;
+    // 3DS: the spike ring's angle as shown, and mAngle at the last joint calculation
+    // (calcJointEdge).
+#ifdef __3DS__
+    f32 mShownAngle3DS;
+    f32 mLastAngle3DS;
+#endif
 };

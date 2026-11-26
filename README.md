@@ -41,9 +41,11 @@ The game is a **public beta**. It targets 30 FPS, and the busiest areas still ru
    - **Windows:** if SmartScreen stops it, choose *More info*, then *Run anyway*.
    - **macOS:** right-click it and choose *Open*.
    - **Linux:** run `chmod +x GalaxyCTR-Builder-linux-x86_64` first.
-3. Choose your disc image. The conversion takes a while.
-4. Copy the files to your 3DS: over Wi-Fi with an FTP app on the 3DS, or to the SD card in your computer.
-   You can also copy them later. The steps are then saved in `install_guide.txt`.
+3. The first time, a small window asks for your disc image and reads it once. Then the builder's
+   window opens. Choose *Start the build*. The conversion takes a while.
+4. Copy the files to your 3DS: over Wi-Fi with an FTP app on the 3DS (several files at once, 5 by
+   default), or to the SD card in your computer. You can also copy them later. The steps are then
+   saved in `install_guide.txt`.
 5. Install `cias/GalaxyCTR.cia` with FBI.
 
 Your saves are kept every time you run the builder.
@@ -51,7 +53,8 @@ Your saves are kept every time you run the builder.
 ## How to Update
 
 Run the builder again, then install the new CIA. Before it starts, the builder downloads the
-newest release by itself. Keep the `GalaxyCTR-Builder-files` folder next to the builder.
+newest release by itself. It keeps its files in `%APPDATA%\GalaxyCTR`. A builder from the first
+releases, without a window, replaces itself with the new one and opens it.
 If you chose to keep the game files, the update does not need the disc image and is much faster
 ([details](docs/BUILDER.md#your-settings)).
 

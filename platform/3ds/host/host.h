@@ -62,8 +62,22 @@ typedef struct {
     short cstickX, cstickY;  // New 3DS C-Stick (0 when absent)
     int touching;
     int touchX, touchY;
+    // The console's accelerometer, raw (libctru accelVector; hasAccel 0 when it could not be
+    // turned on). rvl/kpad.cpp turns a strong jolt into the remote's shake (spin).
+    int hasAccel;
+    short accelX, accelY, accelZ;
 } HostInput;
 void hostInputGet(HostInput* pInput);
+
+// The loading screen (loading.c): the game's saving window on the top screen from the start until
+// the first scene starts. hostLoadingStart: at start-up, after the screens and the SD card.
+// hostLoadingOwnsTop: while true the renderer's frames do not go to the top screen (gfx.c).
+// hostLoadingFinish: the title is starting, the first scene after "Logo"
+// (GameSystemSceneController::startScene); returns
+// once the window has closed.
+void hostLoadingStart(void);
+int hostLoadingOwnsTop(void);
+void hostLoadingFinish(void);
 
 // ##############################################################################################
 // # Debug options                                                                              #
@@ -105,6 +119,9 @@ void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y
 // As hostGfxCaptureToTexture, but when nothing was copied it returns `reuse` (its last image),
 // for callers that store the result over their texture.
 void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs);
+// As hostGfxCaptureToTexture, into an RGB565 texture (a GX copy into a GX_TF_RGB565 texture):
+// the region is copied as RGBA8, then converted by two display transfers.
+void* hostGfxCaptureToTextureRgb565(void* reuse, float x0, float y0, float x1, float y1, float* coeffs);
 int hostGfxReadRgb565(unsigned x, unsigned y, unsigned width, unsigned height, unsigned short* pixels);
 // Copies the depth buffer as it is now for the next frame's EFB depth reads (the frame's end would
 // copy it after MR::clearZBuffer has reset it). Only while reads keep coming.
@@ -265,6 +282,8 @@ void hostInterruptShutdown(void);
 void hostInterruptRaise(unsigned bits);
 unsigned hostInterruptTakePending(void);
 int hostInterruptPending(void);
+// The pending bits, left pending (os_thread.cpp, rvlPollAudioInterrupts).
+unsigned hostInterruptPeek(void);
 // Blocks until at least one interrupt is pending (used when no game thread can run).
 void hostInterruptWait(void);
 // Raises HOST_IRQ_TIMER once the system tick reaches the deadline (0 disables the timer).
@@ -349,6 +368,9 @@ typedef struct {
     float x, y, z, w;
     unsigned char rgba[4];
     float s0, t0, s1, t1, s2, t2;
+    // Unit 0's q, read only by a draw whose state sets projectUnit0: the GPU then samples at
+    // (s0 / q0, t0 / q0), divided per pixel (the water's screen capture, WaterRender3DS.hpp).
+    float q0;
 } HostGfxVertex;
 
 // One texture combiner stage. Sources, operands, functions and scales use the 3DS GPU's
@@ -387,6 +409,9 @@ typedef struct {
     // result, n 0-3) of the colour and of the alpha. With 0 the buffer keeps its initial
     // colour, 0.5, which material combiners read as a constant (mat.py half).
     unsigned char bufferUpdateRgb, bufferUpdateAlpha;
+    // A draw of HostGfxVertex: unit 0 in projection mode, its coordinate (s0, t0) divided by q0
+    // per pixel (model draws use HostGfxTransform's divide[0] instead).
+    unsigned char projectUnit0;
 } HostGfxState;
 
 // The stencil of draws that set none: the Wii's "destination alpha 0" windows, where every draw
@@ -423,6 +448,12 @@ unsigned long hostGfxLinearFree(void);
 // size, nativeFormat 0 ETC1, 1 ETC1A4, 2 LA4.
 void* hostGfxTextureCreateNative(const void* pData, int nativeFormat, unsigned width, unsigned height, int wrapS, int wrapT, int linear,
                                  int minLinear);
+// A texture with its own mipmaps (gfx.c, "Textures with their own mipmaps"): pPixels holds the
+// levels one after the other as hostGfxTextureCreate takes one, width x height a power of two,
+// each level half the one before and none under 8. mipLinear: blend between levels; lodBias in
+// levels, added to the one the GPU picks.
+void* hostGfxTextureCreateMipmap(const unsigned long* pPixels, unsigned width, unsigned height, unsigned levels, int wrapS, int wrapT,
+                                 int linear, int minLinear, int mipLinear, float lodBias);
 
 // ##############################################################################################
 // # Drawing                                                                                    #
@@ -443,6 +474,8 @@ void hostGfxDraw(const HostGfxVertex* pVertices, unsigned long count, const unsi
 // The vertices of the last hostGfxDraw again, with other indices or material: no copy of them.
 // Zero when that draw left none to use (clipped, none left this frame): call hostGfxDraw then.
 int hostGfxDrawAgain(const unsigned short* pIndices, unsigned long indexCount, int primitive, const HostGfxState* pState);
+// Non-zero holds the GPU kicks between draws (a 2D layout drawn whole, gfx.c); nested calls count.
+void hostGfxHoldKicks(int hold);
 // Reads one emulated Wii framebuffer pixel. Returns nonzero when the coordinate is valid.
 int hostGfxPeekEfb(unsigned short x, unsigned short y, int depth, unsigned long* pValue);
 
@@ -479,6 +512,10 @@ typedef struct {
     unsigned char nrmcofactor; // with nrmpalette: transform normals by the position matrix's inverse transpose
     unsigned char vtxmtx[3];   // the unit's matrix is each vertex's palette rows texRow (texmtx: see draw.cpp)
     unsigned char paletteRows; // palette rows the vertices use (0: all 30); the others are not sent
+    // Units whose vertex inputs are swapped: 0 none, 1 or 2 that unit's with unit 0's (the
+    // vertex loader's attribute order, gfx.c bindWindow). The draw's matrices, textures and
+    // combiner sources are swapped to match (native_submit.cpp, swapProjectedUnit).
+    unsigned char inputSwap;
 } HostGfxTransform;
 
 // Model vertices live in the vertex arena (linear memory the GPU reads directly). Persistent
@@ -487,12 +524,28 @@ typedef struct {
 // the first vertex's arena index and sets *ppOut, or HOST_GFX_NO_ARENA (no room, or the frame
 // is dropped). The caller fills the vertices before drawing them in this frame.
 #define HOST_GFX_NO_ARENA 0xFFFFFFFFul
+// persistent: HOST_GFX_ARENA_FRAME (this frame), HOST_GFX_ARENA_KEEP (kept), or
+// HOST_GFX_ARENA_MODEL_FRAME: this frame's, for a model, which leaves the last vertices of the
+// frame's room to the 2D draws (layouts and their text come last in a frame).
+#define HOST_GFX_ARENA_FRAME 0
+#define HOST_GFX_ARENA_KEEP 1
+#define HOST_GFX_ARENA_MODEL_FRAME 2
 unsigned long hostGfxArenaAlloc(unsigned long count, int persistent, HostGfxModelVertex** ppOut);
+// Persistent vertices in the compact form: the first HOST_GFX_COMPACT_VERTEX bytes of a
+// HostGfxModelVertex (position, normal, colour, rows, unit 0's input), for vertices whose units 1
+// and 2 take no input (tex[1] and tex[2] are 0, 0, 1: the GPU reads them as fixed values). Sets
+// *ppOut to the first vertex's bytes, the next at HOST_GFX_COMPACT_VERTEX bytes on.
+#define HOST_GFX_COMPACT_VERTEX 44
+unsigned long hostGfxArenaAllocCompact(unsigned long count, unsigned char** ppOut);
 unsigned long hostGfxArenaEpoch(void);
 // Empties the persistent arena at the next drawn frame's start (a scene ends: its models go).
 void hostGfxArenaReset(void);
-// The vertex at an arena index returned by hostGfxArenaAlloc (valid while the allocation is).
-HostGfxModelVertex* hostGfxArenaVertex(unsigned long index);
+// The bytes of the vertex at an arena index (valid while the allocation is), and the size of a
+// vertex there: sizeof(HostGfxModelVertex), or HOST_GFX_COMPACT_VERTEX (only the fields before
+// tex[1] are there; hostGfxArenaReadVertex gives a whole one).
+const unsigned char* hostGfxArenaBytes(unsigned long index, unsigned long* pStride);
+// A whole vertex: a compact one with tex[1] and tex[2] as the GPU reads them (0, 0, 1).
+void hostGfxArenaReadVertex(unsigned long index, HostGfxModelVertex* pOut);
 
 // ##############################################################################################
 // # Clipping before the GPU                                                                    #
@@ -554,6 +607,8 @@ int hostGfxDrawNativeIndexed(unsigned long first, const unsigned short* pIndices
 // ##############################################################################################
 // Ends the frame; the next one starts cleared to clearColor (0xRRGGBBAA).
 void hostGfxClearFrame(unsigned long clearColor);
+// Clears the frame again to the colour it started with (a copy made before the scene's draws).
+void hostGfxClearAgain(void);
 void hostGfxEndFrame(unsigned long clearColor);
 // Begins the frame now and returns non-zero when it is dropped (begun in the vertical blank the
 // last frame ended in, as the game catches up after a slow one): its draws would be thrown away.
@@ -569,6 +624,8 @@ float hostGfxFrameMs(void);
 // Whether the next frame will be drawn, decided when the current one ends (hostGfxEndFrame): the
 // game skips its view calculation for a frame that will not be drawn.
 int hostGfxNextFrameDrawn(void);
+// The next frame is drawn whatever the pacing: a one-time screen capture is taken in it.
+void hostGfxDrawNextFrame(void);
 // How much of the Wii's detail the port keeps while the game runs behind the clock, from
 // HOST_PERF_DETAIL_MIN to 1 (actor clipping distances, particle emission, early LOD).
 float hostPerfDetail(void);

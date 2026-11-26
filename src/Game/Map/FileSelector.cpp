@@ -371,8 +371,15 @@ void FileSelector::createMiiFont() {
 #endif
 
 void FileSelector::createManual() {
+#ifdef __3DS__
+    // #### No co-star manual (owner's request) ####
+    // Its only way in is the P2 button, hidden on 3DS (FileSelectButton.cpp), so the manual is not
+    // created and its P2Manual layout never loads (archive list in NameObjFactory.cpp).
+    mManual = nullptr;
+#else
     mManual = new Manual2P("２Ｐマニュアル");
     mManual->initWithoutIter();
+#endif
 }
 
 void FileSelector::createSelectEffect() {

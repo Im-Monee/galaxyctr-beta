@@ -2,6 +2,8 @@
 // 3DS: a smaller file cache with the 96 MB of an Old 3DS.
 #ifdef __3DS__
 extern "C" int hostLowMemory(void);
+// 3DS: the loading screen closes before the first scene draws (platform/3ds/host/loading.c).
+extern "C" void hostLoadingFinish(void);
 #endif
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/NameObj/NameObjHolder.hpp"
@@ -221,6 +223,15 @@ bool GameSystemSceneController::isFirstUpdateSceneNerveNormal() const {
 }
 
 void GameSystemSceneController::startScene() {
+#ifdef __3DS__
+    // 3DS: the first scene after the "Logo" one (the title) is loaded: the loading screen closes
+    // first, a few frames ahead of it (later scenes: nothing to do). The "Logo" scene draws
+    // nothing on the 3DS, and the title loads for about 20 seconds after it starts, so the
+    // window stays until then (owner's 0.23.6 test: it closed long before the title came).
+    if (!MR::isEqualSceneName("Logo")) {
+        hostLoadingFinish();
+    }
+#endif
     mScene->start();
     GameSystemFunction::restartControllerLeaveWatcher();
     requestChangeNerve(GET_NERVE(GameSystemSceneController, GameSystemSceneControllerNormal));

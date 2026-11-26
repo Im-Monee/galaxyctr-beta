@@ -911,6 +911,12 @@ namespace TDDraw {
         state.stages[0].colorFunc = 0;
         state.stages[0].alphaSrc[0] = 0x03;
         state.stages[0].alphaFunc = 0;
+        if (rvl3DSIsOpaqueCapture(textures[0])) {
+            // An RGB565 screen capture reads with alpha 255 on the Wii; the copy here carries the
+            // render target's alpha (rvl3DSIsOpaqueCapture): the constant's instead.
+            state.stages[0].alphaSrc[0] = 0x0E;
+            state.stages[0].constant = 0xFFFFFFFF;
+        }
         for (u32 texture = 1; texture < textureCount; texture++) {
             HostGfxStage& stage = state.stages[texture];
             const u32 k = static_cast<u32>(ratios[texture] * 255.0f);

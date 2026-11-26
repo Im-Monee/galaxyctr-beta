@@ -6465,10 +6465,14 @@ namespace {
             "FileSelector",
             "BrosButton",
         },
+#ifdef __3DS__
+        // No co-star manual on 3DS (FileSelector::createManual): its archive is not loaded.
+#else
         {
             "FileSelector",
             "P2Manual",
         },
+#endif
         {
             "FileSelector",
             "MiniatureGalaxySelect",

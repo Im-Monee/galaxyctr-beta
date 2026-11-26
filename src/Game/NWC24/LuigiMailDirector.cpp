@@ -48,6 +48,13 @@ void LuigiMailDirector::found() {
 }
 
 void LuigiMailDirector::sendMail() {
+#ifdef __3DS__
+    // #### No Wii Message Board ####
+    // The Mailtoad's letters about Luigi went to the Wii Message Board after a save. The 3DS has
+    // none (they failed silently): dropped, as in writeSendSize().
+    reset();
+    return;
+#endif
 #if (VERSION == RMGJ01 || VERSION == RMGE01 || VERSION == RMGP01)
     prepareMessage();
 
@@ -104,6 +111,11 @@ void LuigiMailDirector::sendMail(u8 delayHours) {
 #endif
 
 void LuigiMailDirector::writeSendSize() {
+#ifdef __3DS__
+    // No letters to the Wii Message Board (sendMail()): nothing to count in the save.
+    reset();
+    return;
+#endif
     prepareMessage();
 
     const u16* pMailSender = reinterpret_cast< const u16* >(MR::getMailSender("WiiMessageFromKinopio"));

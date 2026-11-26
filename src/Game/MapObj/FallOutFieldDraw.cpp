@@ -172,7 +172,7 @@ void FallOutFieldDraw::draw() const {
     {
         const u32 kSamples = 5;
         const f32 kRadius = 0.004f;
-        const f32 aspect = MR::isScreen16Per9() ? 1.333f : 1.0f;
+        const f32 aspect = MR::isScreen16Per9() ? 1.25f : 1.0f;
         const TVec2f position(0.0f, height / 4);
         for (u32 i = 0; i < kSamples; i += 3) {
             f32 offsets[3][2];

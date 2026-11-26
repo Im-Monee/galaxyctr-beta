@@ -41,6 +41,7 @@
 // 3DS: GXToCitro3D.hpp, GX values as 3DS GPU values; host.h, the port's host interface.
 #ifdef __3DS__
 #include "GXToCitro3D.hpp"
+#include "Game/Screen/GalaxyMapController.hpp"
 #include "host.h"
 #endif
 #include <JSystem/J3DGraphBase/J3DSys.hpp>
@@ -186,6 +187,11 @@ void GameScene::update() {
 }
 
 void GameScene::draw() const {
+    // 3DS: the map board's copy of the map, before anything of the frame is drawn
+    // (GalaxyMapController.cpp, rvl3DSDrawGalaxyMapCapture).
+#ifdef __3DS__
+    rvl3DSDrawGalaxyMapCapture();
+#endif
     MR::drawInit();
     LightFunction::initLightRegisterAll();
     drawOdhCapture();

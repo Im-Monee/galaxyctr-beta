@@ -18,6 +18,10 @@ const ActorLightInfo* rvlNativeLoadedLight();
 // of its packets then.
 void rvlNativeFarPrepare(J3DModel* pModel);
 bool rvlNativeFarPacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight);
+// Early culling (platform/3ds/gx/native.cpp): whether a packet may be in view, and the log's count
+// of the packets of materials left out whole.
+bool rvlNativePacketInView(J3DShapePacket* pPacket);
+void rvlNativeCountEarlyCulled(u32 packets);
 #endif
 
 #ifdef __3DS__
@@ -80,6 +84,23 @@ void DrawBufferShapeDrawer::draw() const {
     // The 3DS target must never enter J3D/GX display-list code. Unsupported or absent
     // .n3d packets are recorded and skipped by the native renderer.
     if (mNumPackets <= 0) {
+        return;
+    }
+    // A material none of whose packets is in view is not begun (rvlNativePacketInView: the late
+    // culling's test, made before the material and the matrices are built). Its light loaders
+    // still run: the next packets without one take the light loaded last.
+    bool inView = false;
+    for (s32 idx = 0; idx < mNumPackets && !inView; idx++) {
+        J3DShapePacket* packet = mPackets[idx]->mShapePacket;
+        inView = (packet->mpShape->mFlags & 1) == 0 && rvlNativePacketInView(packet);
+    }
+    if (!inView) {
+        for (s32 idx = 0; idx < mNumPackets; idx++) {
+            if (getLightLoader(idx) != nullptr) {
+                getLightLoader(idx)->loadLight();
+            }
+        }
+        rvlNativeCountEarlyCulled(mNumPackets);
         return;
     }
     J3DShapePacket* first = mPackets[0]->mShapePacket;

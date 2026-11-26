@@ -790,6 +790,9 @@ void* OSGetAlarmUserData(const OSAlarm* alarm) {
 // ##############################################################################################
 static bool sInInterrupt;
 
+// The interrupts dispatchInterrupts delivers: all, except inside rvlPollAudioInterrupts (below).
+static unsigned sDeliverable = ~0u;
+
 // Runs the handlers of every pending interrupt. Called with interrupts disabled.
 static void dispatchInterrupts() {
     if (sInInterrupt) {
@@ -798,21 +801,34 @@ static void dispatchInterrupts() {
 
     sInInterrupt = true;
     unsigned pending = hostInterruptTakePending();
+    // The ones not deliverable now stay pending, for the next point that delivers them.
+    if ((pending & ~sDeliverable) != 0) {
+        hostInterruptRaise(pending & ~sDeliverable);
+        pending &= sDeliverable;
+    }
 
+    // Each kind timed on its own for the profile log (sys:66 alarms, 67 retrace, 68 disc and
+    // files, 69 audio output, 70 DSP): 64, all of them, took 2.6 to 3.5 ms a loop in the Comet
+    // Observatory (CIA 0.22.6) without saying which.
     if (pending & HOST_IRQ_TIMER) {
+        SysTimer3DS timer3DS(66);
         fireAlarms();
     }
     if (pending & HOST_IRQ_VBLANK) {
+        SysTimer3DS timer3DS(67);
         rvlVIRetraceInterrupt();
     }
     if (pending & HOST_IRQ_IO) {
+        SysTimer3DS timer3DS(68);
         rvlIOInterrupt();
     }
     if (pending & HOST_IRQ_AUDIO) {
+        SysTimer3DS timer3DS(69);
         rvlDSPWatchdog();
         rvlAIInterrupt();
     }
     if (pending & HOST_IRQ_DSP) {
+        SysTimer3DS timer3DS(70);
         rvlDSPInterrupt();
     }
 
@@ -820,7 +836,10 @@ static void dispatchInterrupts() {
 }
 
 void rvlInterruptsEnabled() {
-    if (sInInterrupt || sIdle || !hostInterruptPending()) {
+    // Only what can be delivered now: inside rvlPollAudioInterrupts the others stay pending, and
+    // testing for any pending bit made each OSRestoreInterrupts below come back here without end
+    // (CIA 0.23.8: a stack overflow before the title screen).
+    if (sInInterrupt || sIdle || (hostInterruptPeek() & sDeliverable) == 0) {
         return;
     }
 
@@ -842,6 +861,29 @@ void rvlInterruptsEnabled() {
         __OSReschedule();
     }
     OSRestoreInterrupts(inner);
+}
+
+// ##############################################################################################
+// # Audio during the renderer's long work                                                      #
+// #                                                                                            #
+// # The game makes its sound only where it gets interrupts: the audio output's (a 3DS buffer   #
+// # is free, HOST_IRQ_AUDIO) and the DSP's (a subframe is mixed) wake JAudio's threads, which  #
+// # mix the next 17.5 ms. The port's renderer is host code with no such points, and a frame   #
+// # drawn natively took up to 100 ms in the full Comet Observatory (CIA 0.23.3 log: game at    #
+// # 40-68%, 'Longest draw phase' 77 and 102 ms). The output's three buffers hold about 50 ms:  #
+// # past that JAudio repeats its last sample (JASDriver::readDspBuffer) and the sound crackles #
+// # (owner, 25 Nov 2026). On the Wii these interrupts stop the drawing at any instruction.     #
+// # native_submit.cpp calls this at each draw: when an audio interrupt is pending it delivers  #
+// # those two alone and lets JAudio's threads run. The others (retrace, timer, disc) wait for  #
+// # the game's own next point, so no loading thread starts in the middle of a draw.           #
+// ##############################################################################################
+extern "C" void rvlPollAudioInterrupts() {
+    if ((hostInterruptPeek() & (HOST_IRQ_AUDIO | HOST_IRQ_DSP)) == 0 || !rvlInterruptLevel() || sInInterrupt || sIdle) {
+        return;
+    }
+    sDeliverable = HOST_IRQ_AUDIO | HOST_IRQ_DSP;
+    rvlInterruptsEnabled();
+    sDeliverable = ~0u;
 }
 
 // ##############################################################################################

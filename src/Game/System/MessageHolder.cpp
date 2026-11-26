@@ -5,9 +5,81 @@
 #include "Game/Util/FileUtil.hpp"
 #include "Game/Util/SystemUtil.hpp"
 #include <JSystem/JKernel/JKRArchive.hpp>
+#ifdef __3DS__
+#include "Game/System/Language.hpp"
+#include <cstring>
+#endif
 
 #define SYSTEMMESSAGE_ARC "/Memory/SystemMessage.arc"
 #define MESSAGE_ARC "/MessageData/Message.arc"
+#ifdef __3DS__
+
+// ##############################################################################################
+// # The final Mailtoad thanks the player (owner's request, Nov 25 2026)                        #
+// #                                                                                            #
+// # On the Wii, after the Purple Coins the Mailtoad of PeachCastleFinalGalaxy asks whether     #
+// # you want the staff's congratulations letter and sends it to the Wii Message Board, which   #
+// # the 3DS does not have. Here his question (PeachCastleFinalGalaxy_Kinopio060) is replaced  #
+// # by a thank-you in the Toads' cheering style, and the talk ends on it: no Yes/No, no        #
+// # Message Board lines. The disc's text stays as it is on the SD; the change is made in       #
+// # memory. KinopioAstro.cpp no longer prepares the letter.                                    #
+// #                                                                                            #
+// # The text is the converted (little-endian) message format of tools/3ds/builder/bmg.py:      #
+// # a tag is 0x1A, then size | group << 8, the tag number, and its parameters as bytes.        #
+// # Tags used: player name, form 1 ("Mr. Maaario"/"Mr. Luiiiigiii", group 5, tag 0) and the     #
+// # page break (group 1, tag 1).                                                               #
+// ##############################################################################################
+#define PORT3DS_TAG_PLAYER_NAME_FORM1 L"\x001A\x0508\x0000\x0001"
+#define PORT3DS_TAG_PAGE L"\x001A\x0106\x0001"
+
+namespace {
+    const char* cThanksMessageID = "PeachCastleFinalGalaxy_Kinopio060";
+
+    const wchar_t cThanksEnglish[] = PORT3DS_TAG_PLAYER_NAME_FORM1 L"! Woo woo! You did it! \x266A" PORT3DS_TAG_PAGE
+        L"\nThank you for playing!";
+    const wchar_t cThanksFrench[] = PORT3DS_TAG_PLAYER_NAME_FORM1 L"! Bravo! Tu as r\x00E9" L"ussi! \x266A" PORT3DS_TAG_PAGE
+        L"\nMerci d'avoir jou\x00E9" L"!";
+    // Spanish: two lines on the first page, one is too wide for the balloon's text box (rendered
+    // on the PC with the disc's TalkBalloonEvent and messagefont26, Nov 25 2026).
+    const wchar_t cThanksSpanish[] = L"\x00A1" PORT3DS_TAG_PLAYER_NAME_FORM1 L"! \x00A1" L"Bien, bien!\n\x00A1" L"Lo lograste! \x266A"
+        PORT3DS_TAG_PAGE L"\n\x00A1" L"Gracias por jugar!";
+
+    const MessageData* sThanksData = nullptr;
+    s32 sThanksIndex = -1;
+    const wchar_t* sThanksText = nullptr;
+
+    // Once, when the game's text is loaded: picks the text for the game's language and makes the
+    // question the last message of its talk (it led to the Yes/No branch).
+    void port3DSPrepareThanks(MessageData* pData) {
+        sThanksIndex = pData->findMessageIndex(::cThanksMessageID);
+        TalkNode* pNode = pData->findNode(::cThanksMessageID);
+
+        if (sThanksIndex < 0 || pNode == nullptr) {
+            sThanksIndex = -1;
+            return;
+        }
+
+        const char* pLanguage = MR::getCurrentLanguagePrefix();
+        if (strstr(pLanguage, "French") != nullptr) {
+            sThanksText = ::cThanksFrench;
+        } else if (strstr(pLanguage, "Spanish") != nullptr) {
+            sThanksText = ::cThanksSpanish;
+        } else {
+            sThanksText = ::cThanksEnglish;
+        }
+
+        pNode->mNextIdx = 0xFFFF;
+        sThanksData = pData;
+    }
+};  // namespace
+
+// Called by MessageData::getMessage: the thank-you in place of the question.
+static void port3DSReplaceText(const MessageData* pData, u16 index, TalkMessageInfo* pMessageInfo) {
+    if (pData == ::sThanksData && index == ::sThanksIndex) {
+        pMessageInfo->_0 = reinterpret_cast< u8* >(const_cast< wchar_t* >(::sThanksText));
+    }
+}
+#endif
 
 namespace {
     u8* getBlock(u32 magic, u8* pData) {
@@ -51,6 +123,9 @@ bool MessageData::getMessage(TalkMessageInfo* pMessageInfo, u16, u16 infoToolInd
     pMessageInfo->_A = *(pInfoTool + 0xa);
     pMessageInfo->_B = *(pInfoTool + 0xb);
     pMessageInfo->mBalloonType = *(pInfoTool + 9);
+#ifdef __3DS__
+    port3DSReplaceText(this, infoToolIndex, pMessageInfo);
+#endif
 
     return true;
 }
@@ -163,4 +238,7 @@ void MessageHolder::initGameData() {
     MR::mountArchive(MESSAGE_ARC, nullptr);
 
     mGameMessageData = new MessageData(MESSAGE_ARC);
+#ifdef __3DS__
+    port3DSPrepareThanks(mGameMessageData);
+#endif
 }

@@ -24,6 +24,7 @@
 // 3DS: headers the 3DS code of this file uses (JUTTexture3DS.hpp, cstring).
 #ifdef __3DS__
 #include "JUTTexture3DS.hpp"
+#include "host.h"
 #include <cstring>
 #endif
 
@@ -36,8 +37,22 @@ namespace {
     // static const s32 sCaptureWidth = _;
     // static const s32 sCaptureHeight = _;
 #ifdef __3DS__
-    // 3DS: the map's first copy, waiting for a frame behind the closed wipe (draw).
-    bool sInitialCapturePending = false;
+    // ##############################################################################################
+    // # The map board's copy of the map (3DS)                                                      #
+    // #                                                                                            #
+    // # The Wii draws the map and copies it while the scene loads, with nothing else on the screen,#
+    // # and the copy clears what it copied (GXCopyTex, clear). Here draw() asks for the copy and   #
+    // # rvl3DSDrawGalaxyMapCapture makes it at the start of the next frame, before the scene draws #
+    // # (GameScene::draw3D): the map drawn, copied, the frame cleared again, then the scene drawn  #
+    // # over it. Made in draw() itself, at the end of a frame, the map stayed over the game        #
+    // # whenever the copy could not be made: the Observatory left after the Terrace showed the     #
+    // # whole map in front of everything, the copy retried every frame (owner, CIA 0.21.8).        #
+    // ##############################################################################################
+    bool sInitialCapturePending = false;    // the scene's first copy (the constructor's on the Wii)
+    bool sReadyGameCapturePending = false;  // the copy when the map closes into the game
+    GalaxyMapController* sCaptureRequest;   // the controller that asked, and the frame it asked in
+    unsigned long sCaptureRequestFrame;
+    const unsigned long kCaptureRequestFrames = 3;  // older requests are from a scene now gone
 #endif
 };  // namespace
 
@@ -119,8 +134,10 @@ void GalaxyMapController::init(const JMapInfoIter& rIter) {
     // or Gateway's planet before the first star), which the Observatory's map board then showed.
     memset(_38->mImage, 0, rvl3DSTexBufferSize(_38->mTIMG->mWidth, _38->mTIMG->mHeight, _38->mTIMG->mFormat));
     rvl3DSInvalidateJUTTexture(_38);
-    // The map itself is copied later, behind the closed wipe (draw).
+    // The map itself is copied later, at the start of a frame (draw, rvl3DSDrawGalaxyMapCapture).
     sInitialCapturePending = true;
+    sReadyGameCapturePending = false;
+    sCaptureRequest = nullptr;
 #else
     if (MR::startFunctionAsyncExecuteOnMainThread(MR::Functor(this, &GalaxyMapController::capture), "GalaxyMapController::capture")) {
         MR::waitForEndFunctionAsyncExecute("GalaxyMapController::capture");
@@ -173,17 +190,14 @@ void GalaxyMapController::calcAnim() {
 
 void GalaxyMapController::draw() const {
     if (MR::isDead(this)) {
-        // 3DS: the Wii's copy of the map made while the scene loads (the constructor), here at the
-        // scene's first drawn frame, where the opening fade, drawn over the layouts, mostly still
-        // covers it. Waiting for the scene's wipe to be closed never copied it: in the Observatory
-        // the fade opens from the first frame, and the map board stayed black until the map was
-        // opened once (owner, 7 Nov). Entered with no fade, the map may show for that one frame.
+        // 3DS: the Wii's copy of the map made while the scene loads (the constructor), here asked
+        // for the start of the next frame (rvl3DSDrawGalaxyMapCapture). Waiting for the scene's
+        // wipe to be closed never copied it: in the Observatory the fade opens from the first
+        // frame, and the map board stayed black until the map was opened once (owner, 7 Nov).
 #ifdef __3DS__
         if (sInitialCapturePending) {
-            const_cast< GalaxyMapController* >(this)->capture();
-            sInitialCapturePending = !rvl3DSLastCaptureDone();
-            // As the constructor's kill() after the Wii's copy: the layouts capture() showed rest.
-            const_cast< GalaxyMapController* >(this)->killAllLayout();
+            sCaptureRequest = const_cast< GalaxyMapController* >(this);
+            sCaptureRequestFrame = hostGfxFrameId();
         }
 #endif
         return;
@@ -196,20 +210,20 @@ void GalaxyMapController::draw() const {
     mMapSelectButton->draw();
     mMap->drawGalaxyInfo();
 
-    // 3DS: the map's capture is retried until it really copies the screen (a frame the renderer
-    // skips copies nothing, CaptureScreenDirector.cpp), else the map board keeps an older image.
+    // 3DS: the map's copy is asked for the start of the next frame and retried until it really
+    // copies the screen (a frame the renderer skips copies nothing), else the map board keeps an
+    // older image.
 #ifdef __3DS__
-    static bool sCapturePending = false;
     if (isNerve(GET_NERVE_ANON(GalaxyMapControllerReadyGame))) {
         if (MR::isFirstStep(this)) {
-            sCapturePending = true;
+            sReadyGameCapturePending = true;
         }
-        if (sCapturePending) {
-            const_cast< GalaxyMapController* >(this)->capture();
-            sCapturePending = !rvl3DSLastCaptureDone();
+        if (sReadyGameCapturePending) {
+            sCaptureRequest = const_cast< GalaxyMapController* >(this);
+            sCaptureRequestFrame = hostGfxFrameId();
         }
     } else {
-        sCapturePending = false;
+        sReadyGameCapturePending = false;
     }
 #else
     if (isNerve(GET_NERVE_ANON(GalaxyMapControllerReadyGame)) && MR::isFirstStep(this)) {
@@ -679,10 +693,14 @@ void GalaxyMapController::setFaderParam(GXColor color, int frame) {
 }
 
 void GalaxyMapController::capture() {
-    // 3DS: the map drawn and captured through the GPU's copy, instead of the Wii's projection and
-    // copy.
+    // 3DS: the map drawn and captured through the GPU's copy, after the Wii's orthographic
+    // projection (setupDrawForNW4RLayout at scale 1 is the same matrix, through DirectDraw). The
+    // layouts are drawn without a projection setup of their own: without it, the capture at the
+    // scene's first drawn frame had the scene's 3D projection, the map never reached the screen and
+    // the map board behind Rosalina showed that frame of the game (owner, 9 Nov).
 #ifdef __3DS__
     if (_38 != nullptr) {
+        MR::setupDrawForNW4RLayout(1.0f, false);
         drawForCapture();
         _38->capture(0, 0, GX_TF_RGB565, true, 0);
     }
@@ -696,6 +714,39 @@ void GalaxyMapController::capture() {
     _38->capture(0, 0, GX_TF_RGB565, true, 0);
 #endif
 }
+
+// 3DS: the copy draw() asked for, at the start of the frame (see the header of this file's
+// namespace): the map drawn and copied, then the frame cleared again for the scene. A frame the
+// renderer drops copies nothing and the request waits for the next one.
+#ifdef __3DS__
+void rvl3DSDrawGalaxyMapCapture() {
+    GalaxyMapController* controller = sCaptureRequest;
+    if (controller == nullptr) {
+        return;
+    }
+    if (hostGfxFrameId() - sCaptureRequestFrame > kCaptureRequestFrames) {
+        sCaptureRequest = nullptr;
+        return;
+    }
+    if (hostGfxFrameDropped()) {
+        return;
+    }
+    sCaptureRequest = nullptr;
+    controller->capture();
+    const bool done = rvl3DSLastCaptureDone();
+    hostGfxClearAgain();
+    if (!done) {
+        return;  // asked again by the next draw()
+    }
+    if (sInitialCapturePending) {
+        sInitialCapturePending = false;
+        // As the constructor's kill() after the Wii's copy: the layouts capture() showed rest.
+        controller->killAllLayout();
+    } else {
+        sReadyGameCapturePending = false;
+    }
+}
+#endif
 
 namespace MR {
     void startGalaxyMapLayout() {

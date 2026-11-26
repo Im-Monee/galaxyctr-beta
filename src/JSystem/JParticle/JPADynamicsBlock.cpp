@@ -4,6 +4,7 @@
 // 3DS: host.h, the port's host interface.
 #ifdef __3DS__
 #include "host.h"
+#include "JSystem/JParticle/JPABaseShape.hpp"  // the shape type (stripes keep all their particles)
 #endif
 
 namespace {
@@ -187,7 +188,13 @@ void JPADynamicsBlock::create(JPAEmitterWorkData* work) {
 #ifdef __3DS__
             // Fewer particles from steady emitters while the game runs behind the clock (the
             // host's detail level, 40-100%): each one costs its calculation and draw on the CPU.
-            newPtclCount *= hostPerfDetail();
+            // Not a stripe (shape types 5 and 6, JPAResource::init): its particles are the points
+            // of one band, and with fewer of them Mario's spin trail was a zig-zag of straight
+            // pieces instead of an arc (owner, CIA 0.21.8, Good Egg at 40% detail).
+            const u32 shapeType = work->mpRes->getBsp()->getType();
+            if (shapeType != 5 && shapeType != 6) {
+                newPtclCount *= hostPerfDetail();
+            }
 #endif
             f32 newEmitCount = emtr->mEmitCount + newPtclCount;
             emtr->mEmitCount = newEmitCount;

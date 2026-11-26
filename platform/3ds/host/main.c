@@ -32,6 +32,7 @@ void smgMain(void);
 static FILE* sLogFile;
 static bool sConsoleLog = !SMG_SHOWCASE;  // log lines also on the bottom screen
 static bool sCstick;  // irrst (C-Stick, ZL/ZR) available
+static bool sAccel;   // accelerometer turned on (shake the console to spin, rvl/kpad.cpp)
 
 // ##############################################################################################
 // # The log over the network                                                                   #
@@ -271,20 +272,37 @@ int hostCflResource(const void** data, unsigned long* size) {
         return resource != NULL;
     }
     attempted = 1;
+    // ##############################################################################################
+    // # The Mii face parts, read once at the start                                                 #
+    // #                                                                                            #
+    // # main() reads them before the game starts. Read when a Mii was first drawn, after hours of  #
+    // # play, the read failed and the Mii icons and heads stayed invisible for the whole session   #
+    // # (owner, CIA 0.21.10; 3.8 MB free, likely not in one 1 MB block). The cause of a failure is #
+    // # logged.                                                                                    #
+    // ##############################################################################################
+    const char* failure = NULL;
+    long fileSize = 0;
     Result rc = romfsMountFromTitle(titleId, MEDIATYPE_NAND, archiveName);
     if (R_SUCCEEDED(rc)) {
         FILE* file = fopen("$CFLRES:/CFL_Res.dat", "rb");
-        if (file != NULL && fseek(file, 0, SEEK_END) == 0) {
-            long fileSize = ftell(file);
+        if (file == NULL || fseek(file, 0, SEEK_END) != 0) {
+            failure = "file not opened";
+        } else {
+            fileSize = ftell(file);
             rewind(file);
-            if (fileSize > 0 && fileSize <= 8 * 1024 * 1024) {
+            if (fileSize <= 0 || fileSize > 8 * 1024 * 1024) {
+                failure = "bad size";
+            } else {
                 resource = malloc((size_t)fileSize);
-                if (resource != NULL && fread(resource, 1, (size_t)fileSize, file) == (size_t)fileSize) {
-                    resourceSize = (unsigned long)fileSize;
-                    hostLog("mii: loaded system CFL resource (%lu bytes)\n", resourceSize);
-                } else {
+                if (resource == NULL) {
+                    failure = "no memory";
+                } else if (fread(resource, 1, (size_t)fileSize, file) != (size_t)fileSize) {
+                    failure = "read failed";
                     free(resource);
                     resource = NULL;
+                } else {
+                    resourceSize = (unsigned long)fileSize;
+                    hostLog("mii: loaded system CFL resource (%lu bytes)\n", resourceSize);
                 }
             }
         }
@@ -292,9 +310,12 @@ int hostCflResource(const void** data, unsigned long* size) {
             fclose(file);
         }
         romfsUnmount(archiveName);
+    } else {
+        failure = "system archive not mounted";
     }
     if (resource == NULL) {
-        hostLog("mii: system CFL_Res.dat unavailable\n");
+        hostLog("mii: system CFL_Res.dat unavailable: %s (mount 0x%08lX, size %ld, %lu KB free)\n", failure != NULL ? failure : "?",
+                (unsigned long)rc, fileSize, (unsigned long)(hostGetFreeMemory() / 1024));
     }
     *data = resource;
     *size = resourceSize;
@@ -326,6 +347,8 @@ void hostFatal(const char* fmt, ...) {
         if (hidKeysDown() & KEY_START) {
             break;
         }
+        // The message out of the CPU cache, as in refuseOriginal3DS.
+        gfxFlushBuffers();
         gspWaitForVBlank();
     }
 
@@ -362,6 +385,9 @@ void hostQuit(void) {
     rvlShutdown();
     hostLog("Quitting.\n");
     stopHostThreads();
+    if (sAccel) {
+        HIDUSER_DisableAccelerometer();
+    }
     hostLogFlush();
     if (sLogFile != NULL) {
         fclose(sLogFile);
@@ -440,6 +466,10 @@ static void refuseOriginal3DS(void) {
     printf("\x1b[14;1Hnot have enough memory to run it.");
     printf("\x1b[17;1HPress START to exit.");
     while (aptMainLoop()) {
+        // The text is written through the CPU cache: without the flush the screen showed it with
+        // pixels missing, garbled (an Old 3DS owner's photo, Discord, 7 Nov 2026).
+        gfxFlushBuffers();
+        gfxSwapBuffers();
         gspWaitForVBlank();
         hidScanInput();
         if (hidKeysDown() & KEY_START) {
@@ -494,6 +524,9 @@ int main(void) {
     connectToPc();
     hostGfxInit();
     sCstick = R_SUCCEEDED(irrstInit());
+    sAccel = R_SUCCEEDED(HIDUSER_EnableAccelerometer());
+    // The game's saving window while the port loads, until the first scene (loading.c).
+    hostLoadingStart();
 
     hostLog("Super Mario Galaxy - 3DS port\n");
     hostLog("CIA version: %s\n", SMG_CIA_VERSION);
@@ -511,6 +544,13 @@ int main(void) {
 
     rvlInit();
     rvlLoadPortData();  // game data from main.dol, converted on the PC (platform/3ds/rvl/port_data.cpp)
+    // The Mii face parts (hostCflResource), read now: 1 MB in one block, which after hours of
+    // play the heap may no longer have (see hostCflResource).
+    {
+        const void* cfl;
+        unsigned long cflSize;
+        hostCflResource(&cfl, &cflSize);
+    }
     smgMain();
 
     hostFatal("smgMain returned");
@@ -541,6 +581,15 @@ void hostInputGet(HostInput* pInput) {
     pInput->touching = (pInput->held & KEY_TOUCH) != 0;
     pInput->touchX = touch.px;
     pInput->touchY = touch.py;
+    pInput->hasAccel = sAccel;
+    pInput->accelX = pInput->accelY = pInput->accelZ = 0;
+    if (sAccel) {
+        accelVector accel;
+        hidAccelRead(&accel);
+        pInput->accelX = accel.x;
+        pInput->accelY = accel.y;
+        pInput->accelZ = accel.z;
+    }
 }
 
 // ##############################################################################################

@@ -190,7 +190,12 @@ void LayoutManager::movement() {
 void LayoutManager::calcAnim() {
     if (MR::isScreen16Per9()) {
         nw4r::math::VEC2 scale;
+#ifdef __3DS__
+        // 3DS: (4:3) / (5:3) = 608 / 760; the Wii's 0.75 is (4:3) / (16:9).
+        scale.x = 0.8f;
+#else
         scale.x = 0.75f;
+#endif
         scale.y = 1.0f;
         mDrawInfo.SetLocationAdjustScale(scale);
     } else {

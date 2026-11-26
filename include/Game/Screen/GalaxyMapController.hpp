@@ -95,3 +95,9 @@ namespace MR {
     bool isActiveGalaxyMapLayout();
     const ResTIMG* getGalaxyMapResTIMG();
 };  // namespace MR
+
+// 3DS: the map board's copy of the map, made at the start of a frame (GameScene::draw3D) when
+// GalaxyMapController::draw asked for it (GalaxyMapController.cpp).
+#ifdef __3DS__
+void rvl3DSDrawGalaxyMapCapture();
+#endif

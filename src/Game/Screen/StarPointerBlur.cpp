@@ -26,6 +26,35 @@ namespace {
     static const f32 sEndThick = 0.0f;
 };  // namespace
 
+#ifdef __3DS__
+// 3DS: the trail as dense and as long as the Wii's. The Wii Remote reports its pointer 200 times
+// a second, so at 60 frames the game gets 10 past positions every 3 frames (3, 3, 4) and the 20
+// points of the trail span about 6 frames. The 3DS remote (rvl/kpad.cpp) gives one position a
+// frame, from the touch screen or the C-Stick: the trail spanned 20 frames of straight pieces,
+// angular when the cursor moved fast (owner, Nov 25 2026). Each new position now comes with the
+// Wii's missing ones, on a Catmull-Rom curve through the last positions (the real ones in
+// between are not known). Per pad channel: the second player's cursor has its own trail.
+namespace {
+    const s32 cBlurChannels = 4;
+    const s32 cWiiPositionsPer3Frames = 10;
+    s32 sWiiPositionCredit[cBlurChannels];
+    bool sHasLastPositions[cBlurChannels];
+    TVec2f sBeforeLastPosition[cBlurChannels];
+    TVec2f sLastPosition[cBlurChannels];
+
+    TVec2f catmullRom(const TVec2f& p0, const TVec2f& p1, const TVec2f& p2, const TVec2f& p3, f32 t) {
+        const f32 t2 = t * t;
+        const f32 t3 = t2 * t;
+        TVec2f result;
+        result.x = 0.5f * (2.0f * p1.x + (p2.x - p0.x) * t + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2 +
+                           (3.0f * p1.x - p0.x - 3.0f * p2.x + p3.x) * t3);
+        result.y = 0.5f * (2.0f * p1.y + (p2.y - p0.y) * t + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2 +
+                           (3.0f * p1.y - p0.y - 3.0f * p2.y + p3.y) * t3);
+        return result;
+    }
+};  // namespace
+
+#endif
 StarPointerBlur::~StarPointerBlur() {
 }
 
@@ -76,10 +105,45 @@ void StarPointerBlur::movement() {
     s32 nextPastPointNum = StarPointerFunction::getNextPastPointNum(mPadChannel);
 
     if (pastPointNum <= 0) {
+#ifdef __3DS__
+        // 3DS: the trail starts again from the next position (the Wii's density, above).
+        if (mPadChannel >= 0 && mPadChannel < cBlurChannels) {
+            sHasLastPositions[mPadChannel] = false;
+        }
+#endif
         hide();
         return;
     }
 
+#ifdef __3DS__
+    // 3DS: one position a frame: the Wii's missing ones go in before it, on the curve (above).
+    if (pastPointNum == 1 && mPadChannel >= 0 && mPadChannel < cBlurChannels) {
+        const s32 ch = mPadChannel;
+        TVec2f pos = StarPointerFunction::getPastPosition(ch, 0);
+        StarPointerFunction::forceInsideScreenEdge(&pos);
+        sWiiPositionCredit[ch] += cWiiPositionsPer3Frames;
+        const s32 wiiPositions = sWiiPositionCredit[ch] / 3;
+        sWiiPositionCredit[ch] -= wiiPositions * 3;
+        if (sHasLastPositions[ch] && !mBlurPoints[0].mIsHidden) {
+            const TVec2f& p0 = sBeforeLastPosition[ch];
+            const TVec2f& p1 = sLastPosition[ch];
+            // The next position is not known yet: the curve goes on as the last step did.
+            TVec2f p3(pos.x + (pos.x - p1.x), pos.y + (pos.y - p1.y));
+            for (s32 k = 1; k < wiiPositions; k++) {
+                TVec2f between = catmullRom(p0, p1, pos, p3, static_cast< f32 >(k) / wiiPositions);
+                StarPointerFunction::forceInsideScreenEdge(&between);
+                updatePoint(between, false, nullptr);
+            }
+            sBeforeLastPosition[ch] = p1;
+        } else {
+            sBeforeLastPosition[ch] = pos;
+        }
+        sLastPosition[ch] = pos;
+        sHasLastPositions[ch] = true;
+        updatePoint(pos, false, nullptr);
+        return;
+    }
+#endif
     for (s32 idx = pastPointNum - 1; idx >= 0; idx--) {
         TVec2f pastPos = StarPointerFunction::getPastPosition(mPadChannel, idx);
         StarPointerFunction::forceInsideScreenEdge(&pastPos);

@@ -4,12 +4,15 @@ A relocated word holds a segment-relative address whose top 4 bits select the se
 (0 = code, 1 = rodata, 2 = data). Loaders refuse anything else, which happens when the
 program stores a pointer that falls outside every segment (for example &array[-1]).
 
-Usage: python tools/3ds/check_3dsx.py build/3ds/smg.3dsx [build/3ds/smg.elf] [--stamp file]
+Usage: python tools/3ds/check_3dsx.py build/3ds/smg.3dsx [build/3ds/smg.elf] [--nm path] [--stamp file]
 With the ELF, each bad relocation is reported with the symbol that contains it.
 Exits with an error if any are found; --stamp writes a file on success (for ninja).
+--nm names devkitARM's arm-none-eabi-nm (configure.py passes it); without it, $DEVKITARM, then PATH.
 """
 
 import bisect
+import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -23,8 +26,21 @@ import sys
 BASE = 0x00100000
 
 
-def load_symbols(elf):
-    nm = r"C:\devkitPro\devkitARM\bin\arm-none-eabi-nm.exe"
+# devkitARM's nm on any system: the path given, then $DEVKITARM/bin, then PATH, then the Windows
+# install folder (before, the only path: Linux builds stopped here). From frilxy's GitHub PR 5.
+def find_nm(given):
+    if given:
+        return given
+    exe = ".exe" if os.name == "nt" else ""
+    devkitarm = os.environ.get("DEVKITARM")
+    if devkitarm:
+        candidate = os.path.join(devkitarm, "bin", "arm-none-eabi-nm" + exe)
+        if os.path.isfile(candidate):
+            return candidate
+    return shutil.which("arm-none-eabi-nm") or r"C:\devkitPro\devkitARM\bin\arm-none-eabi-nm.exe"
+
+
+def load_symbols(elf, nm):
     out = subprocess.run([nm, "-C", "-n", "-S", elf], capture_output=True, text=True).stdout
     addrs, names = [], []
     for line in out.splitlines():
@@ -38,6 +54,11 @@ def load_symbols(elf):
 def main():
     args = sys.argv[1:]
     stamp = None
+    nm = None
+    if "--nm" in args:
+        i = args.index("--nm")
+        nm = args[i + 1]
+        del args[i : i + 2]
     if "--stamp" in args:
         i = args.index("--stamp")
         stamp = args[i + 1]
@@ -62,7 +83,7 @@ def main():
         seg_offsets.append(pos)
         pos += size
 
-    symbols = load_symbols(args[1]) if len(args) > 1 else None
+    symbols = load_symbols(args[1], find_nm(nm)) if len(args) > 1 else None
     bad = 0
     for seg in range(3):
         for kind, count in zip(("absolute", "relative"), reloc_counts[seg]):

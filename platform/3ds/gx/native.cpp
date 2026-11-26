@@ -33,6 +33,7 @@
 #include <JSystem/J3DGraphBase/J3DTexture.hpp>
 #include <JSystem/J3DGraphBase/J3DVertex.hpp>
 #include <JSystem/JKernel/JKRHeap.hpp>
+#include <JSystem/JUtility/JUTNameTab.hpp>
 #include <revolution/mtx.h>
 #include "NativeFur3DS.hpp"
 #include "NativeMaterial3DS.hpp"
@@ -71,7 +72,7 @@ namespace {
         u32 pad2;  // groups are 0x2C bytes apart in the file
     };
 
-    const u32 kVersion = 16;  // n3d.py VERSION
+    const u32 kVersion = 17;  // n3d.py VERSION
     const u32 kMaterialSize = 0x14C;
     const u32 kMaxPasses = 6;  // passes of a material after the first (mat.py MAX_PASSES)
     const u32 kStageSize = 28;
@@ -205,13 +206,20 @@ namespace {
     // Runs of triangles of large persistent groups with their own spheres (RvlNativeChunk): the
     // ground of a scene is one group that crosses the near plane or the guard band in every frame,
     // and testing its runs instead of all its vertices keeps the CPU clipper to the few triangles
-    // near the edges. Emptied with the persistent arena, as the bounds.
-    const u32 kChunkMinTriangles = 256;
+    // near the edges. The runs wholly off screen are also left out of a group's GPU draw
+    // (native_clip.cpp rvlNativeRunCullSubmit): the cells of a large model, as the file keeps its
+    // triangles in places close together. Emptied with the persistent arena, as the bounds.
+    const u32 kChunkMinTriangles = 512;
     const u32 kMaxChunks = 16384;
     RvlNativeChunk* sChunks;
     u32 sChunkCount, sChunkCapacity, sChunkEpoch;
 
-    void computeChunks(const HostGfxModelVertex* vertices, u32 base, const u16* indices, u32 indexCount, u32 epoch, GroupBounds& b) {
+    // The fields before tex[1] of vertex i of an upload, whole or compact (gfx.c).
+    inline const HostGfxModelVertex& frontOf(const u8* vertices, u32 stride, u32 i) {
+        return *reinterpret_cast< const HostGfxModelVertex* >(vertices + i * stride);
+    }
+
+    void computeChunks(const u8* vertices, u32 stride, u32 base, const u16* indices, u32 indexCount, u32 epoch, GroupBounds& b) {
         const u32 triangles = indexCount / 3;
         if (triangles < kChunkMinTriangles) {
             return;
@@ -241,10 +249,10 @@ namespace {
             const u32 k0 = c * RVL_NATIVE_CHUNK_TRIANGLES * 3;
             const u32 k1 = k0 + RVL_NATIVE_CHUNK_TRIANGLES * 3 < triangles * 3 ? k0 + RVL_NATIVE_CHUNK_TRIANGLES * 3 : triangles * 3;
             f32 lo[3], hi[3];
-            u32 row = vertices[indices[k0] - base].matrix;
+            u32 row = frontOf(vertices, stride, indices[k0] - base).matrix;
             bool known = row < 28;
             for (u32 k = k0; k < k1 && known; k++) {
-                const HostGfxModelVertex& v = vertices[indices[k] - base];
+                const HostGfxModelVertex& v = frontOf(vertices, stride, indices[k] - base);
                 const f32 p[3] = {v.x, v.y, v.z};
                 known = v.matrix == row && std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]);
                 for (u32 i = 0; i < 3 && known; i++) {
@@ -266,12 +274,12 @@ namespace {
         sChunkCount += count;
     }
 
-    void computeBounds(const HostGfxModelVertex* vertices, u32 count, GroupBounds& b) {
+    void computeBounds(const u8* vertices, u32 stride, u32 count, GroupBounds& b) {
         f32 lo[10][3], hi[10][3];
         b.slotMask = 0;
         b.chunkFirst = b.chunkCount = 0;
         for (u32 i = 0; i < count; i++) {
-            const HostGfxModelVertex& v = vertices[i];
+            const HostGfxModelVertex& v = frontOf(vertices, stride, i);
             u32 slot = v.matrix / 3 < 10 ? v.matrix / 3 : 0;
             const f32 p[3] = {v.x, v.y, v.z};
             if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) {
@@ -349,6 +357,18 @@ namespace {
         u32 farColorCtrl, farAmbColor;
         Upload farUpload;
         HostGfxState farState;
+        // A decoration of the Comet Observatory (isObservatoryDecor): not drawn while small on
+        // screen (rvlNativeDecorHidden). Its sphere holds every shape, in the space of decorDrw.
+        bool decor;
+        u16 decorDrw;
+        f32 decorSphere[4];
+        // A planetarium's miniature galaxy (Mini<name>Galaxy): its first upload may wait for a later
+        // frame (uploadGroup); every other model's never does.
+        bool miniatureGalaxy;
+        // Profile (profile=1): the native work of this model's materials and packets since the
+        // last log (rvlNativeBegin, rvlNativePacket; ModelDrawTimer below).
+        u64 drawTicks;
+        u32 drawPackets;
     };
 
     // ##############################################################################################
@@ -487,6 +507,71 @@ namespace {
         return data;
     }
 
+    // ##############################################################################################
+    // # First uploads spread over frames                                                           #
+    // #                                                                                            #
+    // # A model's first draw reads its .n3d from the card (uploadFile, rawFile: about 20 ms a      #
+    // # file). In a planetarium, the camera's pull-back over the galaxy models drew 25 new models  #
+    // # in one frame: 533 ms of reads and a frame of 1.2 s, the camera stopped and then went on    #
+    // # all at once (owner, CIA 0.23.3 log). Once a scene has run kUploadSettleFrames frames, a    #
+    // # frame reads from the card until kUploadReadBudgetMs have gone: the other new models are    #
+    // # not drawn in that frame and come in the next ones, one or two a frame. A scene's first     #
+    // # frames, under its fade-in, read everything at once as before.                              #
+    // #                                                                                            #
+    // # Those frames count only when models are drawn: while a scene loads, the game ends frames   #
+    // # with nothing drawn, and in the Comet Observatory they used up the 60 frames before its     #
+    // # first, so its models came one a frame (CIA 0.23.9: 5204 put off). A group uploaded before  #
+    // # the arena was emptied is never put off (the scene's models come back together).           #
+    // #                                                                                            #
+    // # Only the miniature galaxies wait: Honey Hive's opening flight, longer than the 60 frames,  #
+    // # met its models one a frame too (CIA 0.23.10: 10540 put off), so everything else uploads   #
+    // # when first drawn, as before CIA 0.23.8.                                                    #
+    // ##############################################################################################
+    const u32 kUploadSettleFrames = 60;
+    const u32 kUploadReadBudgetMs = 8;
+    u32 sFramesSinceScene;
+    bool sFrameDrewModels;  // a native draw began this frame (rvlNativeBegin)
+    u64 sFrameReadTicks;    // card reads of this frame's uploads
+    u32 sDeferredUploads;   // since the last log
+
+    bool uploadFileCached(const NativeModel& m) {
+        for (const UploadFile& f : sUploadFiles) {
+            if (f.data != nullptr && strcmp(f.path, m.path) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // A file name mini...galaxy (the converter writes them in lower case): the planetariums'
+    // miniature galaxies (ObjectData/Mini<name>Galaxy.arc).
+    bool isMiniatureGalaxyPath(const char* path) {
+        const char* name = path != nullptr ? strrchr(path, '/') : nullptr;
+        name = name != nullptr ? name + 1 : path;
+        const char* dot = name != nullptr ? strrchr(name, '.') : nullptr;
+        if (dot == nullptr) {
+            return false;
+        }
+        const u32 length = static_cast< u32 >(dot - name);
+        return length > 10 && strncmp(name, "mini", 4) == 0 && strncmp(dot - 6, "galaxy", 6) == 0;
+    }
+
+    bool uploadReadBudgetSpent() {
+        return sFramesSinceScene >= kUploadSettleFrames && sFrameReadTicks >= hostGetTickFrequency() * kUploadReadBudgetMs / 1000;
+    }
+
+    // Adds the time of an upload that read from the card to the frame's reads.
+    struct UploadReadTimer {
+        explicit UploadReadTimer(bool on) : mOn(on), mStart(on ? hostGetTick() : 0) {}
+        ~UploadReadTimer() {
+            if (mOn) {
+                sFrameReadTicks += hostGetTick() - mStart;
+            }
+        }
+        bool mOn;
+        u64 mStart;
+    };
+
     NativeModel* sModels;
     u32 sModelCount, sModelCapacity;
     u32 sLoaded, sMissing;
@@ -555,8 +640,8 @@ namespace {
     }
 
     u16 nativeStride(u32 mask) {
-        u32 size = (mask & ATTR_POS_F32) ? 16 : 8;
-        size += 4;
+        u32 size = (mask & ATTR_POS_F32) ? 16 : 8;  // position and matrix slot
+        if (mask & ATTR_SOURCE_POS) size += 4;      // source VTX1 index (models with animations)
         if (mask & ATTR_NRM) size += 4;
         if (mask & ATTR_CLR0) size += 4;
         if (mask & ATTR_CLR1) size += 4;
@@ -595,7 +680,10 @@ namespace {
         u8 rgba[4];
         u8 pad2[2];
     };
-    const u32 kFarVersion = 1;
+    // far.py VERSION. 2: no far model where a triangle covers a texture pattern (Loopdeeloop's race
+    // signs lost their checks and arrows far away). Files of version 1 are not used: those models
+    // draw whole until the converter writes them again.
+    const u32 kFarVersion = 2;
     static_assert(sizeof(FarHeader) == 0x30 && sizeof(FarVertex) == 16, "far.py HEADER and VERTEX");
 
     // The model's .far path: its .n3d's with the other extension.
@@ -639,6 +727,56 @@ namespace {
         n.farPosScale = h.posScale;
         memcpy(n.farSphere[0], h.sphere, sizeof(h.sphere));
         n.farCullNone = h.cullNone != 0;
+    }
+
+    // ##########################################################################################
+    // # Decorations of the Comet Observatory                                                   #
+    // #                                                                                        #
+    // # The Observatory has most of its pieces on screen at once (about 330 draws and 140,000  #
+    // # triangles a drawn frame, CIA 0.22.1, after the first Grand Star). Its small            #
+    // # decorations are not drawn while they are small on screen (rvlNativeDecorHidden): the  #
+    // # domes' star plates and entrances, the gears and ornaments, the countdown plate. They  #
+    // # appear as the player comes near (the owner's choice, 23 Nov 2026).                     #
+    // ##########################################################################################
+    const char* const kObservatoryDecor[] = {"/AstroStarPlate", "/AstroDomeEntrance", "/AstroDecorateParts",
+                                             "/AstroCountDownPlate"};
+
+    bool isObservatoryDecor(const char* pPath) {
+        if (pPath == nullptr) {
+            return false;
+        }
+        for (const char* name : kObservatoryDecor) {
+            if (strstr(pPath, name) != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // The sphere around every shape's box (model space, the shapes' own joint: these models have
+    // one), and the draw matrix of the first shape's first group, which places it.
+    void setDecor(NativeModel& n) {
+        n.decor = false;
+        if (!isObservatoryDecor(n.path) || n.shapeCount == 0) {
+            return;
+        }
+        f32 low[3] = {1.0e30f, 1.0e30f, 1.0e30f}, high[3] = {-1.0e30f, -1.0e30f, -1.0e30f};
+        for (u32 i = 0; i < n.shapeCount; i++) {
+            const f32* box = n.shapes[i].box;
+            for (u32 k = 0; k < 3; k++) {
+                low[k] = box[k] < low[k] ? box[k] : low[k];
+                high[k] = box[3 + k] > high[k] ? box[3 + k] : high[k];
+            }
+        }
+        f32 radius = 0.0f;
+        for (u32 k = 0; k < 3; k++) {
+            n.decorSphere[k] = (low[k] + high[k]) * 0.5f;
+            radius += (high[k] - low[k]) * (high[k] - low[k]) * 0.25f;
+        }
+        n.decorSphere[3] = std::sqrt(radius);
+        const N3DGroup& first = n.groups[n.firstGroup[0]];
+        n.decorDrw = first.matrixCount != 0 && first.matrices[0] != 0xFFFF ? first.matrices[0] : 0;
+        n.decor = std::isfinite(n.decorSphere[3]) && n.decorSphere[3] > 0.0f;
     }
 
 }  // namespace
@@ -858,6 +996,8 @@ void rvlNativeRegister(J3DModelData* pModel, s32 entry, const char* pName) {
         n->rawSize = 0;
     }
     n->model = pModel;
+    n->drawTicks = 0;
+    n->drawPackets = 0;
     for (FurUpload& entry : sFurUploads) {
         if (entry.model == n) {
             entry.model = nullptr;  // of the model that had this memory
@@ -872,7 +1012,9 @@ void rvlNativeRegister(J3DModelData* pModel, s32 entry, const char* pName) {
     n->materials = materials;
     n->materialCount = materialCount;
     n->path = storedPath;
+    n->miniatureGalaxy = isMiniatureGalaxyPath(storedPath);
     loadFarHeader(*n, pModel);
+    setDecor(*n);
     sLoaded++;
 }
 
@@ -957,8 +1099,8 @@ namespace {
         }
     }
 
-    // Snapshots by (model instance, material), open addressing; used for two frames after
-    // they were taken (an instance not animated any more falls back to the shared values).
+    // Snapshots by (model instance, material), open addressing; an instance draws with its last
+    // one until the scene ends (findSnapshot).
     struct Snapshot {
         const J3DModel* model;
         u16 material;
@@ -987,7 +1129,12 @@ namespace {
         for (u32 k = 0; k < kSnapshotProbes; k++) {
             const Snapshot& e = sSnapshots[(slot + k) & (kSnapshots - 1)];
             if (e.model == model && e.material == material) {
-                return sFrame - e.frame <= 1 ? &e.values : nullptr;
+                // Kept however old: an instance not calculated in a frame (the game paused, a loop
+                // skipped while behind) keeps its last colours, as its display list does on the Wii.
+                // With an age limit it took the shared material's values, the last instance's
+                // (Toad's starship changing colour in the pause menu, Mario and a penguin turning
+                // pale, AppleBerries 10-12 Nov).
+                return &e.values;
             }
             if (e.model == nullptr) {
                 return nullptr;
@@ -1127,6 +1274,35 @@ void rvlNativeSyncMaterials(const J3DModel* pModel, const J3DModel* pSource) {
     }
 }
 
+// ##############################################################################################
+// # A new scene (Scene::Scene)                                                                 #
+// #                                                                                            #
+// # The tables above know models by their address, and a scene's models are never drawn after  #
+// # it ends: the next scene's take their memory. A model of the next scene at the address of   #
+// # an old lower detail model found that model's entry and read the model it followed, gone:   #
+// # in Battlerock with the Daredevil comet its model data was a float, 608.0, and the console   #
+// # stopped (public issue #2, Luma dump: data abort in rvlNativePacket, CIA 0.21.4).            #
+// ##############################################################################################
+void rvlNativeSceneStart() {
+    sFramesSinceScene = 0;
+    // The last scene's models are gone: their vertices leave the arena before this scene's come.
+    // HeapMemoryWatcher::destroySceneHeap empties it too, but destroyGameHeap (a scene change that
+    // also frees the file cache, as from the Comet Observatory into a planetarium) did not: the
+    // planetarium began with about 140000 of the Observatory's vertices, filled the arena and
+    // emptied it in its zoom, a frame of 981 ms (CIA 0.23.10).
+    hostGfxArenaReset();
+    memset(sSnapshotSources, 0, sizeof(sSnapshotSources));
+    memset(sOwnerModels, 0, sizeof(sOwnerModels));
+    if (sOwnerColors != nullptr) {
+        memset(sOwnerColors, 0, kOwnerColors * sizeof(OwnerColors));
+    }
+    // Snapshots never expire (findSnapshot): a model of the next scene at an old address would
+    // take the old model's colours until its own first snapshot.
+    if (sSnapshots != nullptr) {
+        memset(sSnapshots, 0, kSnapshots * sizeof(Snapshot));
+    }
+}
+
 void rvlNativeSnapshot(J3DModel* pModel, u16 material) {
     if (pModel == nullptr || pModel->getModelData() == nullptr) {
         return;
@@ -1143,11 +1319,19 @@ void rvlNativeSnapshot(J3DModel* pModel, u16 material) {
     }
     u32 slot = snapshotSlot(pModel, material);
     Snapshot* target = nullptr;
+    // This instance's place or a free one; otherwise the oldest place not used in the last two
+    // frames (snapshots never expire, rvlNativeSceneStart frees them all).
+    Snapshot* oldest = nullptr;
     for (u32 k = 0; k < kSnapshotProbes && target == nullptr; k++) {
         Snapshot& e = sSnapshots[(slot + k) & (kSnapshots - 1)];
-        if ((e.model == pModel && e.material == material) || e.model == nullptr || sFrame - e.frame > 1) {
+        if ((e.model == pModel && e.material == material) || e.model == nullptr) {
             target = &e;
+        } else if (sFrame - e.frame > 1 && (oldest == nullptr || e.frame < oldest->frame)) {
+            oldest = &e;
         }
+    }
+    if (target == nullptr) {
+        target = oldest;
     }
     if (target == nullptr) {
         sSnapshotMisses++;
@@ -1223,6 +1407,11 @@ void rvlNativeEndFrame() {
     rvlNativeSetViewport(nullptr, nullptr, nullptr);  // MR::drawInitFor2DModel's lasts for the frame
     sFrame++;
     sTransientBoundCount = 0;
+    sFrameReadTicks = 0;
+    if (sFrameDrewModels && sFramesSinceScene < kUploadSettleFrames) {
+        sFramesSinceScene++;
+    }
+    sFrameDrewModels = false;
     if (sUploadCacheBytes != 0 && ++sUploadIdle >= kUploadIdleFrames) {
         releaseUploadFiles();
     }
@@ -1752,6 +1941,8 @@ namespace {
             }
         }
         Upload& up = fur != nullptr ? fur->up : ways[way];
+        // Uploaded before the arena was emptied (stale epoch): read below whatever the budget.
+        const bool uploadedBefore = persistent && up.indices != nullptr;
         pOut = &up;
         up.epoch = 0;
         up.key = 0;
@@ -1767,6 +1958,13 @@ namespace {
         // Transient uploads come back every frame: they read the .n3d from memory (rawFile), not
         // the card (an open and reads per draw and frame before CIA 0.11.5).
         // A model's groups upload one after the other: its file stays open between them.
+        // Past this frame's card reads, a model not in memory waits for a later frame (above).
+        const bool inMemory = sDeferredTexMtx || cpuVertices ? n.raw != nullptr : uploadFileCached(n);
+        if (!inMemory && !uploadedBefore && n.miniatureGalaxy && uploadReadBudgetSpent()) {
+            sDeferredUploads++;
+            return false;
+        }
+        UploadReadTimer readTimer(!inMemory);
         const u8* raw = sDeferredTexMtx || cpuVertices ? rawFile(n) : nullptr;
         u32 rawSize = raw != nullptr ? n.rawSize : 0;
         if (raw == nullptr) {
@@ -1797,11 +1995,22 @@ namespace {
             memcpy(dst, raw + offset, size);
             return true;
         };
-        HostGfxModelVertex* out;
-        u32 first = hostGfxArenaAlloc(grp.vertexCount, sDeferredTexMtx || cpuVertices ? 0 : 1, &out);
+        // Persistent vertices whose units 1 and 2 take no input (decodeVertex writes 0, 0, 1 there)
+        // go compact (gfx.c): 44 bytes instead of 68, most of the game's.
+        const bool compact = persistent && sUnitRow[1] == 0xFF && sUnitRow[2] == 0xFF;
+        HostGfxModelVertex* out = nullptr;
+        u8* outBytes = nullptr;
+        u32 first;
+        if (compact) {
+            first = hostGfxArenaAllocCompact(grp.vertexCount, &outBytes);
+        } else {
+            first = hostGfxArenaAlloc(grp.vertexCount, sDeferredTexMtx || cpuVertices ? HOST_GFX_ARENA_MODEL_FRAME : HOST_GFX_ARENA_KEEP, &out);
+            outBytes = reinterpret_cast< u8* >(out);
+        }
         if (first == HOST_GFX_NO_ARENA) {
             return false;
         }
+        const u32 outStride = compact ? HOST_GFX_COMPACT_VERTEX : sizeof(HostGfxModelVertex);
         u16* indices = sDeferredTexMtx || cpuVertices ? hostGfxIndexAllocTransient(grp.indexCount) : hostGfxIndexAlloc(grp.indexCount);
         if (indices == nullptr) {
             return false;
@@ -1812,7 +2021,13 @@ namespace {
             u32 count = grp.vertexCount - i < perChunk ? grp.vertexCount - i : perChunk;
             ok = read(sChunk, count * s.stride, grp.vertexOffset + i * s.stride);
             for (u32 k = 0; k < count && ok; k++) {
-                decodeVertex(s, sChunk + k * s.stride, sDraw.rasChannel, out[i + k]);
+                if (compact) {
+                    HostGfxModelVertex whole;
+                    decodeVertex(s, sChunk + k * s.stride, sDraw.rasChannel, whole);
+                    memcpy(outBytes + (i + k) * HOST_GFX_COMPACT_VERTEX, &whole, HOST_GFX_COMPACT_VERTEX);
+                } else {
+                    decodeVertex(s, sChunk + k * s.stride, sDraw.rasChannel, out[i + k]);
+                }
             }
         }
         // Indices are relative to the start of the arena window the vertices are in (the draw binds
@@ -1840,9 +2055,9 @@ namespace {
         GroupBounds* bounds = nullptr;
         up.bounds = newBounds(!(sDeferredTexMtx || cpuVertices), epoch, bounds);
         if (bounds != nullptr) {
-            computeBounds(out, grp.vertexCount, *bounds);
+            computeBounds(outBytes, outStride, grp.vertexCount, *bounds);
             if (!(sDeferredTexMtx || cpuVertices)) {
-                computeChunks(out, base, indices, grp.indexCount, epoch, *bounds);
+                computeChunks(outBytes, outStride, base, indices, grp.indexCount, epoch, *bounds);
             }
         }
         up.epoch = epoch;
@@ -2568,7 +2783,56 @@ void rvlDistortionPlan(const ResTIMG* indirect, f32 rowS, f32 rowT, u32 width, u
 // # material's record (from the model that owns the material when it is lent), and builds the  #
 // # draw's state and units. False when the material cannot be drawn: the reason is counted.    #
 // ##############################################################################################
+// ##############################################################################################
+// # Draw time by model                                                                         #
+// #                                                                                            #
+// # With profile=1 the native work of each material and packet goes to its model (the one     #
+// # current when the call ends), and the log names the costliest models: the category lines   #
+// # say only that the Comet Observatory's map objects took 6% of the time, not which ones      #
+// # (owner, 25 Nov 2026).                                                                      #
+// ##############################################################################################
+namespace {
+    struct ModelDrawTimer {
+        explicit ModelDrawTimer(bool packet) : mPacket(packet), mStart(gGXProfileOn ? hostGetTick() : 0) {}
+        ~ModelDrawTimer() {
+            if (mStart != 0 && sModel != nullptr) {
+                sModel->drawTicks += hostGetTick() - mStart;
+                sModel->drawPackets += mPacket ? 1 : 0;
+            }
+        }
+        bool mPacket;
+        u64 mStart;
+    };
+
+    void logModelDrawTimes(u64 ms) {
+        hostLog("native models ms:");
+        for (int k = 0; k < 20; k++) {
+            NativeModel* best = nullptr;
+            for (u32 i = 0; i < sModelCount; i++) {
+                if (sModels[i].drawTicks != 0 && (best == nullptr || sModels[i].drawTicks > best->drawTicks)) {
+                    best = &sModels[i];
+                }
+            }
+            if (best == nullptr) {
+                break;
+            }
+            const char* name = best->path != nullptr ? strrchr(best->path, '/') : nullptr;
+            name = name != nullptr ? name + 1 : (best->path != nullptr ? best->path : "?");
+            hostLog(" %.*s=%lu/%lu", static_cast< int >(strcspn(name, ".")), name, static_cast< u32 >(best->drawTicks / ms),
+                    best->drawPackets);
+            best->drawTicks = 0;
+        }
+        hostLog("%s", " (ms/packets)\n");
+        for (u32 i = 0; i < sModelCount; i++) {
+            sModels[i].drawTicks = 0;
+            sModels[i].drawPackets = 0;
+        }
+    }
+}  // namespace
+
 bool rvlNativeBegin(J3DMaterial* pMat, J3DShapePacket* pFirst, bool userData) {
+    ModelDrawTimer drawTimer(false);
+    sFrameDrewModels = true;
     if (pMat == nullptr || pFirst == nullptr || pFirst->mpModel == nullptr) {
         return fallback(FB_USER_DATA);
     }
@@ -2856,6 +3120,51 @@ const RvlNativePointLight* rvlNativePointLight() {
 }
 
 namespace {
+    // ##############################################################################################
+    // # Mirrored position matrices                                                                 #
+    // #                                                                                            #
+    // # A position matrix with a negative determinant turns its triangles over on screen, so the   #
+    // # GPU culls the other side of them. The Mandibugs' (KoteBug) wing shells have an orange      #
+    // # inner layer above the purple one, hidden only by culling: on the console a whole wing      #
+    // # turned orange at times (owner's video, CIA 0.21.10), as if its matrix were mirrored. The   #
+    // # game's data and the joint maths read the same as the Wii's, so the log counts the draws   #
+    // # with such a matrix and names the first ones (material, shape, determinant).                #
+    // ##############################################################################################
+    // Each model's shape is named once (the Mandibug's right antenna is mirrored in the file
+    // itself, scale z -1, and would fill the reports alone).
+    u32 sMirroredDraws, sMirroredReports;
+    const J3DModelData* sMirroredData[32];
+    u32 sMirroredShape[32];
+
+    void countMirroredMatrices(const RvlNativeDraw& d, J3DModelData* pData, J3DMaterial* pMaterial, u32 shapeIndex) {
+        for (u32 k = 0; k < d.matrixCount && k < 10; k++) {
+            const f32(*m)[4] = d.matrices[k];
+            if (m == nullptr) {
+                continue;
+            }
+            const f32 det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                            m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+            if (!(det < 0.0f)) {
+                continue;
+            }
+            sMirroredDraws++;
+            bool reported = false;
+            for (u32 r = 0; r < sMirroredReports && !reported; r++) {
+                reported = sMirroredData[r] == pData && sMirroredShape[r] == shapeIndex;
+            }
+            if (!reported && sMirroredReports < 32) {
+                sMirroredData[sMirroredReports] = pData;
+                sMirroredShape[sMirroredReports] = shapeIndex;
+                sMirroredReports++;
+                const JUTNameTab* names = pData != nullptr ? pData->getMaterialName() : nullptr;
+                const char* name = names != nullptr && pMaterial != nullptr ? names->getName(pMaterial->getIndex()) : nullptr;
+                hostLog("native: mirrored matrix: material %s, shape %lu, slot %lu, determinant %d/1000\n", name != nullptr ? name : "?",
+                        static_cast< unsigned long >(shapeIndex), static_cast< unsigned long >(k), static_cast< int >(det * 1000.0f));
+            }
+            return;
+        }
+    }
+
     // sZCompBefore: the depth-only draw of a group, and d.state set to the material on the depths
     // it left (GPU_EQUAL, no depth write) for the draw after; nothing when the material has no
     // alpha test or writes no depth (the order does not matter then). False when the draw failed.
@@ -2887,6 +3196,7 @@ namespace {
 // # before depth (ZCompLoc) draw the depths first, then the colour on them.                    #
 // ##############################################################################################
 bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight, bool materialAmbient) {
+    ModelDrawTimer drawTimer(true);
     if (pPacket == nullptr || pPacket->mpShape == nullptr || pPacket->mpModel == nullptr ||
         pPacket->getBaseMtxPtr() == nullptr || sModel == nullptr ||
         sModel->model != pPacket->mpModel->getModelData() || !isLive(*sModel)) {
@@ -2903,6 +3213,10 @@ bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight,
     }
     const N3DShape& s = n.shapes[index];
     if ((sSkinning || sCpuPositions) && !(s.mask & ATTR_SOURCE_POS)) {
+        // n3d.py leaves the source positions out of models without animations or fur only.
+        if (gGXProfile.nativeFallbacks[FB_MODEL_FLAGS] < 8) {
+            hostLog("native: draw skipped: %s needs source positions it was converted without\n", n.path);
+        }
         return fallback(FB_MODEL_FLAGS);
     }
     if (s.mode > 3) {
@@ -2918,6 +3232,31 @@ bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight,
     // A lent material (findMaterialOwner) has no snapshot under this model: its live values.
     const MatValues* values =
         shape->getMaterial() == sBegunMaterial ? findSnapshot(snapshotOwner(pPacket->mpModel), shape->getMaterial()->getIndex()) : nullptr;
+    // A lower detail model drawing with the snapshot of the model it follows: the snapshot's texture
+    // numbers are that model's, and index its texture table (see applyValues below).
+    const bool followedSnapshot = values != nullptr && snapshotOwner(pPacket->mpModel) != pPacket->mpModel;
+    // Materials made from the same file entry share one diff flag, and DrawBuffer::initTable gives
+    // them one drawer, begun with the first of them. On the Wii each packet then calls its own
+    // differed display list, with what its own material's animations changed (texture, colours,
+    // matrices). Here: that material's own values. Dino Piranha's two petal rings
+    // (FlowerFirst_Mat_v, FlowerSecond_Mat_v) are such a pair: when flowerhalf.btp made the
+    // first ring's texture the transparent one, the second ring took it too and the head lost all
+    // its petals (AppleBerries, 9 Nov).
+    static MatValues sSiblingValues;
+    J3DMaterial* own = shape->getMaterial();
+    if (own != sBegunMaterial && sBegunMaterial != nullptr && pPacket->mpDisplayListObj != nullptr && pPacket->mpModel != nullptr) {
+        J3DModelData* data = pPacket->mpModel->getModelData();
+        const u16 ownIndex = own->getIndex();
+        if (data != nullptr && ownIndex < data->getMaterialNum() && data->getMaterialNodePointer(ownIndex) == own &&
+            own->getDiffFlag() == sBegunMaterial->getDiffFlag()) {
+            values = findSnapshot(snapshotOwner(pPacket->mpModel), ownIndex);
+            if (values == nullptr) {
+                fillValues(own, sSiblingValues);
+                values = &sSiblingValues;
+                sApplied = nullptr;  // the same record holds another material's values each time
+            }
+        }
+    }
     // A lower detail model (MR::syncMaterialAnimation) draws on the Wii with the whole display list
     // of the model it follows, not only its animated values: without a snapshot of that model's
     // material this frame (it takes one only while an animation changes it), the colours that
@@ -2956,10 +3295,26 @@ bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight,
     if (values == nullptr) {
         values = &sLive;
     }
+    // ##############################################################################################
+    // # Texture numbers of a followed model's snapshot                                             #
+    // #                                                                                            #
+    // # On the Wii a lower detail model calls the display list of the model it follows, and its   #
+    // # texture loads name that model's images. The two files number their textures differently:  #
+    // # Penguin's body is texture 9 (Penguin_gray) and its white part 7 (Penguin_color), while     #
+    // # PenguinLow has no texture 9 and its 7 is Penguin_gray. Read from the low model's own       #
+    // # table, the far penguins of Loopdeeloop lost their body and showed only the white parts     #
+    // # (owner, CIA 0.21.8). The followed model's table is used while the values are applied.     #
+    // ##############################################################################################
+    J3DTexture* const drawnTextures = sTextures;
+    if (followedSnapshot && values != sApplied && owner->getModelData() != nullptr) {
+        sTextures = owner->getModelData()->getTexture();
+    }
     if (values != sApplied && !applyValues(*values)) {
+        sTextures = drawnTextures;
         applyValues(sLive);
         return fallback(FB_TEXTURE);
     }
+    sTextures = drawnTextures;
 
     // This direct path does not invoke legacy display lists or load state through GX.
     u64 setupStart = gGXProfileOn ? hostGetTick() : 0;
@@ -3083,6 +3438,7 @@ bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight,
                 PSMTXCopy(d.matrices[k], sMatrices[k]);
             }
         }
+        countMirroredMatrices(d, modelData, shape->getMaterial(), index);
         if (sDeferredTexMtx) {
             sDeferredMatrixCount = d.matrixCount;
             for (u32 k = 0; k < d.matrixCount; k++) {
@@ -3153,6 +3509,99 @@ bool rvlNativePacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight,
         sNativeSetupTicks += hostGetTick() - setupStart;
     }
     return true;
+}
+
+// ##############################################################################################
+// # Early culling                                                                              #
+// #                                                                                            #
+// # rvlNativePacket builds a packet's material and matrices before rvlNativeDrawSubmit finds it #
+// # wholly outside the view; a material whose packets are all outside was even begun first     #
+// # (rvlNativeBegin). DrawBufferShapeDrawer::draw asks this beforehand: false when every group #
+// # of the packet has its spheres wholly outside one screen edge, the same test as the late    #
+// # culling (rvlNativeOutsideView). Anything it cannot place cheaply counts as in view:        #
+// # billboards, skinned or CPU-made positions, groups not uploaded yet, a matrix override.     #
+// ##############################################################################################
+namespace {
+    u32 sEarlyCulled;
+}
+
+bool rvlNativePacketInView(J3DShapePacket* pPacket) {
+    if (pPacket == nullptr || pPacket->mpShape == nullptr || pPacket->mpModel == nullptr ||
+        pPacket->getBaseMtxPtr() == nullptr || sOverrideMatrix != nullptr || sDelta != nullptr) {
+        return true;
+    }
+    J3DModel* model = pPacket->mpModel;
+    J3DModelData* data = model->getModelData();
+    NativeModel* n = data != nullptr ? findModel(data) : nullptr;
+    const u32 index = pPacket->mpShape->getIndex();
+    if (n == nullptr || index >= n->shapeCount || rvlNativeProjectionScaleY() <= 0.0f) {
+        return true;
+    }
+    const N3DShape& s = n->shapes[index];
+    // Until .n3d version 17 every shape had ATTR_SOURCE_POS, so this test never went past here. It
+    // stays off for the shapes without it too, until it is tried on the console on its own.
+    const bool earlyCullTried = false;
+    if (!earlyCullTried || s.mode != 0 || (s.mask & ATTR_SOURCE_POS) || pPacket->mpShape->checkFlag(J3DShpFlag_NoMtx)) {
+        return true;
+    }
+    const bool concatView = (data->getFlag() & 0x10) != 0;
+    J3DMtxBuffer* buffer = pPacket->mpMtxBuffer;
+    if (buffer == nullptr) {
+        return true;
+    }
+    static HostGfxTransform t;
+    rvlNativeViewToClip(t);
+    const u32 epoch = hostGfxArenaEpoch();
+    const N3DGroup* groups = n->groups + n->firstGroup[index];
+    for (u32 g = 0; g < s.groupCount; g++) {
+        const N3DGroup& grp = groups[g];
+        if (grp.matrixCount > 10) {
+            return true;
+        }
+        // Bounds of a persistent upload (the positions are the file's, whatever the key).
+        const Upload* ways = &n->uploads[((n->firstGroup[index] + g) * 2) * kUploadWays];
+        const GroupBounds* bounds = nullptr;
+        for (u32 w = 0; w < kUploadWays && bounds == nullptr; w++) {
+            if (ways[w].indices != nullptr && ways[w].epoch == epoch && !(ways[w].bounds & kTransientBounds)) {
+                bounds = boundsOf(ways[w].bounds);
+            }
+        }
+        if (bounds == nullptr || bounds->slotMask == 0) {
+            return true;
+        }
+        for (u32 k = 0; k < grp.matrixCount; k++) {
+            const u16 drw = grp.matrices[k] != 0xFFFF ? grp.matrices[k] : grp.matrices[0];
+            Mtx m;
+            if (drw == 0xFFFF) {
+                PSMTXCopy(kIdentity, m);
+            } else if (concatView) {
+                MtxPtr table = data->getDrawMtxFlag(drw) ? model->getWeightAnmMtx(0) : buffer->getUserAnmMtx(0);
+                if (table == nullptr) {
+                    return true;
+                }
+                PSMTXConcat(*pPacket->getBaseMtxPtr(), reinterpret_cast< Mtx* >(table)[data->getDrawMtxIndex(drw)], m);
+            } else {
+                if (buffer->getDrawMtx(drw) == nullptr) {
+                    return true;
+                }
+                PSMTXCopy(*buffer->getDrawMtx(drw), m);
+            }
+            for (u32 r = 0; r < 3; r++) {
+                t.palette[k * 3 + r][0] = m[r][0];
+                t.palette[k * 3 + r][1] = m[r][1];
+                t.palette[k * 3 + r][2] = m[r][2];
+                t.palette[k * 3 + r][3] = m[r][3];
+            }
+        }
+        if (!rvlNativeOutsideView(t, bounds->spheres, bounds->slotMask & ((1u << grp.matrixCount) - 1))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void rvlNativeCountEarlyCulled(u32 packets) {
+    sEarlyCulled += packets;
 }
 
 bool rvlNativeDrawFurLayer(J3DModel* pLayer, u32 shapeIndex, const RvlNativeFurMaterial& rMaterial, const ActorLightInfo* pActorLight) {
@@ -3300,15 +3749,16 @@ namespace {
         u8* data = static_cast< u8* >(malloc(vertexBytes + n.farIndexCount * 2));
         bool ok = data != nullptr && readAt(file, data, vertexBytes + n.farIndexCount * 2, sizeof(FarHeader));
         hostFileClose(file);
-        HostGfxModelVertex* out = nullptr;
-        const u32 first = ok ? hostGfxArenaAlloc(n.farVertexCount, 1, &out) : HOST_GFX_NO_ARENA;
+        // No unit takes an input (0, 0, 1 in each): compact vertices (gfx.c).
+        u8* out = nullptr;
+        const u32 first = ok ? hostGfxArenaAllocCompact(n.farVertexCount, &out) : HOST_GFX_NO_ARENA;
         u16* indices = first != HOST_GFX_NO_ARENA ? hostGfxIndexAlloc(n.farIndexCount) : nullptr;
         const u32 base = first % 65536;
         ok = indices != nullptr && n.farVertexCount <= 65536 - base;
         for (u32 i = 0; ok && i < n.farVertexCount; i++) {
             FarVertex v;
             memcpy(&v, data + i * sizeof(FarVertex), sizeof(v));
-            HostGfxModelVertex& o = out[i];
+            HostGfxModelVertex o;
             memset(&o, 0, sizeof(o));
             o.x = v.pos[0] * n.farPosScale;
             o.y = v.pos[1] * n.farPosScale;
@@ -3320,6 +3770,7 @@ namespace {
             for (u32 u = 0; u < 3; u++) {
                 o.tex[u][2] = 1.0f;
             }
+            memcpy(out + i * HOST_GFX_COMPACT_VERTEX, &o, HOST_GFX_COMPACT_VERTEX);
         }
         const u16* src = ok ? reinterpret_cast< const u16* >(data + vertexBytes) : nullptr;
         for (u32 i = 0; ok && i < n.farIndexCount; i++) {
@@ -3374,10 +3825,69 @@ void rvlNativeFarPrepare(J3DModel* pModel) {
     n->farPrepared = 1;
 }
 
+// ##############################################################################################
+// # Decorations not drawn while small                                                          #
+// #                                                                                            #
+// # A decoration of the Comet Observatory (setDecor) is not drawn while its sphere is under    #
+// # kDecorPixels pixels of radius on screen, and is drawn again past kDecorShowPixels. Each    #
+// # instance decides at its first packet of a DrawBuffer's draw, as the far models do.         #
+// ##############################################################################################
+namespace {
+    // 22 and 26 since CIA 0.22.9 (12 and 15 hid about 16 of 340 packets a frame, CIA 0.22.2; the
+    // owner asked for a higher threshold).
+    const f32 kDecorPixels = 22.0f;
+    const f32 kDecorShowPixels = 26.0f;
+    FarInstance sDecorInstances[256];  // power of two
+    u32 sDecorHidden;
+
+    bool decorHidden(J3DShapePacket* pPacket, J3DModel* model, J3DModelData* data, const NativeModel& n) {
+        FarInstance& e = sDecorInstances[(reinterpret_cast< u32 >(model) * 2654435761u >> 24) & 255];
+        if (e.model == model && e.pass == sFarPass) {
+            return e.far;
+        }
+        const bool wasHidden = e.model == model && e.far;
+        e.model = model;
+        e.pass = sFarPass;
+        e.far = false;
+        const f32 projection = rvlNativeProjectionScaleY();
+        J3DMtxBuffer* buffer = pPacket->mpMtxBuffer;
+        if (projection <= 0.0f || buffer == nullptr || pPacket->getBaseMtxPtr() == nullptr) {
+            return false;
+        }
+        Mtx matrix;
+        if ((data->getFlag() & 0x10) != 0) {
+            MtxPtr table = buffer->getUserAnmMtx(0);
+            if (table == nullptr || n.decorDrw >= data->getDrawMtxNum()) {
+                return false;
+            }
+            PSMTXConcat(*pPacket->getBaseMtxPtr(), reinterpret_cast< Mtx* >(table)[data->getDrawMtxIndex(n.decorDrw)], matrix);
+        } else {
+            if (buffer->getDrawMtx(n.decorDrw) == nullptr) {
+                return false;
+            }
+            PSMTXCopy(*buffer->getDrawMtx(n.decorDrw), matrix);
+        }
+        const f32* c = n.decorSphere;
+        const f32 depth = -(matrix[2][0] * c[0] + matrix[2][1] * c[1] + matrix[2][2] * c[2] + matrix[2][3]);
+        const f32 scale = std::sqrt(matrix[0][0] * matrix[0][0] + matrix[1][0] * matrix[1][0] + matrix[2][0] * matrix[2][0]);
+        if (!(depth > 0.0f)) {
+            return false;  // around or behind the camera: the draws' own culling decides
+        }
+        const f32 pixels = c[3] * scale * projection * 120.0f / depth;
+        e.far = pixels < (wasHidden ? kDecorShowPixels : kDecorPixels);
+        return e.far;
+    }
+}  // namespace
+
 bool rvlNativeFarPacket(J3DShapePacket* pPacket, const ActorLightInfo* pActorLight) {
     J3DModel* model = pPacket != nullptr ? pPacket->mpModel : nullptr;
     J3DModelData* data = model != nullptr ? model->getModelData() : nullptr;
     NativeModel* n = data != nullptr ? findModel(data) : nullptr;
+    // A small decoration of the Observatory: nothing drawn, as if its far model were.
+    if (n != nullptr && n->decor && sDelta == nullptr && decorHidden(pPacket, model, data, *n)) {
+        sDecorHidden++;
+        return true;
+    }
     if (n == nullptr || n->farVertexCount == 0 || n->farPrepared != 1) {
         return false;
     }
@@ -3464,6 +3974,9 @@ void rvl3DSLogTextureStats();  // jut_texture.cpp
 void rvlNativeLogFrame() {
     rvl3DSLogTextureStats();
     u64 ms = hostGetTickFrequency() / 1000;
+    if (gGXProfileOn) {
+        logModelDrawTimes(ms);
+    }
     hostLog("native timing: packet setup %lu ms, Citro3D submit %lu ms/%lu calls (overlaps packet setup)\n",
             static_cast< u32 >(sNativeSetupTicks / ms), static_cast< u32 >(sNativeSubmitTicks / ms), sNativeSubmitCalls);
     sNativeSetupTicks = sNativeSubmitTicks = 0;
@@ -3478,9 +3991,10 @@ void rvlNativeLogFrame() {
     hostLog("native upload files: %lu read whole, %lu groups from memory, %lu KB kept\n", sUploadFileReads, sUploadFileHits,
             sUploadCacheBytes / 1024);
     sUploadFileReads = sUploadFileHits = 0;
-    hostLog("native upload pacing: %lu ms reading whole files, %lu triangles asked of the GPU\n",
-            static_cast< u32 >(sUploadFileTicks / ms), sSubmittedTriangles);
+    hostLog("native upload pacing: %lu ms reading whole files, %lu triangles asked of the GPU, %lu first uploads put off to a later frame\n",
+            static_cast< u32 >(sUploadFileTicks / ms), sSubmittedTriangles, sDeferredUploads);
     sUploadFileTicks = 0;
+    sDeferredUploads = 0;
     sSubmittedTriangles = 0;
     hostLog("native: %lu draws, skipped unsupported packets: no file %lu, user data %lu, model flags %lu, texture %lu, shape %lu, upload %lu, lights %lu, material %lu, submit %lu "
             "(models with a file: %lu, without: %lu)\n",
@@ -3500,8 +4014,15 @@ void rvlNativeLogFrame() {
     hostLog("native far: %lu instances drawn far (%lu packets replaced), %lu uploads, %lu models with a far model\n", sFarDrawn,
             sFarPackets, sFarUploads, farModels);
     sFarDrawn = sFarPackets = sFarUploads = 0;
+    hostLog("native decorations: %lu packets of small Observatory decorations not drawn\n", sDecorHidden);
+    sDecorHidden = 0;
+    hostLog("native early culling: %lu packets of materials wholly outside the view, not begun\n", sEarlyCulled);
+    sEarlyCulled = 0;
     hostLog("native snapshots: %lu found no room (of %lu places)\n", sSnapshotMisses, kSnapshots);
     sSnapshotMisses = 0;
+    // Draws whose position matrix is mirrored (countMirroredMatrices).
+    hostLog("native mirrored: %lu draws with a mirrored position matrix\n", static_cast< unsigned long >(sMirroredDraws));
+    sMirroredDraws = 0;
     extern u32 gRvl3DSLodShown[4];  // LodCtrl.cpp
     hostLog("LOD models (instances x loops): high %lu, middle %lu, low %lu, hidden %lu\n", gRvl3DSLodShown[0], gRvl3DSLodShown[1],
             gRvl3DSLodShown[2], gRvl3DSLodShown[3]);

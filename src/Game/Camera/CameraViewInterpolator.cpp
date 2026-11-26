@@ -199,7 +199,12 @@ bool CameraViewInterpolator::calcBinder(TVec3f* pBindDir, const TVec3f& rTargetP
     mGravity.set(grav);
 
     f32 nearPlaneHeight = MR::tanDegree(MR::getFovy() * 0.5f) * ::sNearZ;
+#ifdef __3DS__
+    // 3DS: the near plane has the top screen's 5:3 shape (CameraContext::getAspect).
+    f32 nearPlaneWidth = nearPlaneHeight * 5.0f / 3.0f;
+#else
     f32 nearPlaneWidth = nearPlaneHeight * 16.0f / 9.0f;
+#endif
 
     mBinder->mRadius = MR::sqrt(::sCollisionBallRadius + nearPlaneHeight * nearPlaneHeight + nearPlaneWidth * nearPlaneWidth);
     *pBindDir = mBinder->bind(diff);

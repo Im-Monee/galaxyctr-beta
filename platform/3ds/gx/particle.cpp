@@ -40,6 +40,7 @@ namespace {
     bool sSecond;
     bool sIndirect;
     f32 sIndirectRows[2];  // the matrix rows' sums times 2^exponent: the texels per unit of the value
+    f32 sIndirectMtx[6];   // the matrix times 2^exponent, as GX applies it to (S, T, U) (rippleBatch)
     u32 sTexGen = JPA3DS::TEXGEN_IDENTITY;
     Mtx sTexMtx;
     Mtx sPosMtx;
@@ -104,6 +105,193 @@ namespace {
     }
 
     // ##############################################################################################
+    // # Indirect textures by a grid                                                                #
+    // #                                                                                            #
+    // # GX moves each pixel's texture coordinate 0 by the value of the indirect texture; the PICA  #
+    // # cannot read one texture by another. A particle's quad becomes a grid of kRippleCells x     #
+    // # kRippleCells cells instead: at each grid point the CPU reads the indirect texture (a       #
+    // # particle texture as the file has it, in GX's tiles) and moves coordinate 0 as GX would,    #
+    // # and the GPU interpolates between the points. The launch stars' ripple                       #
+    // # (SuperSpinDriverShootLightInd00: the screen capture moved by up to 32 texels by            #
+    // # mr_ind_ripple00) showed nothing with the mean displacement, nor would the blend of two     #
+    // # samples, at most 3 texels apart (a tester, Nov 2026). Past kRippleBudget grid vertices in  #
+    // # a frame, batches keep the blend of two samples or the mean (drawBatch).                    #
+    // ##############################################################################################
+    const u32 kRippleCells = 16;  // mr_ind_ripple00 has about 5 rings across: 3 points a ring
+    const u32 kRipplePoints = (kRippleCells + 1) * (kRippleCells + 1);
+    const u32 kRippleIndices = kRippleCells * kRippleCells * 6;
+    const u32 kRippleBudget = 6144;  // grid vertices a frame (21 quads; the transient vertices are 24576)
+    HostGfxVertex sRippleVertices[kRipplePoints];
+    TVec2f sRippleUv0[kRipplePoints], sRippleUv1[kRipplePoints];
+    u16 sRippleIndices[kRippleIndices];
+    u32 sRippleCount, sRippleIndexCount;
+    unsigned long sRippleFrame;
+    u32 sRippleUsed;
+
+    // The formats GX reads here as the file has them: intensity, intensity and alpha.
+    bool isRippleFormat(const ResTIMG* timg) {
+        return timg != nullptr && timg->mWidth != 0 && timg->mHeight != 0 && timg->mImageDataOffset != 0 &&
+               (timg->mFormat == GX_TF_I4 || timg->mFormat == GX_TF_I8 || timg->mFormat == GX_TF_IA4 || timg->mFormat == GX_TF_IA8);
+    }
+
+    // A texel coordinate inside the texture by its wrap mode.
+    s32 wrapTexel(s32 x, s32 size, u8 mode) {
+        if (mode == GX_REPEAT) {
+            return ((x % size) + size) % size;
+        }
+        if (mode == GX_MIRROR) {
+            const s32 m = ((x % (2 * size)) + 2 * size) % (2 * size);
+            return m < size ? m : 2 * size - 1 - m;
+        }
+        return x < 0 ? 0 : x >= size ? size - 1 : x;
+    }
+
+    // A texel's alpha and intensity from GX's tiles: I4 in 8x8 blocks, I8 and IA4 in 8x4, IA8 in
+    // 4x4 (alpha byte first); the I formats have their intensity as alpha too.
+    void readTexel(const ResTIMG* timg, const u8* image, s32 x, s32 y, f32& a, f32& i) {
+        const u32 width = timg->mWidth;
+        u32 offset;
+        switch (timg->mFormat) {
+        case GX_TF_I4:
+            offset = ((y / 8) * ((width + 7) / 8) + x / 8) * 32 + (y % 8) * 4 + (x % 8) / 2;
+            a = i = static_cast< f32 >(((x & 1) != 0 ? image[offset] & 0xF : image[offset] >> 4) * 17);
+            break;
+        case GX_TF_I8:
+            offset = ((y / 4) * ((width + 7) / 8) + x / 8) * 32 + (y % 4) * 8 + x % 8;
+            a = i = static_cast< f32 >(image[offset]);
+            break;
+        case GX_TF_IA4:
+            offset = ((y / 4) * ((width + 7) / 8) + x / 8) * 32 + (y % 4) * 8 + x % 8;
+            a = static_cast< f32 >((image[offset] >> 4) * 17);
+            i = static_cast< f32 >((image[offset] & 0xF) * 17);
+            break;
+        default:  // GX_TF_IA8
+            offset = ((y / 4) * ((width + 3) / 4) + x / 4) * 32 + ((y % 4) * 4 + x % 4) * 2;
+            a = static_cast< f32 >(image[offset]);
+            i = static_cast< f32 >(image[offset + 1]);
+            break;
+        }
+    }
+
+    // Coordinate 0 moved as GX moves it: the indirect texture read at coordinate 1 (bilinear), its
+    // (S, T, U) as GX_ITF_8 takes them (alpha, blue, green: alpha, intensity, intensity) less 128
+    // (GX_ITB_STU), through the matrix, in texels of texture 0 (JPAResource::setPTev).
+    TVec2f rippled(const TVec2f& uv0, const TVec2f& uv1, const ResTIMG* indirect, f32 width, f32 height) {
+        const u8* image = reinterpret_cast< const u8* >(indirect) + indirect->mImageDataOffset;
+        const s32 w = indirect->mWidth, h = indirect->mHeight;
+        const f32 fx = uv1.x * w - 0.5f, fy = uv1.y * h - 0.5f;
+        const f32 x0f = floorf(fx), y0f = floorf(fy);
+        const f32 ax = fx - x0f, ay = fy - y0f;
+        const s32 x0 = static_cast< s32 >(x0f), y0 = static_cast< s32 >(y0f);
+        f32 a = 0.0f, i = 0.0f;
+        for (u32 k = 0; k < 4; k++) {
+            const s32 x = wrapTexel(x0 + static_cast< s32 >(k & 1), w, indirect->mWrapS);
+            const s32 y = wrapTexel(y0 + static_cast< s32 >(k >> 1), h, indirect->mWrapT);
+            const f32 weight = ((k & 1) != 0 ? ax : 1.0f - ax) * ((k >> 1) != 0 ? ay : 1.0f - ay);
+            f32 ta, ti;
+            readTexel(indirect, image, x, y, ta, ti);
+            a += weight * ta;
+            i += weight * ti;
+        }
+        const f32 s = a - 128.0f, t = i - 128.0f;
+        const f32 ds = sIndirectMtx[0] * s + (sIndirectMtx[1] + sIndirectMtx[2]) * t;
+        const f32 dt = sIndirectMtx[3] * s + (sIndirectMtx[4] + sIndirectMtx[5]) * t;
+        return TVec2f(uv0.x + ds / width, uv0.y + dt / height);
+    }
+
+    // Whether this batch's quads and triangles fit in this frame's grid vertices; counts them.
+    bool takeRippleBudget(u32 indexCount) {
+        const unsigned long frame = hostGfxFrameId();
+        if (frame != sRippleFrame) {
+            sRippleFrame = frame;
+            sRippleUsed = 0;
+        }
+        u32 needed = 0;
+        for (u32 i = 0; i < indexCount;) {
+            const u16* q = &sBatchIndices[i];
+            if (i + 6 <= indexCount && q[1] == q[0] + 1 && q[2] == q[0] + 2 && q[3] == q[0] && q[4] == q[0] + 2 && q[5] == q[0] + 3) {
+                needed += kRipplePoints;
+                i += 6;
+            } else {
+                needed += 3;
+                i += 3;
+            }
+        }
+        if (sRippleUsed + needed > kRippleBudget) {
+            return false;
+        }
+        sRippleUsed += needed;
+        return true;
+    }
+
+    // The batch drawn with coordinate 0 moved per grid point: each quad (two triangles a, b, c
+    // and a, c, d: quad()) as a grid, any other triangle by its corners.
+    void drawRippledBatch(u32 indexCount, const ResTIMG* indirect, JUTTexture* texture, JUTTexture* second, u32 constant, const HostGfxStage* stages,
+                          u32 stageCount, u8 bufferAlpha) {
+        const f32 width = static_cast< f32 >(texture->getWidth()), height = static_cast< f32 >(texture->getHeight());
+        sRippleCount = sRippleIndexCount = 0;
+        const auto flush = [&]() {
+            if (sRippleIndexCount != 0) {
+                TDDraw::drawParticleTriangles(sRippleVertices, sRippleUv0, second != nullptr ? sRippleUv1 : nullptr, sRippleCount, sRippleIndices,
+                                              sRippleIndexCount, texture, second, constant, stages, stageCount, bufferAlpha);
+            }
+            sRippleCount = sRippleIndexCount = 0;
+        };
+        for (u32 i = 0; i < indexCount;) {
+            const u16* q = &sBatchIndices[i];
+            if (i + 6 <= indexCount && q[1] == q[0] + 1 && q[2] == q[0] + 2 && q[3] == q[0] && q[4] == q[0] + 2 && q[5] == q[0] + 3) {
+                flush();
+                const HostGfxVertex* c = &sBatchVertices[q[0]];
+                const TVec2f* c0 = &sBatchUv0[q[0]];
+                const TVec2f* c1 = &sBatchUv1[q[0]];
+                for (u32 row = 0; row <= kRippleCells; row++) {
+                    const f32 v = static_cast< f32 >(row) / kRippleCells;
+                    for (u32 col = 0; col <= kRippleCells; col++) {
+                        const f32 u = static_cast< f32 >(col) / kRippleCells;
+                        // Weights of a, b, c, d: a to b along u, d to c along u, then a-b to d-c along v.
+                        const f32 wa = (1.0f - u) * (1.0f - v), wb = u * (1.0f - v), wc = u * v, wd = (1.0f - u) * v;
+                        HostGfxVertex& out = sRippleVertices[sRippleCount];
+                        out = c[0];
+                        out.x = wa * c[0].x + wb * c[1].x + wc * c[2].x + wd * c[3].x;
+                        out.y = wa * c[0].y + wb * c[1].y + wc * c[2].y + wd * c[3].y;
+                        out.z = wa * c[0].z + wb * c[1].z + wc * c[2].z + wd * c[3].z;
+                        out.w = wa * c[0].w + wb * c[1].w + wc * c[2].w + wd * c[3].w;
+                        const TVec2f uv0(wa * c0[0].x + wb * c0[1].x + wc * c0[2].x + wd * c0[3].x, wa * c0[0].y + wb * c0[1].y + wc * c0[2].y + wd * c0[3].y);
+                        const TVec2f uv1(wa * c1[0].x + wb * c1[1].x + wc * c1[2].x + wd * c1[3].x, wa * c1[0].y + wb * c1[1].y + wc * c1[2].y + wd * c1[3].y);
+                        sRippleUv1[sRippleCount] = uv1;
+                        sRippleUv0[sRippleCount] = rippled(uv0, uv1, indirect, width, height);
+                        sRippleCount++;
+                    }
+                }
+                for (u32 row = 0; row < kRippleCells; row++) {
+                    for (u32 col = 0; col < kRippleCells; col++) {
+                        const u16 p = static_cast< u16 >(row * (kRippleCells + 1) + col), below = static_cast< u16 >(p + kRippleCells + 1);
+                        const u16 cell[6] = {p, static_cast< u16 >(p + 1), static_cast< u16 >(below + 1), p, static_cast< u16 >(below + 1), below};
+                        for (u32 k = 0; k < 6; k++) {
+                            sRippleIndices[sRippleIndexCount++] = cell[k];
+                        }
+                    }
+                }
+                flush();
+                i += 6;
+            } else {
+                if (sRippleCount + 3 > kRipplePoints || sRippleIndexCount + 3 > kRippleIndices) {
+                    flush();
+                }
+                for (u32 k = 0; k < 3; k++) {
+                    const u16 index = q[k];
+                    sRippleVertices[sRippleCount] = sBatchVertices[index];
+                    sRippleUv1[sRippleCount] = sBatchUv1[index];
+                    sRippleUv0[sRippleCount] = rippled(sBatchUv0[index], sBatchUv1[index], indirect, width, height);
+                    sRippleIndices[sRippleIndexCount++] = static_cast< u16 >(sRippleCount++);
+                }
+                i += 3;
+            }
+        }
+        flush();
+    }
+
+    // ##############################################################################################
     // # Drawing a batch                                                                            #
     // #                                                                                            #
     // # The combiner stages for the batch's colour and alpha modes (and the second texture's       #
@@ -141,6 +329,15 @@ namespace {
         // second texture or the alpha range's stages, no units or stages left: the displacement of
         // the middle of the values.
         JUTTexture* distortion = sIndirect && texture != nullptr && texture->getWidth() != 0 && texture->getHeight() != 0 ? sBatchTextures[2] : nullptr;
+        // The grid of moved coordinates when the indirect texture can be read here and the frame
+        // has grid vertices left (drawRippledBatch); else the blend or the mean below.
+        const ResTIMG* rippleTexture = distortion != nullptr && isRippleFormat(distortion->getTexInfo()) && readsSource(*table[0], 0x03) &&
+                                               takeRippleBudget(indexCount)
+                                           ? distortion->getTexInfo()
+                                           : nullptr;
+        if (rippleTexture != nullptr) {
+            distortion = nullptr;
+        }
         RvlDistortion plan = {};
         if (distortion != nullptr && distortion->getTexInfo() != nullptr) {
             rvlDistortionPlan(distortion->getTexInfo(), sIndirectRows[0], sIndirectRows[1], texture->getWidth(), texture->getHeight(), 0, 2, 0, plan);
@@ -202,6 +399,10 @@ namespace {
             bufferAlpha = static_cast< u8 >(1u << last);
             constant = (constant & 0xFFFFFF00u) | sAlphaHigh;
             stageCount += 4;
+        }
+        if (rippleTexture != nullptr) {
+            drawRippledBatch(indexCount, rippleTexture, texture, second, constant, stages, stageCount, bufferAlpha);
+            return;
         }
         TDDraw::drawParticleTriangles(sBatchVertices, sBatchUv0, second != nullptr ? sBatchUv1 : nullptr, count, sBatchIndices, indexCount, texture,
                                       second, constant, stages, stageCount, bufferAlpha);
@@ -492,6 +693,9 @@ namespace JPA3DS {
         drawBatchFor(FLUSH_INDIRECT);
         sIndirectRows[0] = ldexpf(pMatrix[0] + pMatrix[1] + pMatrix[2], exponent);
         sIndirectRows[1] = ldexpf(pMatrix[3] + pMatrix[4] + pMatrix[5], exponent);
+        for (u32 i = 0; i < 6; i++) {
+            sIndirectMtx[i] = ldexpf(pMatrix[i], exponent);
+        }
     }
 
     void setTexGen(u32 mode) {

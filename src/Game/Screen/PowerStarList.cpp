@@ -224,7 +224,14 @@ void PowerStarList::init(const JMapInfoIter& rIter) {
         MR::setFollowTypeAdd(this, pPaneName);
     }
 
+#ifdef __3DS__
+    // #### No photo for the Wii Message Board (owner's request) ####
+    // The camera button (pane "Capture") took a photo of the page for the Wii Message Board,
+    // which the 3DS does not have. The button stays hidden (exeAppear, resetButtonAll, exeWait),
+    // and neither the photo's drawing nor its converter (createOdhConverter below) is created.
+#else
     MR::createAdaptorAndConnectToWiiMessageBoard("全パワースターリスト(伝言板用描画)", MR::Functor(this, &PowerStarList::drawForMessageBoardCapture));
+#endif
 
     mArrowUpButtonCtrl = createButtonController("ArrowUpButton", "BoxButton1_00");
     mArrowDownButtonCtrl = createButtonController("ArrowDownButton", "BoxButton1_01");
@@ -239,7 +246,11 @@ void PowerStarList::init(const JMapInfoIter& rIter) {
     MR::setTextBoxGameMessageRecursive(this, "PageNumber", "AllStarList_Page");
     MR::setTextBoxGameMessageRecursive(this, "Photo", "AllStarList_Page");
     MR::hidePaneRecursive(this, "Photo");
+#ifdef __3DS__
+    // No photo, no converter (see above).
+#else
     MR::createOdhConverter();
+#endif
     initNerve(GET_NERVE(PowerStarList, PowerStarListNrvWait));
 
     mMailMessageLength = MR::getStringLengthWithMessageTag(MR::getGameMessageDirect(::cMailMessageID)) + FileSelectFunc::getMiiNameBufferSize();
@@ -321,6 +332,10 @@ void PowerStarList::resetButtonAll() {
     mArrowUpButtonCtrl->forceToWait();
     mArrowDownButtonCtrl->forceToWait();
     mCaptureButtonCtrl->forceToWait();
+#ifdef __3DS__
+    // The camera button stays hidden (init()).
+    mCaptureButtonCtrl->forceToHide();
+#endif
 }
 
 void PowerStarList::updateButtonAppearance() {
@@ -742,6 +757,12 @@ void PowerStarList::exeAppear() {
         pController = mCaptureButtonCtrl;
         pController->appear();
         pController->_24 = false;
+#ifdef __3DS__
+        // The camera button stays hidden (init()). Its controller only runs once the Appear
+        // animation ends (_24 above), so the pane itself is hidden here, from the first frame.
+        pController->forceToHide();
+        MR::hidePane(this, "Capture");
+#endif
 
         updateButtonAppearance();
         MR::startAnim(this, "Appear", 0);
@@ -766,9 +787,14 @@ void PowerStarList::exeWait() {
         setNerve(GET_NERVE(PowerStarList, PowerStarListNrvPageNext));
     } else if (mPageNo > 0 && (mArrowUpButtonCtrl->trySelect() || MR::testCorePadButtonUp(0) || MR::testSubPadStickTriggerUp(0))) {
         setNerve(GET_NERVE(PowerStarList, PowerStarListNrvPagePrev));
+#ifdef __3DS__
+        // No camera button (init()).
+    }
+#else
     } else if (mCaptureButtonCtrl->trySelect()) {
         setNerve(GET_NERVE(PowerStarList, PowerStarListNrvCaptureStart));
     }
+#endif
 }
 
 void PowerStarList::exeDisappear() {

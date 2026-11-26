@@ -623,7 +623,12 @@ void MR::copyLayoutDrawInfoWithAspect(nw4r::lyt::DrawInfo* pDrawInfo, const Layo
 
     if (aspect) {
         pDrawInfo->mFlag.locationAdjust = true;
+#ifdef __3DS__
+        // 3DS: 608 / 760, as in LayoutManager::calcAnim.
+        pDrawInfo->mLocationAdjustScale = nw4r::math::VEC2(0.8f, 1.0f);
+#else
         pDrawInfo->mLocationAdjustScale = nw4r::math::VEC2(0.75f, 1.0f);
+#endif
     } else {
         pDrawInfo->mFlag.locationAdjust = false;
         pDrawInfo->mLocationAdjustScale = nw4r::math::VEC2(1.0f, 1.0f);

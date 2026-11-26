@@ -74,7 +74,22 @@ static void initArenas() {
 
     hostLog("Memory: %lu KB free, MEM1 %lu KB, MEM2 %lu KB\n", freeBytes / 1024, mem1Size / 1024, mem2Size / 1024);
     if (mem2Size < kMem2ArenaMinSize) {
-        hostFatal("Not enough memory for the game (%lu KB free).", freeBytes / 1024);
+        // RAM, not SD space: a tester with 19 GB free on the SD read it that way (GitHub issue 6).
+        // A New 3DS can give the app only the smaller memory mode (about 33 MB free), e.g. when it
+        // is started while another CFW app is still open (owner, 24 Nov 2026); started again from
+        // the HOME Menu it gets the full mode. The text stays general: the cause may be another.
+        // Lines of at most 40 characters, the bottom screen's width.
+        hostFatal("Not enough RAM for the game\n"
+                  "(%lu KB free). This is the console's\n"
+                  "memory, not the SD card.\n\n"
+                  "Close the game, go back to the HOME\n"
+                  "Menu and start it again from its icon.\n"
+                  "If it keeps happening, report it in\n"
+                  "#bug-reports on the official GalaxyCTR\n"
+                  "Discord server.\n\n"
+                  "The game needs a New 3DS, New 3DS XL\n"
+                  "or New 2DS XL.",
+                  freeBytes / 1024);
     }
 
     u8* mem1 = static_cast< u8* >(hostAllocAligned(mem1Size, 32));

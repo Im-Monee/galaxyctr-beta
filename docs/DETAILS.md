@@ -161,6 +161,7 @@ runs it without one.
 | Saves (NAND) | files on the SD card (`sdmc:/smg/nand`) |
 | Wii Remote and Nunchuk (KPAD) | buttons, Circle Pad, touch screen |
 | Audio DSP | JAudio2 runs unchanged. The DSP's mixing is done in software on the game's own core ([`dsp.cpp`](../platform/3ds/rvl/dsp.cpp)). On the third core the sound broke up whenever the game was busy. |
+| Audio output | The Wii mixes for a TV. On the 3DS's small speakers, which play no bass, the output goes through a high-pass filter, a gain and a limiter. With headphones it plays as mixed ([`audio.c`](../platform/3ds/host/audio.c)). |
 | Mii (RFL) | heads built from the console's own Mii data |
 
 **Performance on New 3DS.** The CPU runs at 804 MHz with the L2 cache on. The game targets
@@ -174,10 +175,10 @@ by step is in [BUILDER.md](BUILDER.md). It is one program per system, made of tw
 
 | Part | Source | Updated by |
 |---|---|---|
-| **Launcher**: Python itself, the helper programs (nodtool, bannertool, makerom), the update check | [`launcher.py`](../tools/beta/launcher.py), packed by [`build_builder.py`](../tools/beta/build_builder.py) | downloading a new program |
-| **Builder**: the build steps, the converter, the CIA metadata, the port's program (`smg.elf`) | [`galaxyctr_builder.py`](../tools/beta/galaxyctr_builder.py) and the files it uses | itself, at every start |
+| **Launcher**: Python itself, Qt (PySide6, for the windows), the helper programs (nodtool, bannertool, makerom), the update check and its small window | [`launcher.py`](../tools/beta/launcher.py), packed by [`build_builder.py`](../tools/beta/build_builder.py) | downloading a new program |
+| **Builder**: the build steps, its window, the converter, the CIA metadata, the port's program (`smg.elf`) | [`galaxyctr_builder.py`](../tools/beta/galaxyctr_builder.py), [`builder_window.py`](../tools/beta/builder_window.py) and the files they use | itself, at every start |
 
-**How it updates.** The launcher keeps the folder `GalaxyCTR-Builder-files` next to itself,
+**How it updates.** The launcher keeps the folder `GalaxyCTR-Builder-files` in the user's settings folder,
 with the source code and the `smg.elf` of the release in use. At every start it asks GitHub for
 the latest release. If that is not the one in the folder, it downloads it into
 `GalaxyCTR-Builder-files/download`, checks it (a whole archive, the builder inside it, an ELF
@@ -190,6 +191,20 @@ it runs the newest copy it has, the folder's or the one inside the program.
 already have. Only a change to the launcher or the helper programs needs a new program. In that
 case the builder declares a higher `LAUNCHER_NEEDED`, and an older launcher tells the user to
 download the new one instead of running it.
+
+**The window.** Launcher version 2 carries Qt. The builder shows its window only when Qt is
+there and works ([`builder_gui.py`](../tools/beta/builder_gui.py)). On Linux a second copy of the
+program opens a test window first, because Qt ends the whole program when the system lacks a
+library it needs. Otherwise the builder runs in a terminal, with the same steps and questions.
+Older launchers, which have no Qt, still download each new release and run it. The builder
+then sees that there is no window and replaces the program itself
+(`replace_program` in `galaxyctr_builder.py`): it downloads the release's program for the
+system, renames the running one to `<name>.replaced` (Windows lets a running program be renamed,
+not deleted), puts the new one under the old name and starts it. The new launcher waits for the
+old program to end and deletes the `.replaced` file (`finish_replacement` in `launcher.py`). If
+anything fails, the old program is put back and the build runs in its terminal.
+The build runs in a thread of its own. Its lines, steps and progress reach the window as Qt
+signals, and each question waits for the dialog's answer.
 
 **How a release is made.**
 
@@ -239,7 +254,9 @@ for the New models only.
 
 ## 12. Known Compromises
 
-- Textures are smaller than on Wii where memory requires it, mostly without mipmaps.
+- Textures are smaller than on Wii where memory requires it, mostly without mipmaps. The few
+  that change with distance on purpose (Beach Bowl's sea, some water, skies and metal grids)
+  keep their own mipmaps, as on Wii (`MIPMAPPED` in `tools/3ds/builder/texreduce.py`).
 - Indirect-texture effects (water refraction, heat haze, distortions) are approximated, since
   the PICA has no indirect stage.
 - Depth of field and screen blur, which read the depth buffer, are approximated.

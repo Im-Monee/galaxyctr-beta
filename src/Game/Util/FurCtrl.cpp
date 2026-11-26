@@ -22,6 +22,8 @@
 #ifdef __3DS__
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #include "NativeFur3DS.hpp"
+// The light loaded last (platform/3ds/gx/native.cpp): GX keeps the loaded light as state.
+const ActorLightInfo* rvlNativeLoadedLight();
 #endif
 
 FurMulti* FurBank::check(J3DModelData* pModelData, u32 layer) {
@@ -143,11 +145,11 @@ void FurCtrl::drawFur() {
     }
 
 #ifdef __3DS__
-    // Every layer model's shape as a native draw with the fur material (NativeFur3DS.hpp).
-    const ActorLightInfo* actorLight = nullptr;
-    if (ActorLightCtrl* pLightCtrl = MR::getLightCtrl(mActor)) {
-        actorLight = pLightCtrl->getActorLight();
-    }
+    // Every layer model's shape as a native draw with the fur material (NativeFur3DS.hpp), lit by
+    // the light loaded above, as the Wii's GX: the actor's, or the fur's own light type. Bee
+    // Mario's fur asks for the player's light (MR::initFurPlayer, type 0); with the fur actor's own
+    // light control instead, his collar was grey where the Wii's is white (owner, CIA 0.22.0).
+    const ActorLightInfo* actorLight = rvlNativeLoadedLight();
     for (s32 i = 0; i < mDrawer->mNumLayers; i++) {
         mDrawer->setupLayerMaterial(i);
         rvlNativeDrawFurLayer(mLayerModels[i], mShapeIndex, rvl3DSFurMaterial(), actorLight);

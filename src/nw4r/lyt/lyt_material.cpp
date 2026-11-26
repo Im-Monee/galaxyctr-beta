@@ -790,7 +790,10 @@ namespace nw4r {
                         st.kasel = kAlpSels[i];
                     }
                 }
-                if (mTevCols[0] != DefaultBlackColor || !IsWhiteColor(mTevCols[1])) {
+                // The C0/C1 lerp of the result only after two or more textures, as in the Wii
+                // branch below: one texture is already lerped by C0/C1 in its own stage (a second
+                // lerp turned the pointer star's blue centre pink, and 448 other materials).
+                if (mGXMemNum.texMap != 1 && (mTevCols[0] != DefaultBlackColor || !IsWhiteColor(mTevCols[1]))) {
                     RvlTevStageDesc& st = Stage::add(tev, kNull, kNull, kNull);
                     Stage::color(st, GX_CC_C0, GX_CC_C1, GX_CC_CPREV, GX_CC_ZERO);
                     Stage::alpha(st, GX_CA_A0, GX_CA_A1, GX_CA_APREV, GX_CA_ZERO);

@@ -231,7 +231,7 @@ void ImageEffectLocalUtil::blurTexture(JUTTexture* pTexture, s32 divisions, s32 
     }
     // The Wii's taps on a circle (texture matrix translations), three per draw: the first draw
     // replaces, the others add.
-    const f32 aspect = MR::isScreen16Per9() ? 1.333f : 1.0f;
+    const f32 aspect = MR::isScreen16Per9() ? 1.25f : 1.0f;
     const f32 width = static_cast< f32 >(MR::getFrameBufferWidth()) / divisions;
     const f32 height = static_cast< f32 >(MR::getFrameBufferHeight()) / divisions;
     const TVec2f position((tile % divisions) * width, (tile / divisions) * height);

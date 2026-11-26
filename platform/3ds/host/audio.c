@@ -11,6 +11,7 @@
 #include "host.h"
 
 #include <3ds.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,6 +41,82 @@ static void writeWavHeader(FILE* file, unsigned long frames, unsigned long rate)
     };
     fseek(file, 0, SEEK_SET);
     fwrite(header, sizeof(header), 1, file);
+}
+
+// ##############################################################################################
+// # Louder on the speakers                                                                     #
+// #                                                                                            #
+// # The Wii mixes for a TV: in the CIA 0.23.11 log the loudest sample of each 5 seconds was    #
+// # about a third of full scale (median 11239). The 3DS's small speakers play no bass, so the  #
+// # music and Mario's footsteps sound much quieter on them than in headphones (owner and a     #
+// # tester, 25-26 Nov 2026). With no headphones in, the output goes through:                   #
+// #   1. a high-pass filter at 120 Hz (Butterworth, 2nd order): the bass the speakers cannot   #
+// #      play, which only takes up room before clipping;                                       #
+// #   2. a gain of kSpeakerGain;                                                               #
+// #   3. a limiter: a sample over kLimit lowers the gain at once to fit, and the gain comes     #
+// #      back up over about kReleaseSeconds, so loud sounds are turned down instead of clipped. #
+// # With headphones the Wii's mix plays untouched. The headphones are checked about once a     #
+// # second (DSP_GetHeadphoneStatus).                                                           #
+// ##############################################################################################
+static const float kSpeakerGain = 2.0f;  // +6 dB
+static const float kHighPassHz = 120.0f;
+static const float kLimit = 30000.0f;
+static const float kReleaseSeconds = 0.15f;
+
+static bool sSpeakers = true;
+static float sB0, sB1, sB2, sA1, sA2;  // the high-pass filter, normalised biquad coefficients
+static float sHistory[2][4];          // per channel: x[n-1], x[n-2], y[n-1], y[n-2]
+static float sLimiterGain = 1.0f, sRelease, sLowestGain = 1.0f;
+static unsigned long sInPeak;
+
+static void speakerSetup(unsigned long rate) {
+    float w = 2.0f * 3.14159265f * kHighPassHz / (float)rate;
+    float cosw = cosf(w), alpha = sinf(w) / (2.0f * 0.70710678f);
+    float a0 = 1.0f + alpha;
+    sB0 = (1.0f + cosw) / 2.0f / a0;
+    sB1 = -(1.0f + cosw) / a0;
+    sB2 = sB0;
+    sA1 = -2.0f * cosw / a0;
+    sA2 = (1.0f - alpha) / a0;
+    sRelease = 1.0f - expf(-1.0f / (kReleaseSeconds * (float)rate));
+    memset(sHistory, 0, sizeof(sHistory));
+    sLimiterGain = 1.0f;
+}
+
+static void checkHeadphones(void) {
+    bool inserted = false;
+    if (R_SUCCEEDED(DSP_GetHeadphoneStatus(&inserted)) && sSpeakers == inserted) {
+        sSpeakers = !inserted;
+        memset(sHistory, 0, sizeof(sHistory));
+        sLimiterGain = 1.0f;
+        hostLog("audio: %s\n", sSpeakers ? "speakers, high-pass and louder" : "headphones, the Wii's mix");
+    }
+}
+
+static float highPass(int channel, float x) {
+    float* h = sHistory[channel];
+    float y = sB0 * x + sB1 * h[0] + sB2 * h[1] - sA1 * h[2] - sA2 * h[3];
+    h[1] = h[0], h[0] = x, h[3] = h[2], h[2] = y;
+    return y;
+}
+
+static s16 toSample(float v) {
+    return (s16)(v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v);
+}
+
+// One stereo frame for the speakers, in place.
+static void speakerFrame(s16* left, s16* right) {
+    float l = highPass(0, (float)*left) * kSpeakerGain, r = highPass(1, (float)*right) * kSpeakerGain;
+    float loud = fabsf(l) > fabsf(r) ? fabsf(l) : fabsf(r);
+    sLimiterGain += (1.0f - sLimiterGain) * sRelease;
+    if (loud * sLimiterGain > kLimit) {
+        sLimiterGain = kLimit / loud;
+    }
+    if (sLimiterGain < sLowestGain) {
+        sLowestGain = sLimiterGain;
+    }
+    *left = toSample(l * sLimiterGain);
+    *right = toSample(r * sLimiterGain);
 }
 
 // ##############################################################################################
@@ -103,6 +180,8 @@ int hostAudioStart(unsigned long rate) {
     ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
     float mix[12] = {1.0f, 1.0f};
     ndspChnSetMix(0, mix);
+    speakerSetup(rate);
+    checkHeadphones();
     for (int i = 0; i < SLOTS; i++) {
         sSlots[i].status = NDSP_WBUF_FREE;
     }
@@ -132,8 +211,9 @@ void hostAudioShutdown(void) {
 // #                                                                                            #
 // # A buffer of the game into the first free slot: its samples swapped from the Wii's          #
 // # right-left order to ndsp's left-right, the cache flushed so the DSP reads them, then       #
-// # queued. The loudest sample of the last few seconds goes to the log (peak 32767 or 32768    #
-// # means the mix was clipped).                                                                #
+// # queued. On the speakers each frame goes through speakerFrame first. The loudest sample of  #
+// # the last few seconds goes to the log, as the game mixed it (peak: 32767 or 32768 means the #
+// # mix was clipped) and as played (played peak), with the limiter's lowest gain.             #
 // ##############################################################################################
 int hostAudioSlotFree(void) {
     if (!sReady) {
@@ -163,9 +243,22 @@ void hostAudioQueue(const short* pSamples, unsigned long frames) {
         frames = SLOT_FRAMES;
     }
 
+    if (sQueued % 60 == 0) {  // about once a second
+        checkHeadphones();
+    }
     s16* out = sSlotData[slot];
     for (unsigned long i = 0; i < frames; i++) {
         s16 right = pSamples[i * 2], left = pSamples[i * 2 + 1];
+        unsigned long inL = left < 0 ? -left : left, inR = right < 0 ? -right : right;
+        if (inL > sInPeak) {
+            sInPeak = inL;
+        }
+        if (inR > sInPeak) {
+            sInPeak = inR;
+        }
+        if (sSpeakers) {
+            speakerFrame(&left, &right);
+        }
         out[i * 2] = left;
         out[i * 2 + 1] = right;
         unsigned long l = left < 0 ? -left : left, r = right < 0 ? -right : right;
@@ -193,7 +286,9 @@ void hostAudioQueue(const short* pSamples, unsigned long frames) {
 
     // About every 5 seconds at 32 kHz.
     if (++sQueued % 300 == 0) {
-        hostLog("audio: %lu buffers queued, peak %lu\n", sQueued, sPeak);
-        sPeak = 0;
+        hostLog("audio: %lu buffers queued, peak %lu, played peak %lu, %s, limiter down to x%.2f\n", sQueued, sInPeak,
+                sPeak, sSpeakers ? "speakers" : "headphones", (double)sLowestGain);
+        sPeak = sInPeak = 0;
+        sLowestGain = 1.0f;
     }
 }

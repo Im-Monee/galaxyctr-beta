@@ -4,6 +4,10 @@
 #include "Game/Util/GamePadUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
+#ifdef __3DS__
+// 3DS: while this button shows, the 3DS B button is the remote's B, the back (Pad3DS.hpp).
+#include "Pad3DS.hpp"
+#endif
 
 namespace NrvPictureBookCloseButton {
     NEW_NERVE(PictureBookCloseButtonNrvSelect, PictureBookCloseButton, Select);
@@ -62,6 +66,12 @@ bool PictureBookCloseButton::isSelected() const {
 }
 
 void PictureBookCloseButton::control() {
+#ifdef __3DS__
+    // 3DS: tells the controls that the close button shows (Pad3DS.hpp).
+    if (!mPaneCtrl->isHidden()) {
+        rvl3DSNoteBackButtonShown();
+    }
+#endif
     mPaneCtrl->update();
 
     if (mPaneCtrl->isPointingTrigger()) {

@@ -107,7 +107,12 @@ namespace MR {
     }
 
     s32 getScreenWidth() {
+#ifdef __3DS__
+        // 3DS: the top screen is 5:3, so the wide layout space is 760 wide (456 * 5 / 3), not 832.
+        return isScreen16Per9() ? 760 : 608;
+#else
         return isScreen16Per9() ? 832 : 608;
+#endif
     }
 
     s32 getSafetyFrameWidth() {

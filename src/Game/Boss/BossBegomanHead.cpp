@@ -1,3 +1,7 @@
+// 3DS: host.h, the port's host interface (hostGfxNextFrameDrawn).
+#ifdef __3DS__
+#include <host.h>
+#endif
 #include "Game/Boss/BossBegomanHead.hpp"
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Scene/SceneFunction.hpp"
@@ -22,6 +26,10 @@ namespace NrvBossBegomanHead {
 
 BossBegomanHead::BossBegomanHead(LiveActor* pParent, MtxPtr pMtx)
     : PartsModel(pParent, "スイッチ頭", "BossBegomanHead", pMtx, MR::DrawBufferType_Enemy, false), mAngle(), mJointDelegator() {
+#ifdef __3DS__
+    mShownAngle3DS = 0.0f;
+    mLastAngle3DS = 0.0f;
+#endif
 }
 
 void BossBegomanHead::init(const JMapInfoIter& rIter) {
@@ -131,7 +139,25 @@ void BossBegomanHead::calcAndSetBaseMtx() {
 
 bool BossBegomanHead::calcJointEdge(TPos3f* pMtx, const JointControllerInfo&) {
     TPos3f v9;
+#ifdef __3DS__
+    // ##############################################################################################
+    // # The spike ring's turn, one step per drawn image                                            #
+    // #                                                                                            #
+    // # The ring has 9 spikes, one every 40 degrees, and turns 0.23 radians (13.2 degrees) a loop. #
+    // # Drawing one loop in three (the port when it is behind), each image showed it 39.5 degrees  #
+    // # on, almost one spike: the spikes looked still while the trail under them moved (owner,     #
+    // # Topmaniac, CIA 0.21.15). The angle shown moves on by the loop's turn only in loops that    #
+    // # are drawn: each image shows one step, as each of the Wii's does. With every loop drawn it  #
+    // # is the game's angle. The ring's angle is only seen: the edge's attack does not read it.    #
+    // ##############################################################################################
+    if (hostGfxNextFrameDrawn()) {
+        mShownAngle3DS += mAngle - mLastAngle3DS;
+    }
+    mLastAngle3DS = mAngle;
+    v9.makeRotate(TVec3f(0.0f, 1.0f, 0.0f), mShownAngle3DS);
+#else
     v9.makeRotate(TVec3f(0.0f, 1.0f, 0.0f), mAngle);
+#endif
     pMtx->concat(*pMtx, v9);
 
     return true;

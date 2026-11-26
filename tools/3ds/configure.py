@@ -207,7 +207,8 @@ def main():
         "  description = EMBED $in",
         "",
         "rule check3dsx",
-        f"  command = {quote(sys.executable)} tools/3ds/check_3dsx.py $in $elf --stamp $out",
+        # devkitARM's nm by its full path, as for the compilers (check_3dsx.find_nm).
+        f"  command = {quote(sys.executable)} tools/3ds/check_3dsx.py $in $elf --nm {quote(bin_dir / f'arm-none-eabi-nm{EXE}')} --stamp $out",
         "  description = CHECK $in",
         "",
     ]

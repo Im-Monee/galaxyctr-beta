@@ -507,8 +507,47 @@ def _reduced(fmt, data, width, height, mips, sky=False):
 
 
 def _min_filter(value):
-    """GX min filter without mipmaps: NEAR_MIP_* to NEAR, LIN_MIP_* to LINEAR."""
-    return {2: 0, 3: 0, 4: 1, 5: 1}.get(value, value)
+    """GX min filter without mipmaps: NEAR_MIP_* to NEAR, LIN_MIP_* to LINEAR (GXEnum.h: NEAR,
+    LINEAR, NEAR_MIP_NEAR, LIN_MIP_NEAR, NEAR_MIP_LIN, LIN_MIP_LIN)."""
+    return {2: 0, 3: 1, 4: 0, 5: 1}.get(value, value)
+
+
+# ##############################################################################################
+# # Textures that keep their mipmaps                                                           #
+# #                                                                                            #
+# # Mipmaps are dropped, except for these textures: their small levels are not the large one   #
+# # halved, and the game draws by distance through them. Beach Bowl's and TwinFall's sea      #
+# # (TransparencyMM) is clear at level 0 and opaque blue from level 2: without its mipmaps the #
+# # sea far away did not show. Found by comparing each level with the one above halved: these #
+# # differ by 60 to 166 of 255 on average, natural mipmaps by 20 to 55. The levels kept start #
+# # at the size the texture is reduced to and stop at 8 texels (jut_texture.cpp,              #
+# # "Textures with their own mipmaps").                                                       #
+# ##############################################################################################
+MIPMAPPED = {b"Water_MipMWater0", b"WaterColer", b"TransparencyMM", b"MoonBloom", b"MarbleElectron", b"GreenPlanetMyst",
+             b"metalamiMM", b"NumberL", b"Ami_Mip", b"PhantomShipCloudSunset", b"GreenPlanetSee"}
+
+
+def _keeps_mipmaps(block, h, name):
+    """Whether TEX1 header h (texture name) keeps its mipmaps: one of MIPMAPPED, with mipmaps on and
+    a min filter between levels, power-of-two sizes and no palette."""
+    fmt, width, height = block[h], *struct.unpack_from(">HH", block, h + 2)
+    return (name in MIPMAPPED and block[h + 0x10] and block[h + 0x14] >= 2 and block[h + 0x18] >= 2
+            and fmt not in (C4, C8, C14X2) and width & (width - 1) == 0 and height & (height - 1) == 0)
+
+
+def _mip_levels(fmt, data, width, height, mips, sky=False):
+    """(bytes, width, height, levels) of the levels kept, from the size the texture is reduced to down
+    to 8 texels, or None when fewer than two are left."""
+    _, _, steps = target_size(width, height, SKY_CMPR_LIMIT if sky and fmt == CMPR else LIMIT)
+    start = sum(image_size(fmt, width >> k, height >> k) for k in range(steps))
+    w, h = width >> steps, height >> steps
+    levels, size = 0, 0
+    while steps + levels < mips and w >> levels >= 8 and h >> levels >= 8:
+        size += image_size(fmt, w >> levels, h >> levels)
+        levels += 1
+    if levels < 2:
+        return None
+    return data[start:start + size], w, h, levels
 
 
 def indirect_only(data):
@@ -615,6 +654,8 @@ def _reduce_tex1(block, stats, sky=False, stretched=(), compressible=()):
     images, palettes = {}, {}
     fields = []
     kept = set()  # images with a header that is not only an indirect texture's
+    texture_names = _texture_names(block, names)
+    mipmapped = set()  # images that keep their mipmaps (MIPMAPPED)
     for i in range(count):
         h = headers + i * 0x20
         fmt, width, height = block[h], *struct.unpack_from(">HH", block, h + 2)
@@ -632,7 +673,10 @@ def _reduce_tex1(block, stats, sky=False, stretched=(), compressible=()):
         fields.append((h, image, palette))
         if i not in stretched:
             kept.add(image)
+        if i < len(texture_names) and _keeps_mipmaps(block, h, texture_names[i]):
+            mipmapped.add(image)
     fixed = {image for i, (_, image, _) in enumerate(fields) if i not in compressible or images[image][0] in (C4, C8, C14X2)}
+    fixed |= mipmapped  # decoded on the 3DS level by level, in their GX format
     starts = sorted(set(images) | set(palettes))
     name_size = _name_table_size(block, names) if names else 0
     # The name table comes before the pixels or after them (then it is moved after the new ones).
@@ -641,6 +685,7 @@ def _reduce_tex1(block, stats, sky=False, stretched=(), compressible=()):
         return None
     out = bytearray(block[:starts[0]])
     new_image, new_palette, new_size, value_range, new_format, largest = {}, {}, {}, {}, {}, {}
+    new_levels = {}
     spread = set()
     before = after = 0
     for start in starts:
@@ -656,7 +701,10 @@ def _reduce_tex1(block, stats, sky=False, stretched=(), compressible=()):
             if start not in kept and stretches(fmt, value_range[start]):
                 original = _stretched(fmt, original, value_range[start])
                 spread.add(start)
-            if start not in fixed:
+            levels = _mip_levels(fmt, original, width, height, mips, sky) if start in mipmapped else None
+            if levels is not None:
+                result, new_levels[start] = levels[:3], levels[3]
+            elif start not in fixed:
                 pixels, new_format[start], w, h, largest[start] = _compressed(fmt, original, width, height)
                 result = (pixels, w, h)
             else:
@@ -688,10 +736,14 @@ def _reduce_tex1(block, stats, sky=False, stretched=(), compressible=()):
             # As an indirect texture, the values it holds: bit 7 of _19, then in the unused palette offset.
             out[h + 0x19] |= 0xC0 if image in spread else 0x80
             struct.pack_into(">I", out, h + 0x0C, value_range[image][0] | value_range[image][1] << 8)
-        out[h + 0x10] = 0                      # mipmaps off
-        out[h + 0x14] = _min_filter(out[h + 0x14])
-        out[h + 0x17] = 0                      # max LOD
-        out[h + 0x18] = 1                      # one level
+        if image in new_levels:
+            out[h + 0x17] = min(out[h + 0x17], (new_levels[image] - 1) * 8)  # max LOD, in eighths
+            out[h + 0x18] = new_levels[image]
+        else:
+            out[h + 0x10] = 0                      # mipmaps off
+            out[h + 0x14] = _min_filter(out[h + 0x14])
+            out[h + 0x17] = 0                      # max LOD
+            out[h + 0x18] = 1                      # one level
         struct.pack_into(">I", out, h + 0x1C, new_image[image] - h)
         if palette is not None:
             struct.pack_into(">I", out, h + 0x0C, new_palette[palette] - h)

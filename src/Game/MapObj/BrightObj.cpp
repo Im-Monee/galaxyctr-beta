@@ -85,6 +85,10 @@ void BrightInfo::write(const TVec2f& rBrightnessCenter, const TVec2f& rRealCente
     mBrightnessCenter[mIndex].set(rBrightnessCenter);
     mRealCenter[mIndex].set(rRealCenter);
     mBright[mIndex] = brightness;
+#ifdef __3DS__
+    // The readers take this slot until the next result (BrightInfo::mLastIndex).
+    mLastIndex = mIndex;
+#endif
 
     u32 val = mIndex;
 
@@ -114,6 +118,10 @@ void BrightInfo::endRead() {
 void BrightInfo::reset() {
     mIndex = 0;
     mCurrIndex = 0;
+#ifdef __3DS__
+    // The slot written last (BrightInfo::mLastIndex).
+    mLastIndex = 0;
+#endif
 
     for (u32 i = 0; i < 3; i++) {
         mBrightnessCenter[i].zero();
@@ -420,6 +428,20 @@ void BrightObjBase::endRead() {
     mInfo.endRead();
 }
 
+#ifdef __3DS__
+// The readers take the last result (BrightInfo::mLastIndex), kept between drawn frames.
+const TVec2f* BrightObjBase::getCenter() const {
+    return &mInfo.mRealCenter[mInfo.mLastIndex];
+}
+
+const TVec2f* BrightObjBase::getBrightCenter() const {
+    return &mInfo.mBrightnessCenter[mInfo.mLastIndex];
+}
+
+f32 BrightObjBase::getBright() const {
+    return mInfo.mBright[mInfo.mLastIndex];
+}
+#else
 const TVec2f* BrightObjBase::getCenter() const {
     return &mInfo.mRealCenter[mInfo.mCurrIndex];
 }
@@ -431,6 +453,7 @@ const TVec2f* BrightObjBase::getBrightCenter() const {
 f32 BrightObjBase::getBright() const {
     return mInfo.mBright[mInfo.mCurrIndex];
 }
+#endif
 
 void BrightObjBase::getNowCenter(TVec2f* pDst) const {
     pDst->set(mNowCenter);

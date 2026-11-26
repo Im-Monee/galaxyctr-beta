@@ -9,7 +9,8 @@
 //
 // Channel 0 is a Wii Remote with a Nunchuk attached; the other channels are empty.
 //   circle pad -> Nunchuk stick        A, B -> A (jump); A + B together -> A + B (title screen)
-//   Y -> shake (spin)
+//   B alone -> B (back) while a menu's "Back" button shows (rvl3DSNoteBackButtonShown)
+//   Y -> shake (spin); a strong jolt of the console does the same (consoleJolted)
 //   L / ZL -> Z (crouch; with A or B, long jump)           X -> 1      ZR -> C
 //   R -> B (trigger: shoots Star Bits) while the pointer shows (touch screen or C-Stick cursor),
 //        else Z (ground pound in the air). Star Bits shoot with R only: A + B is also the
@@ -45,14 +46,102 @@ static const u32 kShakeLength = 6;
 static const Vec kRestAcceleration = {0.0f, -1.0f, 0.0f};
 
 // ##############################################################################################
+// # Shaking the console                                                                        #
+// #                                                                                            #
+// # A suggestion from Discord (22 Nov 2026): shake the 3DS to spin, like the Wii Remote. A     #
+// # strong jolt starts the same shake as Y, so the game sees exactly what Y gives it. The raw  #
+// # readings go nowhere else: the 3DS axes are not the remote's, and the game reads the        #
+// # remote's acceleration for more than the spin.                                              #
+// ##############################################################################################
+// The console's resting reading (gravity, in raw units) follows the reading slowly, so the size
+// of 1 g needs no calibration and tilting the console is not a jolt. A jolt is a reading that
+// differs from it by more than kJoltG times gravity; after one, the reading must calm down
+// below kCalmG and kJoltGap updates must pass before the next.
+static const f32 kJoltG = 1.2f;
+static const f32 kCalmG = 0.5f;
+static const u32 kJoltGap = 15;
+static const f32 kRestFollow = 0.05f;
+static bool sAccelSeen;
+static f32 sRestX, sRestY, sRestZ;
+static bool sJoltArmed = true;
+static u32 sJoltWait;
+static f32 sMotionPeak;  // the largest jolt of the current movement, logged once it calms down
+
+// True on the update where the console is jolted hard enough to spin.
+static bool consoleJolted(const HostInput& input) {
+    if (!input.hasAccel) {
+        return false;
+    }
+    const f32 x = input.accelX, y = input.accelY, z = input.accelZ;
+    if (!sAccelSeen) {
+        sAccelSeen = true;
+        sRestX = x;
+        sRestY = y;
+        sRestZ = z;
+        return false;
+    }
+    const f32 gravity = sqrtf(sRestX * sRestX + sRestY * sRestY + sRestZ * sRestZ);
+    const f32 dx = x - sRestX, dy = y - sRestY, dz = z - sRestZ;
+    const f32 jolt = gravity > 1.0f ? sqrtf(dx * dx + dy * dy + dz * dz) / gravity : 0.0f;
+    // The rest follows only calm readings, so a shake does not drag it along.
+    if (jolt < kCalmG) {
+        sRestX += dx * kRestFollow;
+        sRestY += dy * kRestFollow;
+        sRestZ += dz * kRestFollow;
+    }
+    if (sJoltWait > 0) {
+        sJoltWait--;
+    }
+    if (jolt > sMotionPeak) {
+        sMotionPeak = jolt;
+    }
+    if (jolt < kCalmG) {
+        if (sMotionPeak >= kCalmG) {
+            // One line per movement, to set kJoltG from the console: how strong it was.
+            hostLog("motion: peak %.2f g (spin above %.2f)\n", sMotionPeak, kJoltG);
+        }
+        sMotionPeak = 0.0f;
+        sJoltArmed = true;
+        return false;
+    }
+    if (jolt > kJoltG && sJoltArmed && sJoltWait == 0) {
+        sJoltArmed = false;
+        sJoltWait = kJoltGap;
+        return true;
+    }
+    return false;
+}
+
+// ##############################################################################################
 // # Buttons and the stick                                                                      #
 // #                                                                                            #
 // # The 3DS buttons as Wii Remote and Nunchuk buttons (R depends on whether the pointer        #
 // # shows), and the circle pad as the Nunchuk stick, with a dead zone.                         #
 // ##############################################################################################
+// B as the menus' back (Pad3DS.hpp): the read count, and the last read before which a "Back"
+// button showed. The buttons report during the game's update, after that update's read, so the
+// next read or the one after sees it.
+static u32 sReads;
+static u32 sBackShownRead;
+static bool sBackShownEver;
+
+void rvl3DSNoteBackButtonShown() {
+    sBackShownRead = sReads;
+    sBackShownEver = true;
+}
+
+static bool backButtonShows() {
+    return sBackShownEver && sReads - sBackShownRead <= 2;
+}
+
 static u32 wiiButtons(u32 keys, bool pointing) {
     u32 buttons = 0;
-    if (keys & (HOST_KEY_A | HOST_KEY_B)) buttons |= WPAD_BUTTON_A;
+    // While a "Back" button shows, B alone is the remote's B (back), not its A.
+    if (backButtonShows() && (keys & (HOST_KEY_A | HOST_KEY_B)) == HOST_KEY_B) {
+        buttons |= WPAD_BUTTON_B;
+    } else if (keys & (HOST_KEY_A | HOST_KEY_B)) {
+        buttons |= WPAD_BUTTON_A;
+    }
     // A and B together are the remote's A + B, which the title screen asks for.
     if ((keys & (HOST_KEY_A | HOST_KEY_B)) == (HOST_KEY_A | HOST_KEY_B)) buttons |= WPAD_BUTTON_B;
     if (keys & HOST_KEY_X) buttons |= WPAD_BUTTON_1;
@@ -271,6 +360,7 @@ s32 KPADRead(s32 chan, KPADStatus* samples, u32 length) {
         return 0;
     }
 
+    sReads++;
     HostInput input;
     hostInputGet(&input);
 
@@ -285,9 +375,9 @@ s32 KPADRead(s32 chan, KPADStatus* samples, u32 length) {
     s->release = sLastHold & ~hold;
     sLastHold = hold;
 
-    // Shake: starts when Y is pressed.
+    // Shake: starts when Y is pressed or the console is jolted (above).
     bool shakeKey = (input.held & HOST_KEY_Y) != 0;
-    if (shakeKey && !sLastShakeKey) {
+    if ((shakeKey && !sLastShakeKey) || consoleJolted(input)) {
         sShakeFrames = kShakeLength;
     }
     sLastShakeKey = shakeKey;

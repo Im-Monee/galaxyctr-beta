@@ -14,21 +14,30 @@ Run it with no arguments and answer its questions. It:
 
 Nothing in this program or next to it comes from the game: the disc provides all game data.
 Everything the user sees is in English.
+
+It talks to the user through a window (tools/beta/builder_gui.py) when the builder program carries
+Qt (PySide6) and the system can show it, and through the terminal otherwise, or with --console. The
+steps, the questions and settings.txt are the same in both.
 """
 
 import hashlib
 import multiprocessing
 import os
 import platform
+import queue
+import re
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
+import urllib.parse
 import wave
 import zlib
+from collections import deque
 from pathlib import Path
 
 
@@ -76,63 +85,225 @@ KEEP_UPDATE_SPACE = 3 << 30
 SD_SPACE = 4 << 30
 
 # What the builder writes under sdmc:/smg. Everything else there (nand/ holds the saves, the log)
-# is left alone.
-SD_ITEMS = ("files", "native", "port", "cache", "files_version.txt")
+# is left alone. The folders first, files_version.txt last (SD_ITEMS[:-1] are the folders).
+# loading/ (the loading screen, builder_loading.py) is made only when this program can draw it.
+SD_ITEMS = ("files", "native", "port", "cache", "loading", "files_version.txt")
+OPTIONAL_SD_ITEMS = ("loading",)
 
 CIA_NAME = "GalaxyCTR.cia"
 
 
 # ############################################################################
 # # Talking to the user                                                     #
+# #                                                                         #
+# # Every line and question goes through UI: TextUI below (the terminal),   #
+# # or the window's GuiUI (builder_gui.py), which runs the same build in a  #
+# # thread of its own and answers the questions from dialogs. ask() gets    #
+# # a kind (text, disc, folder, sd) so the window can offer the matching    #
+# # picker; the terminal just reads a line. Everything also goes to LOG.    #
 # ############################################################################
 
 LOG = None  # the builder's log file, opened in main()
+LOG_LOCK = threading.Lock()  # the FTP copy writes to it from several threads
+
+
+EARLY = []  # what was logged before the log file was opened (the launcher's first start)
+
+
+STEP_LINE = re.compile(r"^\[(\d+)/(\d+)\] (.+)$")
+
+
+DETAIL = "\t"  # starts a line that is a detail of the entry before it (log_format)
+
+
+def log_format(text):
+    """The log's look (owner, 25 Nov 2026): a title for each step ("Step 4 of 6: Building the
+    CIA"), a dash before every entry, and an indented dash before an entry's details (lines that
+    start with DETAIL: an answer, a program's output, the converter's report). Lines that already
+    have their dash, and the title line, stay as they are."""
+    out = []
+    for line in str(text).split("\n"):
+        stripped = line.strip()
+        found = STEP_LINE.match(stripped)
+        if not stripped:
+            out.append("")
+        elif found:
+            out.append(f"Step {found[1]} of {found[2]}: {found[3]}")
+        elif line.startswith(("- ", "  - ", "== ")):
+            out.append(line)
+        elif line.startswith(DETAIL):
+            out.append("  - " + stripped)
+        else:
+            out.append("- " + stripped)
+    return "\n".join(out)
+
+
+def log(text):
+    text = log_format(text)
+    if LOG:
+        with LOG_LOCK:
+            LOG.write(text + "\n")
+            LOG.flush()
+    else:
+        EARLY.append(text)
+
+
+def terminal():
+    """Where the terminal's words go: while the converter runs, sys.stdout is ConverterOutput,
+    which only logs what it gets, so the progress line and the notes the builder shows then went
+    to the log instead of the screen (terminal mode, found on Linux 25 Nov 2026)."""
+    # The converter wraps sys.stdout once more (its _LogTee, with the same .stream), so the layers
+    # are walked down to ConverterOutput's own stream.
+    out = sys.stdout
+    for _ in range(4):
+        if isinstance(out, ConverterOutput):
+            return out.stream or sys.__stdout__
+        inner = out.__dict__.get("stream") if hasattr(out, "__dict__") else None
+        if inner is None:
+            break
+        out = inner
+    return sys.stdout
+
+
+class TextUI:
+    """The terminal, as the builder always was."""
+
+    def __init__(self):
+        self.shown = None  # the progress line on screen, None when there is none
+
+    def end_progress(self):
+        if self.shown is not None:
+            print(file=terminal(), flush=True)
+            self.shown = None
+
+    def say(self, text=""):
+        self.end_progress()
+        print(text, file=terminal(), flush=True)
+
+    def problem(self, text):
+        self.say(text)
+
+    def step(self, number, total, title):
+        self.say()
+        self.say(f"[{number}/{total}] {title}")
+
+    def progress(self, label, percent=-1.0, detail=""):
+        shown = f"  {label}: {percent:5.1f}%" if percent >= 0 else f"  {label}..."
+        if detail:
+            shown += f"  {detail}"
+        if shown != self.shown:
+            print("\r" + shown.ljust(60), end="", file=terminal(), flush=True)
+            self.shown = shown
+
+    def ask(self, question, kind="text", default=None):
+        self.end_progress()
+        return input(question)
+
+    def ask_yes(self, question):
+        """A y/n question, asked again until the answer is one of the two."""
+        while True:
+            answer = ask(f"{question} (y/n) ").lower()
+            if answer in ("y", "yes", "n", "no"):
+                return answer.startswith("y")
+            say("  Type y or n.")
+
+    def ask_ftp(self, question, last, connections):
+        address = ask(question)
+        count = ask(f"Parallel connections, 1 to {FTP_MAX_CONNECTIONS} (Enter for {connections}): ")
+        return address, count
+
+
+UI = TextUI()
 
 
 def say(text=""):
     """A line for the user, also kept in the log."""
-    print(text, flush=True)
-    if LOG:
-        LOG.write(text + "\n")
-        LOG.flush()
+    UI.say(text)
+    log(text)
 
 
-def ask(question):
-    answer = input(question).strip()
-    if LOG:
-        LOG.write(f"{question}{answer}\n")
-    return answer.strip('"').strip("'")  # paths dragged into a terminal come quoted
+def problem(text):
+    """Why an answer was refused; the window shows it in the next question's dialog too."""
+    UI.problem(text)
+    log(text)
+
+
+def ask(question, kind="text", default=None):
+    answer = str(UI.ask(question, kind, default) or "").strip()
+    log(f"Asked: {question.strip().rstrip(':').strip()}\n{DETAIL}Answer: {answer or '(none)'}")
+    return clean_path_text(answer) if kind != "text" else answer.strip('"').strip("'")
 
 
 class BuildError(Exception):
     """A problem the user can fix: printed as is, without a traceback."""
 
 
+def duration(seconds):
+    """517 -> '8 min 37 s'."""
+    seconds = int(seconds)
+    return f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
+
+
 def step(number, total, title):
-    say()
-    say(f"[{number}/{total}] {title}")
+    UI.step(number, total, title)
+    log(f"\n[{number}/{total}] {title}")
+
+
+def progress(label, percent=-1.0, detail=""):
+    UI.progress(label, percent, detail)
+
+
+def end_progress():
+    UI.end_progress()
 
 
 def ask_yes(question):
-    """A y/n question, asked again until the answer is one of the two."""
-    while True:
-        answer = ask(f"{question} (y/n) ").lower()
-        if answer in ("y", "yes", "n", "no"):
-            return answer.startswith("y")
-        say("  Type y or n.")
+    answer = bool(UI.ask_yes(question))
+    log(f"Asked: {question.strip()}\n{DETAIL}Answer: {'yes' if answer else 'no'}")
+    return answer
+
+
+# Characters that ride along with a path copied from Windows' file properties or some chat apps,
+# invisible but enough to make the file "not exist".
+INVISIBLE = dict.fromkeys(map(ord, "​‌‍‎‏‪‫‬‭‮"
+                                   "⁦⁧⁨⁩﻿"))
+
+
+def clean_path_text(text):
+    """A path as typed, pasted or dragged in: quotes, PowerShell's "& '...'", file:// addresses, the
+    backslashes macOS and Linux terminals put before spaces, and invisible characters removed."""
+    text = text.translate(INVISIBLE).strip()
+    if text.startswith("& "):
+        text = text[2:].strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1]
+    if text.lower().startswith("file://"):
+        text = urllib.parse.unquote(urllib.parse.urlparse(text).path)
+        if os.name == "nt" and re.match(r"^/[A-Za-z]:", text):
+            text = text[1:]
+    if os.name != "nt" and "\\" in text and not Path(text).expanduser().exists():
+        text = re.sub(r"\\(.)", r"\1", text)
+    return text.strip()
 
 
 # ############################################################################
 # # The user's settings and the install guide                               #
 # #                                                                         #
-# # settings.txt and install_guide.txt sit in the folder that holds the     #
-# # builder program (the home folder when that one cannot be written). The  #
-# # settings are plain "name = value" lines the user may edit or delete:    #
+# # settings.txt sits in the user's settings folder (settings_path, on      #
+# # Windows %APPDATA%\GalaxyCTR), so the folder of the builder program      #
+# # holds only the program and install_guide.txt. The settings are plain    #
+# # "name = value" lines the user may edit or delete:                       #
 # #   keep_files      yes or no, asked once: keep the game files between    #
 # #                   builds, so an update converts only what changed       #
 # #   work_folder     where the kept files are                              #
 # #   ftp_address     the 3DS's FTP address, as ip:port                     #
+# #   ftp_connections how many files the FTP copy sends at once (1 to 10,   #
+# #                   5 when not set)                                       #
 # #   last_sd_letter  the SD card's drive letter last used (Windows)        #
+# #                                                                         #
+# # A builder downloaded again into another folder finds the same answers.  #
+# # The settings.txt older builders kept next to the program moves there    #
+# # the first time (its answers win, as they were the ones in use).         #
 # ############################################################################
 
 SETTINGS_NAME = "settings.txt"
@@ -153,28 +324,194 @@ def builder_home():
     return Path.home()
 
 
+def settings_folder():
+    """The user's settings folder for GalaxyCTR (created when it is written)."""
+    if os.environ.get("GALAXYCTR_HOME"):  # tests
+        return Path(os.environ["GALAXYCTR_HOME"])
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "GalaxyCTR"
+
+
+def settings_path():
+    return settings_folder() / SETTINGS_NAME
+
+
+def data_home():
+    """Where the builder keeps its own files (the game look, GalaxyCTR-Builder-files): the user's
+    settings folder, so the builder's folder holds only the program and install_guide.txt. Run
+    from the repository, build/beta/launcher-test (or GALAXYCTR_HOME, for tests)."""
+    if os.environ.get("GALAXYCTR_HOME"):
+        return settings_folder()
+    return settings_folder() if FROZEN else REPO / "build" / "beta" / "launcher-test"
+
+
+# ############################################################################
+# # Checking settings.txt                                                   #
+# #                                                                         #
+# # The user may edit the file, but every line must be a comment (#), empty #
+# # or "name = value" with a name the builder knows, once, and a value of   #
+# # the right kind (SETTING_RULES; an empty value means "not set"). A file  #
+# # that breaks any of this is emptied at once, before anything reads it    #
+# # (Settings, and check_settings, the launcher's very first step).         #
+# ############################################################################
+
+def balanced(text):
+    """Every bracket of text closed, in order."""
+    pairs, stack = {")": "(", "]": "[", "}": "{"}, []
+    for char in text:
+        if char in "([{":
+            stack.append(char)
+        elif char in pairs:
+            if not stack or stack.pop() != pairs[char]:
+                return False
+    return not stack
+
+
+def good_path(value):
+    """A full path to a file or folder: no characters Windows refuses, brackets closed."""
+    if len(value) > 1024 or any(ord(char) < 32 for char in value) or not balanced(value):
+        return False
+    path = Path(value)
+    if not path.is_absolute():
+        return False
+    if os.name == "nt":
+        rest = value[2:] if path.drive and len(path.drive) == 2 else value
+        if any(char in '<>"|?*' for char in value) or ":" in rest:
+            return False
+    return True
+
+
+def good_look_disc(value):
+    """builder_exeicon.disc_identity: path|size|seconds."""
+    parts = value.rsplit("|", 2)
+    return len(parts) == 3 and good_path(parts[0]) and parts[1].isdigit() and parts[2].lstrip("-").isdigit()
+
+
+def good_geometry(value):
+    """builder_window.Window.GEOMETRY (x,y,width,height,state,screen), or the base64 an earlier
+    builder wrote."""
+    if re.fullmatch(r"-?\d+,-?\d+,\d+,\d+,(normal|maximized)(,[^\x00-\x1f]*)?", value):
+        return True
+    import base64
+    import binascii
+    if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", value):
+        return False
+    try:
+        base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+SETTING_RULES = {
+    "keep_files": lambda v: v in ("yes", "no"),
+    "work_folder": good_path,
+    "disc_image": good_path,
+    "ftp_address": lambda v: ":" in v and parse_ftp_address(v) is not None,
+    "ftp_connections": lambda v: v.isdigit() and 1 <= int(v) <= FTP_MAX_CONNECTIONS,
+    "last_sd_letter": lambda v: len(v) == 1 and "A" <= v.upper() <= "Z",
+    "look_disc": good_look_disc,
+    "remember_window": lambda v: v in ("yes", "no"),
+    "window_geometry": good_geometry,
+    "graphics_fps": lambda v: v in ("screen", "30", "60", "120", "144", "165", "240", "0"),
+    "graphics_vsync": lambda v: v in ("on", "off"),
+    "graphics_gpu": lambda v: v in ("auto", "saving", "fast", "second"),
+    "graphics_motion": lambda v: v in ("system", "always", "still"),
+    "graphics_counter": lambda v: v in ("on", "off"),
+}
+
+
+def settings_problem(text):
+    """What is wrong in settings.txt's text, or None."""
+    seen = set()
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            return f"line {number} is not 'name = value'"
+        name, value = (part.strip() for part in stripped.split("=", 1))
+        if name not in SETTING_RULES:
+            return f"line {number}: unknown setting '{name[:40]}'"
+        if name in seen:
+            return f"line {number}: '{name}' is set twice"
+        seen.add(name)
+        if value and not SETTING_RULES[name](value):
+            return f"line {number}: '{value[:80]}' is not a valid {name}"
+    return None
+
+
+def read_settings(path):
+    """settings.txt's answers. OSError when the file is missing; ValueError, with the reason, when
+    it breaks the rules above."""
+    try:
+        text = path.read_bytes().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise ValueError("it is not UTF-8 text") from None
+    problem_found = settings_problem(text)
+    if problem_found:
+        raise ValueError(problem_found)
+    values = {}
+    for line in text.splitlines():
+        if "=" in line and not line.lstrip().startswith("#"):
+            name, value = line.split("=", 1)
+            values[name.strip()] = value.strip()
+    return values
+
+
+def check_settings():
+    """The launcher's first step: settings.txt checked (and emptied when it is wrong)."""
+    Settings()
+
+
 class Settings:
     def __init__(self):
-        self.path = builder_home() / SETTINGS_NAME
+        self.path = settings_path()
         self.values = {}
         try:
-            for line in self.path.read_text(encoding="utf-8").splitlines():
-                if "=" in line and not line.lstrip().startswith("#"):
-                    name, value = line.split("=", 1)
-                    self.values[name.strip()] = value.strip()
+            self.values = read_settings(self.path)
         except OSError:
             pass
+        except ValueError as error:
+            log(f"settings.txt was emptied: {error}.")
+            self.save()
+        old = builder_home() / SETTINGS_NAME  # where older builders kept it
+        if old != self.path and old.is_file():
+            try:
+                self.values.update(read_settings(old))
+                self.save()
+            except (OSError, ValueError) as error:
+                log(f"The old settings.txt next to the builder was not taken ({error}).")
+            try:
+                old.unlink()
+            except OSError:
+                pass
 
     def get(self, name):
         return self.values.get(name) or None
 
     def set(self, name, value):
         self.values[name] = str(value)
+        self.save()
+
+    def unset(self, name):
+        """Forgets an answer, so the builder asks again."""
+        if self.values.pop(name, None) is not None:
+            self.save()
+
+    def save(self):
         lines = ["# GalaxyCTR builder settings. The builder writes this file. You can edit it, or delete it to be",
                  "# asked again.", ""]
         lines += [f"{name} = {value}" for name, value in self.values.items()]
+        text = "\n".join(lines) + "\n"
         try:
-            self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(text, encoding="utf-8")
         except OSError as error:
             say(f"  Could not save {self.path} ({error}).")
 
@@ -211,12 +548,27 @@ def find_tool(name):
     raise BuildError(f"The helper program {exe} is missing from the builder. Download the builder again.")
 
 
+# The builder program for Windows has no terminal window of its own when it shows its window, so the
+# helper programs (terminal programs) are started without one, or each would open one.
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
+
+
+def details(text):
+    """A program's output as the details of a log entry (log_format indents them)."""
+    return "".join(f"\n{DETAIL}{line.strip()}" for line in str(text).splitlines() if line.strip())
+
+
 def run_tool(name, *args):
     """Runs a helper program and returns its output; a failure stops the build with its message."""
-    result = subprocess.run([str(find_tool(name)), *map(str, args)], capture_output=True, text=True,
-                            errors="replace", stdin=subprocess.DEVNULL)
-    if LOG:
-        LOG.write(f"$ {name} {' '.join(map(str, args))}\n{result.stdout}{result.stderr}\n")
+    tool = find_tool(name)
+    try:
+        result = subprocess.run([str(tool), *map(str, args)], capture_output=True, text=True,
+                                errors="replace", stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+    except OSError as error:
+        log(f"Running {name} {' '.join(map(str, args))}\n{DETAIL}It could not start: {error!r}")
+        raise BuildError(f"The helper program {name} could not start ({error}). An antivirus may have "
+                         f"blocked it. Allow {tool.parent} in it, or download the builder again.")
+    log(f"Running {name} {' '.join(map(str, args))}" + details(result.stdout + result.stderr))
     if result.returncode != 0:
         raise BuildError(f"{name} failed:\n{(result.stderr or result.stdout).strip()[-800:]}")
     return result.stdout + result.stderr
@@ -228,10 +580,56 @@ def run_tool(name, *args):
 # # nodtool reads ISO, RVZ, WIA, WBFS, CISO, GCZ and NFS images alike, and  #
 # # prints the disc's ID and revision. Only the USA release, revision 0,    #
 # # is accepted: the port's code and the converter are made for it.        #
+# #                                                                         #
+# # Testers saw a good USA image refused once and taken after restarting    #
+# # the builder. Images that cannot be read *yet* explain that: one still   #
+# # being copied or unpacked, or one that a cloud folder (OneDrive on       #
+# # Windows' Desktop and Documents) keeps online and downloads only when    #
+# # opened. So nodtool is tried a few times, those cases are recognised and #
+# # named, and the refusal says nodtool's own reason (all of it in the log).#
 # ############################################################################
 
+WII_DISC_SIZE = 4_699_979_776  # a whole single-layer Wii disc as an ISO, in bytes
+DISC_TRIES = 3
+
+# Windows file attributes of a file kept online by OneDrive and the like (st_file_attributes).
+CLOUD_ATTRIBUTES = 0x1000 | 0x40000 | 0x400000  # OFFLINE, RECALL_ON_OPEN, RECALL_ON_DATA_ACCESS
+
+
+def disc_not_ready(path):
+    """Why an image cannot be read right now, or None."""
+    try:
+        first = path.stat()
+    except OSError as error:
+        return f"The file cannot be opened ({error.strerror or error})."
+    if getattr(first, "st_file_attributes", 0) & CLOUD_ATTRIBUTES:
+        return ("This file is still in the cloud (OneDrive or similar). "
+                "Right-click it and choose 'Always keep on this device'. Try again once it is downloaded.")
+    time.sleep(2)
+    try:
+        second = path.stat()
+    except OSError:
+        second = first
+    if second.st_size != first.st_size or second.st_mtime != first.st_mtime:
+        return "This file is still being copied or unpacked. Wait until that is finished, then try again."
+    if path.suffix.lower() == ".iso" and first.st_size < WII_DISC_SIZE:
+        return (f"This ISO has {first.st_size / (1 << 30):.2f} GB, a whole Wii disc 4.38 GB. "
+                "It is incomplete: still copying, or a broken download. Copy or unpack it again.")
+    return None
+
+
 def read_disc_info(image):
-    text = run_tool("nodtool", "info", image)
+    """nodtool's description of the image, tried again when it fails: images still being written or
+    fetched from a cloud folder read fine moments later."""
+    for attempt in range(DISC_TRIES):
+        try:
+            text = run_tool("nodtool", "info", image)
+            break
+        except BuildError:
+            if attempt == DISC_TRIES - 1:
+                raise
+            log(f"  nodtool info failed, trying again ({attempt + 2}/{DISC_TRIES})")
+            time.sleep(1.5)
     game_id = revision = None
     for line in text.splitlines():
         line = line.strip()
@@ -245,40 +643,51 @@ def read_disc_info(image):
     return game_id, revision, title, fmt
 
 
-def choose_disc(given=None):
+def disc_problem(path):
+    """Why a file is not a disc image the build takes (a sentence), or None when it is fine;
+    the image's description goes to the output."""
+    if path.is_dir():
+        return "That is a folder. Choose the disc image file itself (.iso, .wbfs, .rvz and the like)."
+    if not path.is_file():
+        return f"The file {path} does not exist. Try again."
+    try:
+        game_id, revision, title, fmt = read_disc_info(path)
+    except BuildError as error:
+        reason = disc_not_ready(path)
+        if reason is None:
+            said = [line.strip() for line in str(error).splitlines()[1:] if line.strip()]
+            reason = ("This file is not a Wii disc image that can be read" +
+                      (f" (nodtool: {said[-1][-200:]})" if said else "") + ". Try another one.")
+        return reason
+    say(f"  {fmt} image: {title} ({game_id}, revision {revision})")
+    if game_id != GAME_ID:
+        region = {"RMGJ01": "the Japanese release", "RMGP01": "the European release",
+                  "RMGK01": "the Korean release"}.get(game_id)
+        return (f"This is {region} of Super Mario Galaxy. Only the USA release (RMGE01) is supported."
+                if region else "This is not Super Mario Galaxy. Only the USA release (RMGE01) is supported.")
+    if revision != GAME_REVISION:
+        return f"Revision {revision} of the disc is not supported, only revision {GAME_REVISION}."
+    return None
+
+
+def choose_disc(given=None, default=None):
+    """The disc image, checked; default (the one chosen last time) is offered first."""
     while True:
-        path = Path(given or ask("Disc image of Super Mario Galaxy (USA), or drag it here: ")).expanduser()
+        prompt = "Disc image of Super Mario Galaxy (USA), or drag it here: "
+        text = clean_path_text(given) if given else ask(prompt, "disc", default if default and Path(default).is_file() else None)
         if given:
-            say(f"  {path}")
+            say(f"  {text}")
             given = None  # a refused --disc falls back to asking
-        if not path.is_file():
-            say("  That file does not exist. Try again.")
+        if not text:
+            problem("  Choose the disc image file.")
             continue
-        try:
-            game_id, revision, title, fmt = read_disc_info(path)
-        except BuildError:
-            say("  This file is not a Wii disc image that can be read. Try another one.")
-            continue
-        say(f"  {fmt} image: {title} ({game_id}, revision {revision})")
-        if game_id != GAME_ID:
-            region = {"RMGJ01": "the Japanese release", "RMGP01": "the European release",
-                      "RMGK01": "the Korean release"}.get(game_id)
-            say(f"  This is {region} of Super Mario Galaxy. Only the USA release (RMGE01) is supported."
-                if region else "  This is not Super Mario Galaxy. Only the USA release (RMGE01) is supported.")
-            continue
-        if revision != GAME_REVISION:
-            say(f"  Revision {revision} of the disc is not supported, only revision {GAME_REVISION}.")
+        path = Path(text).expanduser()
+        reason = disc_problem(path)
+        if reason:
+            problem(f"  {reason}")
             continue
         return path
 
-
-# ############################################################################
-# # Steps 2 and 3: extraction and the main.dol check                       #
-# #                                                                         #
-# # The data partition comes out as files/ (the game's files) and sys/     #
-# # (main.dol and the disc's system files), the same layout Dolphin makes. #
-# # The converter later finds sys/main.dol next to files/ by itself.        #
-# ############################################################################
 
 def free_space(path):
     return shutil.disk_usage(path).free
@@ -293,17 +702,23 @@ def extraction_ok(target):
 
 def extract_disc(image, work, name="disc", check_space=True):
     if check_space and free_space(work) < WORK_SPACE:
-        raise BuildError(f"Not enough free space in {work}: about {WORK_SPACE >> 30} GB are needed, "
+        raise BuildError(f"Not enough free space in {work}. About {WORK_SPACE >> 30} GB are needed, "
                          f"{free_space(work) >> 30} GB are free. Free some space and run the builder again.")
     target = work / name
-    shutil.rmtree(target, ignore_errors=True)
-    run_tool("nodtool", "extract", "-q", image, target)
-    dol = target / "sys" / "main.dol"
-    if not (target / "files" / "ObjectData").is_dir() or not dol.is_file():
+    # Extracted beside it first and renamed once whole: an extraction cut short (the window closed,
+    # the computer off) never leaves a half disc under the name that kept_folder() trusts, whose
+    # check (ObjectData and main.dol) the first files out already pass.
+    partial = work / f"{name}.partial"
+    shutil.rmtree(partial, ignore_errors=True)
+    run_tool("nodtool", "extract", "-q", image, partial)
+    dol = partial / "sys" / "main.dol"
+    if not (partial / "files" / "ObjectData").is_dir() or not dol.is_file():
         raise BuildError("The disc was extracted, but its files are not where they should be.")
-    if not extraction_ok(target):
-        raise BuildError("This disc's main.dol is not the original one: the disc image is modified or damaged. "
+    if not extraction_ok(partial):
+        raise BuildError("This disc's main.dol is not the original. The disc image is modified or damaged. "
                          "Make a new copy of your disc.")
+    shutil.rmtree(target, ignore_errors=True)
+    partial.rename(target)
     say("  Extracted, and main.dol is the original.")
     return target
 
@@ -318,35 +733,47 @@ def extract_disc(image, work, name="disc", check_space=True):
 # # folded into one line that updates itself; all of them go to the log.   #
 # ############################################################################
 
+# What the converter says for its own command line, not for the builder: where to copy the cache
+# (the builder copies it) and where its files went (said by the builder).
+CONVERTER_NOT_LOGGED = ("Copy the cache folder to sdmc:/smg/cache together with files and native.",
+                        "Done. The game's files were overwritten in this folder.")
+
+
+# Its headings, in the log's words.
+CONVERTER_WORDS = {"Converted:": "Files converted in this build:"}
+
+
 class ConverterOutput:
     """Stands in for stdout while the converter runs."""
 
     def __init__(self, stream):
-        self.stream, self.pending, self.shown = stream, "", ""
+        self.stream, self.pending = stream, ""
 
     def write(self, text):
         self.pending += text
         lines = self.pending.split("\n")
         self.pending = lines.pop()
         for line in lines:
-            if LOG:
-                LOG.write(line + "\n")
+            if not line.startswith("@@PROGRESS ") and line.strip() not in CONVERTER_NOT_LOGGED:
+                said = CONVERTER_WORDS.get(line.strip(), line.strip())
+                log(DETAIL + said if said else "")  # details of "The converter's report"
             if line.startswith("@@PROGRESS "):
                 # "@@PROGRESS step steps percent name|detail" (convert_smg_files._progress)
                 parts = line.split(" ", 4)
-                name = parts[4].split("|", 1)[0] if len(parts) > 4 else ""
+                name, _, detail = (parts[4] if len(parts) > 4 else "").partition("|")
                 percent = float(parts[3]) if len(parts) > 3 else -1
-                shown = f"  {name}: {percent:5.1f}%" if percent >= 0 else f"  {name}..."
-                if shown != self.shown:
-                    self.stream.write("\r" + shown.ljust(60))
-                    self.stream.flush()
-                    self.shown = shown
+                part = f"part {parts[1]} of {parts[2]}" if len(parts) > 2 and parts[1] != "0" else ""
+                UI.progress(name, percent, part if isinstance(UI, TextUI) else ", ".join(filter(None, (part, detail))))
             elif line.startswith(("Warning", "Error", "Native conversion found", "Preflight found", "Conversion stopped")):
-                self.stream.write("\n  " + line + "\n")
+                UI.say("  " + line)
         return len(text)
 
     def flush(self):
-        self.stream.flush()
+        if self.stream:
+            self.stream.flush()
+
+    def isatty(self):
+        return False
 
     def __getattr__(self, name):
         return getattr(self.stream, name)
@@ -362,19 +789,20 @@ def convert_files(disc, originals=None):
     if originals is not None:
         sys.argv += ["--originals", str(originals / "files")]
     sys.stdout = sys.stderr = ConverterOutput(saved_out)
+    log("The converter's report:")
     try:
         code = converter.main()
     except SystemExit as stop:
         code = stop.code
     finally:
         sys.argv, sys.stdout, sys.stderr = saved_argv, saved_out, saved_err
-    print()
+    end_progress()
     if code not in (0, None):
         raise BuildError(f"The conversion stopped with an error ({code}). The details are in the log.")
-    missing = [name for name in SD_ITEMS if not (disc / name).exists()]
+    missing = [name for name in SD_ITEMS if name not in OPTIONAL_SD_ITEMS and not (disc / name).exists()]
     if missing:
         raise BuildError(f"The conversion finished without writing {', '.join(missing)}.")
-    say("  Converted.")
+    say("  The game files are ready for the 3DS.")
 
 
 # ############################################################################
@@ -514,40 +942,48 @@ def mounted_drives():
     return found
 
 
+def windows_drives():
+    """(letter, removable) of every drive on Windows, for the window's SD card list."""
+    import ctypes
+    mask = ctypes.windll.kernel32.GetLogicalDrives()
+    system = Path(os.environ.get("SystemDrive", "C:")).drive.rstrip(":").upper()
+    return [(chr(65 + n), removable_drive(chr(65 + n))) for n in range(26) if mask >> n & 1 and chr(65 + n) != system]
+
+
 def choose_sd_card(settings):
     say("Insert your 3DS's SD card into this computer.")
     last = settings.get("last_sd_letter")
     while True:
         if os.name == "nt":
             prompt = f"Drive letter of the SD card (Enter for {last}): " if last else "Drive letter of the SD card (for example E): "
-            letter = (ask(prompt) or last or "").rstrip(":\\/").upper()
+            letter = (ask(prompt, "sd", last) or last or "").rstrip(":\\/").upper()
             if len(letter) != 1 or not letter.isalpha():
-                say("  Type just the letter.")
+                problem("  Type just the letter.")
                 continue
             card = Path(f"{letter}:\\")
             if not card.is_dir():
-                say(f"  There is no drive {letter}:. Check the letter in File Explorer.")
+                problem(f"  There is no drive {letter}:. Check the letter in File Explorer.")
                 continue
             if letter == Path(os.environ.get("SystemDrive", "C:")).drive.rstrip(":").upper():
-                say("  That is this computer's system drive, not an SD card.")
+                problem("  That is this computer's system drive, not an SD card.")
                 continue
-            if not removable_drive(letter) and ask(f"  {letter}: is not a removable drive. Use it anyway? (y/n) ").lower() != "y":
+            if not removable_drive(letter) and not ask_yes(f"  {letter}: is not a removable drive. Use it anyway?"):
                 continue
         else:
             drives = mounted_drives()
             for number, drive in enumerate(drives, 1):
                 say(f"  {number}. {drive}")
-            answer = ask("Number of the SD card above, or its full path: ")
+            answer = ask("Number of the SD card above, or its full path: ", "sd")
             card = drives[int(answer) - 1] if answer.isdigit() and 0 < int(answer) <= len(drives) else Path(answer).expanduser()
-            if not card.is_dir():
-                say("  That folder does not exist.")
+            if not answer or not card.is_dir():
+                problem("  That folder does not exist.")
                 continue
         try:
             probe = card / ".galaxyctr-write-test"
             probe.write_bytes(b"")
             probe.unlink()
         except OSError:
-            say("  The card cannot be written. Check its lock switch and try again.")
+            problem("  The card cannot be written. Check its lock switch and try again.")
             continue
         if os.name == "nt":
             settings.set("last_sd_letter", letter)
@@ -578,11 +1014,12 @@ def copy_to_sd(disc, cia, card):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
             copied += path.stat().st_size
-            print(f"\r  Copying: {100 * copied / needed:5.1f}%", end="", flush=True)
-    print()
+            progress("Copying", 100 * copied / needed, speed_text(copied, time.monotonic() - started, needed))
+    end_progress()
     (card / "cias").mkdir(exist_ok=True)
     shutil.copyfile(cia, card / "cias" / CIA_NAME)
-    say(f"  Copied in {int(time.monotonic() - started)} s: the game files to {smg}, the CIA to {card / 'cias' / CIA_NAME}.")
+    say(f"  Copied in {duration(time.monotonic() - started)}. The game files are in {smg}.")
+    say(f"  The CIA is in {card / 'cias' / CIA_NAME}.")
 
 
 def check_dsp_firmware(card):
@@ -590,7 +1027,7 @@ def check_dsp_firmware(card):
     if (card / "3ds" / "dspfirm.cdc").is_file():
         return True
     say("  Note: sdmc:/3ds/dspfirm.cdc is missing, so the game would have no sound.")
-    say("  Run the homebrew app 'DSP1' once on your 3DS: it saves that file from your own console.")
+    say("  Run the homebrew app 'DSP1' once on your 3DS. It saves that file from your own console.")
     return False
 
 
@@ -599,11 +1036,23 @@ def check_dsp_firmware(card):
 # #                                                                         #
 # # The same files sent to an FTP server app running on the 3DS (ftpd and   #
 # # the like), at the address it shows (ip:port). As on a card in this      #
-# # computer, the old smg/files, native, port and cache are deleted first   #
+# # computer, the old smg folders (SD_ITEMS) are deleted first            #
 # # and smg/nand (the saves) is left alone.                                 #
+# #                                                                         #
+# # The game is thousands of files, and over Wi-Fi each one costs a pause   #
+# # (opening it on the 3DS's SD card, the server's answers), so several     #
+# # FTP connections work at once (ftp_connections, 5 unless the user picks  #
+# # 1 to 10): one connection lists and makes the folders, then every        #
+# # connection takes the next file from a shared queue, largest first, both #
+# # to delete the old files and to send the new ones. A file whose transfer #
+# # breaks is sent again on a new connection (FTP_TRIES times); a           #
+# # connection the server refuses (too many at once) is simply not used.    #
 # ############################################################################
 
 FTP_DEFAULT_PORT = 5000  # ftpd's
+FTP_DEFAULT_CONNECTIONS = 5
+FTP_MAX_CONNECTIONS = 10
+FTP_TRIES = 3
 
 
 def parse_ftp_address(text):
@@ -617,27 +1066,63 @@ def parse_ftp_address(text):
     return host, int(port) if port else FTP_DEFAULT_PORT
 
 
+def parse_connections(text, default):
+    """The number of FTP connections typed (Enter for the default); None when it is not 1 to 10."""
+    text = str(text).strip()
+    if not text:
+        return default
+    return int(text) if text.isdigit() and 1 <= int(text) <= FTP_MAX_CONNECTIONS else None
+
+
+def ftp_connections(settings):
+    value = parse_connections(settings.get("ftp_connections") or "", FTP_DEFAULT_CONNECTIONS)
+    return value or FTP_DEFAULT_CONNECTIONS
+
+
 def choose_ftp_address(settings):
-    say("Start an FTP app on your 3DS (for example ftpd) and connect it to the same Wi-Fi as this computer.")
+    say("Start an FTP app on your 3DS, for example ftpd. Connect it to the same Wi-Fi as this computer.")
     last = settings.get("ftp_address")
+    connections = ftp_connections(settings)
     while True:
         prompt = f"Address it shows, as ip:port (Enter for {last}): " if last else "Address it shows, as ip:port (for example 192.168.1.10:5000): "
-        text = ask(prompt) or last or ""
+        text, count = UI.ask_ftp(prompt, last, connections)
+        text = str(text or "").strip() or last or ""
+        log(f"FTP address {text}, connections {count}")
         address = parse_ftp_address(text)
         if address is None:
-            say("  Type the address as four numbers and the port, for example 192.168.1.10:5000.")
+            problem("  Type the address and the port, for example 192.168.1.10:5000.")
+            continue
+        count = parse_connections(count, connections)
+        if count is None:
+            problem(f"  Type a number of connections from 1 to {FTP_MAX_CONNECTIONS}.")
             continue
         settings.set("ftp_address", f"{address[0]}:{address[1]}")
-        return address
+        settings.set("ftp_connections", count)
+        return address, count
 
 
-def ftp_remove_tree(ftp, ftplib, path):
-    """Deletes a folder on the 3DS with everything in it; nothing when it does not exist. The
+def ftp_connect(ftplib, address):
+    ftp = ftplib.FTP()
+    ftp.connect(address[0], address[1], timeout=30)
+    ftp.login()
+    ftp.set_pasv(True)
+    return ftp
+
+
+def ftp_close(ftp):
+    try:
+        ftp.quit()
+    except Exception:  # noqa: BLE001 - a broken connection is closed all the same
+        ftp.close()
+
+
+def ftp_list(ftp, ftplib, path):
+    """(name, is_folder) of everything in a folder on the 3DS; None when it does not exist. The
     folder is entered and then listed: some servers list their root for a listing given a path."""
     try:
         ftp.cwd(path)
     except ftplib.error_perm:
-        return
+        return None
     try:
         entries = [(name, facts.get("type") == "dir") for name, facts in ftp.mlsd(facts=["type"])
                    if facts.get("type") not in ("cdir", "pdir")]
@@ -651,15 +1136,21 @@ def ftp_remove_tree(ftp, ftplib, path):
             except ftplib.error_perm:
                 entries.append((name, False))
     ftp.cwd("/")
+    return [(name, folder) for name, folder in entries if name not in (".", "..")]
+
+
+def ftp_walk(ftp, ftplib, path, files, folders):
+    """Adds every file under a folder on the 3DS to files, and the folders to folders, each one
+    before what it holds."""
+    entries = ftp_list(ftp, ftplib, path)
+    if entries is None:
+        return
+    folders.append(path)
     for name, is_folder in entries:
-        if name in (".", ".."):
-            continue
-        child = f"{path}/{name}"
         if is_folder:
-            ftp_remove_tree(ftp, ftplib, child)
+            ftp_walk(ftp, ftplib, f"{path}/{name}", files, folders)
         else:
-            ftp.delete(child)
-    ftp.rmd(path)
+            files.append(f"{path}/{name}")
 
 
 def ftp_make_folder(ftp, ftplib, path):
@@ -669,61 +1160,207 @@ def ftp_make_folder(ftp, ftplib, path):
         pass  # already there
 
 
-def copy_over_ftp(disc, cia, address):
+def speed_text(done, seconds, total):
+    """'2.4 MB/s, about 3 min left' for a copy in progress."""
+    if seconds < 1 or done <= 0:
+        return ""
+    speed = done / seconds
+    left = (total - done) / speed if speed else 0
+    eta = f"{int(left)} s" if left < 90 else f"{round(left / 60)} min"
+    return f"{speed / (1 << 20):.1f} MB/s, about {eta} left"
+
+
+def ftp_parallel(ftplib, address, count, jobs, work, label, sizes=None):
+    """Runs work(ftp, job, sent) for every job on up to count connections at once. sent(n) counts n
+    bytes sent; with sizes (one per job) progress is in bytes, otherwise in jobs. Raises BuildError
+    when a job still fails after FTP_TRIES tries, or no connection could be opened."""
+    order = sorted(range(len(jobs)), key=lambda i: -sizes[i]) if sizes else range(len(jobs))
+    waiting = queue.Queue()
+    for index in order:
+        waiting.put(index)
+    total = sum(sizes) if sizes else len(jobs)
+    lock = threading.Lock()
+    state = {"done": 0, "open": 0, "opened": 0, "jobs_done": 0}
+    errors, refused = [], []
+    stop = threading.Event()
+
+    def count_done(amount):
+        with lock:
+            state["done"] += amount
+
+    def worker(number):
+        ftp = None
+        try:
+            try:
+                ftp = ftp_connect(ftplib, address)
+            except (OSError, EOFError, ftplib.Error) as error:
+                refused.append(f"connection {number + 1}: {error}")
+                return
+            with lock:
+                state["open"] += 1
+                state["opened"] += 1
+            while not stop.is_set():
+                try:
+                    index = waiting.get_nowait()
+                except queue.Empty:
+                    return
+                for attempt in range(1, FTP_TRIES + 1):
+                    part = [0]
+
+                    def sent(amount, part=part):
+                        part[0] += amount
+                        if sizes:
+                            count_done(amount)
+
+                    try:
+                        work(ftp, jobs[index], sent)
+                        count_done(0 if sizes else 1)
+                        with lock:
+                            state["jobs_done"] += 1
+                        break
+                    except (OSError, EOFError, ftplib.Error) as error:
+                        if sizes:
+                            count_done(-part[0])
+                        with lock:
+                            others = state["open"] - 1
+                        if str(error)[:3] in ("421", "425") and others > 0:
+                            # The server has too many connections: this one steps back and leaves
+                            # the file to the others.
+                            waiting.put(index)
+                            log(f"  FTP connection {number + 1} closes, the server is busy ({error}); the others go on")
+                            return
+                        log(f"  FTP connection {number + 1}: {jobs[index]!r} failed ({error}), try {attempt} of {FTP_TRIES}")
+                        if attempt == FTP_TRIES:
+                            errors.append(error)
+                            stop.set()
+                            return
+                        ftp_close(ftp)
+                        time.sleep(attempt)
+                        try:
+                            ftp = ftp_connect(ftplib, address)
+                        except (OSError, EOFError, ftplib.Error) as again:
+                            with lock:
+                                others = state["open"] - 1
+                            if others > 0:  # the file goes back to the queue for another connection
+                                waiting.put(index)
+                                log(f"  FTP connection {number + 1} could not reconnect ({again}); the others go on")
+                                return
+                            errors.append(again)
+                            stop.set()
+                            return
+        finally:
+            if ftp is not None:
+                ftp_close(ftp)
+            with lock:
+                state["open"] = max(0, state["open"] - (1 if ftp is not None else 0))
+
+    threads = [threading.Thread(target=worker, args=(n,), daemon=True) for n in range(min(count, max(1, len(jobs))))]
+    started = time.monotonic()
+    for thread in threads:
+        thread.start()
+        time.sleep(0.05)  # servers on the 3DS take kindly to connections a moment apart
+    samples = deque([(started, 0)])
+    while any(thread.is_alive() for thread in threads):
+        time.sleep(0.25)
+        with lock:
+            done, connections = state["done"], state["open"]
+        now = time.monotonic()
+        samples.append((now, done))
+        while len(samples) > 2 and now - samples[0][0] > 6:
+            samples.popleft()  # the speed of the last few seconds
+        if sizes:
+            then, before = samples[0]
+            speed = (done - before) / max(now - then, 0.001)
+            left = (total - done) / speed if speed > 0 else 0
+            eta = "" if speed <= 0 else (f", about {int(left)} s left" if left < 90 else f", about {round(left / 60)} min left")
+            detail = f"{speed / (1 << 20):.1f} MB/s, {connections} connections{eta}"
+        else:
+            detail = f"{done} of {total} files, {connections} connections"
+        progress(label, 100 * done / total if total else 100.0, detail)
+    end_progress()
+    for thread in threads:
+        thread.join()
+    if refused:
+        log(f"  {len(refused)} of {len(threads)} FTP connections were refused: " + "; ".join(refused))
+    if errors:
+        raise errors[0]
+    if state["jobs_done"] < len(jobs):
+        raise OSError(refused[0] if refused else "the FTP server stopped answering")
+    log(f"  {label}: {len(jobs)} files with {state['opened']} connections in {time.monotonic() - started:.1f} s")
+
+
+def copy_over_ftp(disc, cia, address, connections=FTP_DEFAULT_CONNECTIONS):
     try:
         import ftplib
     except ImportError:
-        raise BuildError("This builder program cannot copy over FTP. Download the latest one from "
-                         "https://github.com/Im-Monee/galaxyctr-beta/releases/latest, or copy to the SD card in this computer.")
+        raise BuildError("This builder program cannot copy over FTP. Copy to the SD card in this computer, "
+                         f"or download the latest builder. {NEW_PROGRAM}")
     files = [(f, f"/smg/{item}" + ("" if f == disc / item else "/" + f.relative_to(disc / item).as_posix()))
              for item in SD_ITEMS
              for f in ([disc / item] if (disc / item).is_file() else sorted((disc / item).rglob("*")))
              if f.is_file()]
     files.append((cia, f"/cias/{CIA_NAME}"))
-    needed = sum(f.stat().st_size for f, _ in files)
     host, port = address
     say(f"  Connecting to {host}:{port}...")
     started = time.monotonic()
     try:
-        ftp = ftplib.FTP()
-        ftp.connect(host, port, timeout=30)
-        ftp.login()
-        ftp.set_pasv(True)
-        say("  Connected. Over Wi-Fi this can take a long time: keep the 3DS on and near the router.")
+        ftp = ftp_connect(ftplib, address)
+        say(f"  Connected. Copying with up to {connections} connections at once. Over Wi-Fi this can take a "
+            "while. Keep the 3DS on and near the router.")
+
+        # The old converted files (saves are in smg/nand): listed here, deleted by every connection.
+        old_files, old_folders = [], []
         for item in SD_ITEMS[:-1]:
-            ftp_remove_tree(ftp, ftplib, f"/smg/{item}")  # the old converted files; saves are in smg/nand
+            ftp_walk(ftp, ftplib, f"/smg/{item}", old_files, old_folders)
+        if old_files:
+            ftp_close(ftp)
+
+            def delete(connection, remote, sent):
+                try:
+                    connection.delete(remote)
+                except ftplib.error_perm:
+                    pass  # already gone
+
+            ftp_parallel(ftplib, address, connections, old_files, delete, "Deleting the old files")
+            ftp = ftp_connect(ftplib, address)
+        for folder in reversed(old_folders):  # each folder after what it holds
+            try:
+                ftp.rmd(folder)
+            except ftplib.error_perm:
+                pass
+
+        folders = sorted({remote.rsplit("/", 1)[0] for _, remote in files})
         made = set()
-        copied = 0
-        for path, remote in files:
-            folder = remote.rsplit("/", 1)[0]
+        for folder in folders:
             parts = folder.strip("/").split("/")
             for depth in range(1, len(parts) + 1):
                 sub = "/" + "/".join(parts[:depth])
                 if sub not in made:
                     ftp_make_folder(ftp, ftplib, sub)
                     made.add(sub)
+        ftp_close(ftp)
 
-            def sent(block, size=[0]):
-                size[0] += len(block)
-                print(f"\r  Copying: {100 * (copied + size[0]) / needed:5.1f}%", end="", flush=True)
-
+        def upload(connection, job, sent):
+            path, remote = job
             with open(path, "rb") as source:
-                ftp.storbinary(f"STOR {remote}", source, blocksize=1 << 16, callback=sent)
-            copied += path.stat().st_size
-        print()
+                connection.storbinary(f"STOR {remote}", source, blocksize=1 << 16, callback=lambda block: sent(len(block)))
+
+        ftp_parallel(ftplib, address, connections, files, upload, "Copying", [f.stat().st_size for f, _ in files])
+
+        ftp = ftp_connect(ftplib, address)
         try:
             ftp.size("/3ds/dspfirm.cdc")
             sound = True
         except ftplib.all_errors:
             sound = False
-        ftp.quit()
+        ftp_close(ftp)
     except (OSError, EOFError, ftplib.Error) as error:
-        print()
+        end_progress()
         raise BuildError(f"The FTP copy stopped ({error}). Check the address and that the FTP app is still running.")
-    say(f"  Copied in {int(time.monotonic() - started)} s: the game files to smg, the CIA to cias/{CIA_NAME}.")
+    say(f"  Copied in {duration(time.monotonic() - started)}. The game files are in smg, the CIA in cias.")
     if not sound:
-        say("  Note: 3ds/dspfirm.cdc was not found on the SD card, so the game would have no sound.")
-        say("  Run the homebrew app 'DSP1' once on your 3DS: it saves that file from your own console.")
+        say("  Note: the SD card has no 3ds/dspfirm.cdc, so the game would have no sound.")
+        say("  Run the homebrew app 'DSP1' once on your 3DS. It saves that file from your own console.")
     return sound
 
 
@@ -736,28 +1373,36 @@ def copy_over_ftp(disc, cia, address):
 
 def write_install_guide(disc, cia, work, keep):
     items = ", ".join(SD_ITEMS)
+    names = [item for item in SD_ITEMS if "." not in item]
+    folders = ", ".join(names[:-1]) + " and " + names[-1]
     lines = [
-        "GalaxyCTR: how to put the game on your 3DS",
+        "How to put GalaxyCTR on your 3DS",
         "",
-        f"The game files are in {disc}",
-        f"The CIA is {cia}",
+        "Your files",
+        f"  Game files: {disc}",
+        f"  CIA: {cia}",
         "",
-        "- Put your 3DS's SD card into this computer, or start an FTP app on the 3DS and connect to it.",
-        "- On the SD card, open the folder smg. Create it if it is missing.",
-        "- In smg, delete the folders files, native, port and cache if they are there. Leave the folder nand: it holds your saves.",
-        f"- Copy {items} from the game files folder above into smg.",
-        f"- Copy {CIA_NAME} into the folder cias on the SD card. Create it if it is missing.",
-        "- Check that the SD card has the file 3ds/dspfirm.cdc. If not, run the homebrew app DSP1 once on your 3DS, or the game has no sound.",
-        f"- Put the SD card back into your 3DS and install cias/{CIA_NAME} with FBI (or another CIA installer).",
+        "1. Put the 3DS's SD card into this computer. Or connect to an FTP app on the 3DS. "
+        "The folders below are the same.",
+        "2. On the SD card, open the folder smg (create it if it is missing).",
+        # The folders the copies replace (copy_to_sd, copy_over_ftp), from the same list.
+        f"3. In smg, delete the old folders {folders} if they are there. "
+        "Do not touch the folder nand: your saves are in it.",
+        f"4. Copy {items} from the game files folder into smg.",
+        f"5. Copy {CIA_NAME} into the folder cias on the SD card. Create it if it is missing.",
+        "6. For the sound, the SD card needs the file 3ds/dspfirm.cdc. If it is missing, run the "
+        "homebrew app DSP1 once on your 3DS.",
+        f"7. Put the SD card back into the 3DS. Install cias/{CIA_NAME} with FBI or another CIA installer.",
     ]
     if keep:
-        lines.append(f"- Keep the folder {work}: the next build updates it and is much faster.")
+        lines.append(f"8. Keep the folder {work}: the next build updates it and is much faster.")
     else:
-        lines.append(f"- When everything is copied, delete the folder {work} to free the space.")
+        lines.append(f"8. When everything is copied, delete the folder {work} to free the space.")
     say()
     for line in lines:
         say(line)
     guide = builder_home() / GUIDE_NAME
+    RESULT["guide"] = guide
     try:
         guide.write_text("\n".join(lines) + "\n", encoding="utf-8")
         say()
@@ -776,8 +1421,8 @@ def ask_keep_files(settings):
     if value in ("yes", "no"):
         return value == "yes"
     say()
-    say(f"The builder can keep the game files it makes (about {KEEP_SPACE >> 30} GB) after each build. The next updates then")
-    say("convert only what changed and do not need the disc image, so they are much faster.")
+    say(f"The builder can keep the game files it makes after each build (about {KEEP_SPACE >> 30} GB).")
+    say("The next updates then convert only what changed, without the disc. So they are much faster.")
     keep = ask_yes("Keep the game files after each build?")
     settings.set("keep_files", "yes" if keep else "no")
     say(f"  Saved in {settings.path}. Edit or delete that file to change it.")
@@ -797,7 +1442,7 @@ def keep_space_needed(folder):
 def check_keep_space(folder):
     needed, free = keep_space_needed(folder), free_space(folder)
     if free < needed:
-        raise BuildError(f"Not enough free space for {folder}: about {-(-needed >> 30)} GB more are needed, "
+        raise BuildError(f"Not enough free space for {folder}. About {-(-needed >> 30)} GB more are needed, "
                          f"{free >> 30} GB are free. Free some space, or move the folder and change work_folder "
                          f"in {SETTINGS_NAME}.")
 
@@ -806,7 +1451,7 @@ def choose_keep_folder(settings, default):
     """Asked when the files are kept for the first time (or the kept folder is gone): where."""
     say(f"  The kept game files need about {KEEP_SPACE >> 30} GB. Choose a drive with that much free space.")
     while True:
-        answer = ask(f"Folder for the kept game files (Enter for {default}): ")
+        answer = ask(f"Folder for the kept game files (Enter for {default}): ", "folder", str(default))
         folder = Path(answer).expanduser() if answer else default
         try:
             folder.mkdir(parents=True, exist_ok=True)
@@ -814,11 +1459,11 @@ def choose_keep_folder(settings, default):
             probe.write_bytes(b"")
             probe.unlink()
         except OSError:
-            say("  That folder cannot be made or written. Choose another one.")
+            problem("  That folder cannot be made or written. Choose another one.")
             continue
         needed, free = keep_space_needed(folder), free_space(folder)
         if free < needed:
-            say(f"  That drive has {free >> 30} GB free, about {-(-needed >> 30)} GB are needed. Choose another one.")
+            problem(f"  That drive has {free >> 30} GB free, about {-(-needed >> 30)} GB are needed. Choose another one.")
             continue
         settings.set("work_folder", folder)
         return folder
@@ -837,13 +1482,19 @@ def copy_now(disc, cia, settings):
     if not ask_yes("Copy the files to your 3DS now?"):
         return False, None
     if ask_yes("Copy over Wi-Fi with FTP? Answer n to copy to the SD card in this computer."):
-        return True, copy_over_ftp(disc, cia, choose_ftp_address(settings))
+        return True, copy_over_ftp(disc, cia, *choose_ftp_address(settings))
     card = choose_sd_card(settings)
     copy_to_sd(disc, cia, card)
     return True, check_dsp_firmware(card)
 
 
+# How the last build ended, for the window's last page: copied (bool), sound (the DSP firmware was
+# found), work (the folder of the files), guide (install_guide.txt when written), keep.
+RESULT = {}
+
+
 def build(disc_arg=None, sd_arg=None, work_arg=None):
+    RESULT.clear()
     say("GalaxyCTR builder: Super Mario Galaxy for New Nintendo 3DS (beta)")
     say("Everything is made from your own copy of the game. Only the USA release (RMGE01) is supported.")
     say("The game needs a New 3DS, New 3DS XL or New 2DS XL.")
@@ -855,17 +1506,21 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
     kept = kept_folder(settings) if keep else None
     if kept:
         image = None
-        say(f"  Using the game files kept from the last build, in {kept}. The disc image is not needed.")
+        say("  Using the game files kept from the last build. The disc image is not needed.")
+        say(f"  They are in {kept}.")
         work = kept
     else:
-        image = choose_disc(disc_arg)
+        image = choose_disc(disc_arg, settings.get("disc_image"))
+        settings.set("disc_image", image)
         # Work next to the disc image by default: it is on a drive that already holds 4.7 GB of game.
         parent = work_arg or (image.parent if os.access(image.parent, os.W_OK) else None)
         if keep:
-            work = choose_keep_folder(settings, Path(parent or builder_home()) / "GalaxyCTR-files")
+            work = choose_keep_folder(settings, Path(parent or data_home()) / "GalaxyCTR-files")
         else:
             work = Path(tempfile.mkdtemp(prefix="galaxyctr-", dir=parent))
-    say(f"  {'Folder of the kept files' if keep else 'Temporary folder'}: {work}")
+    if not kept:  # with the kept files, the line before already said where they are
+        say(f"  {'The game files will be kept in' if keep else 'Working in the temporary folder'} {work}.")
+    RESULT.update(work=work, keep=keep)
     if kept:
         check_keep_space(work)
 
@@ -875,19 +1530,25 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
             # The disc as extracted stays in original/, the converted game in game/: each build
             # converts again only what the new release changed.
             if image is None:
-                step(2, total, "Extracting the disc: already done")
+                step(2, total, "Extracting the disc (already done in an earlier build)")
                 originals = work / "original"
             else:
                 step(2, total, "Extracting the disc (about a minute)")
                 originals = extract_disc(image, work, "original", check_space=False)  # checked for the whole folder
             disc = work / "game"
             make_icon_and_banner(originals, work)
+            make_window_graphics(originals / "files")
+            make_loading_screen(originals / "files", disc)
+            refresh_look_disc(originals / "files", image)
             step(3, total, "Converting the game files for the 3DS (only what changed)")
             convert_files(disc, originals)
         else:
             step(2, total, "Extracting the disc (about a minute)")
             disc = extract_disc(image, work)
             make_icon_and_banner(disc, work)
+            make_window_graphics(disc / "files")
+            make_loading_screen(disc / "files", disc)
+            refresh_look_disc(disc / "files", image)
             step(3, total, "Converting the game files for the 3DS (this takes a while)")
             convert_files(disc)
         step(4, total, "Building the CIA")
@@ -906,6 +1567,7 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
                 say(f"  ERROR: {error}")
                 say("  The files were not all copied.")
     finally:
+        RESULT.update(copied=copied, sound=sound)
         step(6, total, "Cleaning up")
         if keep:
             say(f"  The game files stay in {work} for the next build.")
@@ -920,40 +1582,496 @@ def build(disc_arg=None, sd_arg=None, work_arg=None):
         return
     say()
     say("Done. Everything went well." if sound else "Done, with the note above about the sound.")
-    say(f"Put the SD card back into your 3DS if it is in this computer, and install cias/{CIA_NAME} with FBI "
-        "(or another CIA installer).")
+    say("If the SD card is in this computer, put it back into your 3DS.")
+    say(f"Then install cias/{CIA_NAME} with FBI or another CIA installer.")
 
 
-def main():
-    global LOG
-    log_path = Path.home() / "galaxyctr-builder-log.txt"
-    LOG = log_path.open("w", encoding="utf-8")
-    LOG.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {system_key()} {platform.platform()} release {RELEASE}\n")
-    for line in LAUNCHER_LINES:
-        LOG.write(line + "\n")
-    code = 0
-    # Developer options, for testing without questions: --disc <image> --sd <folder> --work <folder>.
-    args = sys.argv[1:]
-    option = lambda name: args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+# ############################################################################
+# # Starting                                                                #
+# #                                                                         #
+# # main() opens the log, then shows the window when it can                 #
+# # (builder_gui.available: Qt is in the builder program, and on Linux a    #
+# # display works), or runs in the terminal. run_build() is the build with  #
+# # its error reporting; the window runs it in a thread and can run it      #
+# # again. On Windows the builder program with a window has no terminal, so #
+# # the terminal mode opens one (open_console).                             #
+# ############################################################################
+
+LOG_PATH = Path.home() / "galaxyctr-builder-log.txt"
+NEW_PROGRAM = "https://github.com/Im-Monee/galaxyctr-beta/releases/latest"
+
+
+# ############################################################################
+# # Replacing a builder program from before the window                      #
+# #                                                                         #
+# # The first builder programs (launcher version 1) carry no Qt, but they   #
+# # still download each release's source code and run this file. Without a  #
+# # window, main() then downloads the latest release's program for this     #
+# # system and puts it in place of the running one: the running program is  #
+# # renamed to <name>.replaced (Windows lets a running program be renamed,  #
+# # not deleted), the new one takes its name, starts, and this one closes.  #
+# # The new launcher waits for this process to end and deletes the         #
+# # .replaced file (launcher.finish_replacement). Anything that fails puts  #
+# # the old program back and the terminal build runs as before.             #
+# ############################################################################
+
+LATEST_RELEASE = "https://api.github.com/repos/Im-Monee/galaxyctr-beta/releases/latest"
+REPLACED_SUFFIX = ".replaced"  # launcher.REPLACED_SUFFIX
+PROGRAM_STARTS = (b"MZ", b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")  # Windows, Linux, macOS
+
+
+def https_context():
+    import ssl
     try:
-        build(option("--disc"), option("--sd"), option("--work"))
+        import certifi  # in every builder program: macOS has no certificates for Python otherwise
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def program_environment():
+    """This process's environment without what this program and its launcher added: the new
+    program's own launcher (PyInstaller's too) must start as if from the desktop."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("_MEI", "_PYI"))
+           and k not in ("GALAXYCTR_TOOLS", "GALAXYCTR_ELF", "GALAXYCTR_RELEASE", "GALAXYCTR_GUI")}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    for name in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):  # PyInstaller keeps the user's own as *_ORIG
+        if name + "_ORIG" in env:
+            env[name] = env.pop(name + "_ORIG")
+        else:
+            env.pop(name, None)
+    return env
+
+
+def replace_program():
+    """Puts the latest release's program in place of this one and starts it. True when it started."""
+    import json
+    import urllib.request
+    exe = Path(sys.executable).resolve()
+    name = f"GalaxyCTR-Builder-{system_key()}" + (".exe" if os.name == "nt" else "")
+    new, old = exe.with_name(exe.name + ".download"), exe.with_name(exe.name + REPLACED_SUFFIX)
+    say("A new builder program with a window is out. Downloading it: it then starts in place of this one.")
+    try:
+        context = https_context()
+        ask = urllib.request.Request(LATEST_RELEASE, headers={"Accept": "application/vnd.github+json",
+                                                              "User-Agent": "GalaxyCTR-builder"})
+        with urllib.request.urlopen(ask, timeout=30, context=context) as answer:
+            release = json.load(answer)
+        asset = next((a for a in release.get("assets", []) if a.get("name") == name), None)
+        if asset is None:
+            raise ValueError(f"release {release.get('tag_name')} has no {name}")
+        ask = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "GalaxyCTR-builder"})
+        size, done, shown = int(asset.get("size") or 0), 0, -1
+        with urllib.request.urlopen(ask, timeout=60, context=context) as answer, new.open("wb") as out:
+            while True:
+                block = answer.read(1 << 20)
+                if not block:
+                    break
+                out.write(block)
+                done += len(block)
+                if size and done * 10 // size > shown:
+                    shown = done * 10 // size
+                    print(f"  {shown * 10}% of {size >> 20} MB", flush=True)
+        if (size and done != size) or done < (1 << 20):
+            raise ValueError(f"the download stopped at {done} bytes")
+        with new.open("rb") as check:
+            if not check.read(4).startswith(PROGRAM_STARTS):
+                raise ValueError("the download is not a program")
+        if old.exists():
+            old.unlink()
+        os.replace(exe, old)
+        try:
+            os.replace(new, exe)
+        except OSError:
+            os.replace(old, exe)
+            raise
+        if os.name != "nt":
+            exe.chmod(0o755)
+    except Exception as error:  # noqa: BLE001 - the terminal build runs anyway
+        try:
+            new.unlink()
+        except OSError:
+            pass
+        log(f"Replacing the builder program failed ({error!r}).")
+        say(f"  It could not be put in place ({error}). Download it from {NEW_PROGRAM}")
+        return False
+    env = program_environment()
+    env["GALAXYCTR_REPLACED"] = f"{os.getpid()},{os.getppid()}"  # this process and its onefile parent
+    extra = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" \
+        else {"start_new_session": True}
+    try:
+        subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env, close_fds=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **extra)
+    except OSError as error:
+        say(f"  The new program is in place but could not start ({error}). Open {exe} again.")
+        return True
+    say("  Done: the new builder opens now, and this window closes.")
+    time.sleep(2)  # long enough to read the line
+    return True
+
+
+def options():
+    """Developer options, for testing without questions: --disc <image> --sd <folder> --work <folder>."""
+    args = sys.argv[1:]
+
+    def option(name):
+        return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+    return option("--disc"), option("--sd"), option("--work")
+
+
+# ############################################################################
+# # The window's game graphics                                              #
+# #                                                                         #
+# # builder_assets.py makes the game's buttons, windows, icons and sky for  #
+# # the window from an extracted disc, into GalaxyCTR-game-ui next to the   #
+# # builder (the user's computer only, like the kept game files). A build   #
+# # makes them right after extracting when they are missing; on the first  #
+# # start the window can ask for the disc only for them (run_setup), which  #
+# # extracts it into a temporary folder and deletes it again. Terminal mode #
+# # does neither: it would not show them.                                   #
+# ############################################################################
+
+def game_ui_folder():
+    import builder_assets
+    return data_home() / builder_assets.GAME_UI_NAME
+
+
+def refresh_look_disc(files, image):
+    """The window's look keeps the Power Star of the disc image it was read from, which the
+    builder program also shows as its icon (builder_exeicon). When the build reads another disc
+    image, the pause menu's layout (where the star is) is copied again from it."""
+    if image is None or isinstance(UI, TextUI):
+        return
+    import builder_exeicon
+    identity = builder_exeicon.disc_identity(image)
+    settings = Settings()
+    if not identity or settings.get("look_disc") == identity:
+        return
+    try:
+        import builder_assets
+        folder = game_ui_folder()
+        if builder_assets.load(folder):
+            builder_assets.export_layout(Path(files) / "LayoutData" / "PauseMenu.arc", folder / "layouts" / "PauseMenu")
+            builder_assets.seal(folder)  # the set as it is now
+        settings.set("look_disc", identity)
+    except Exception:  # noqa: BLE001 - only the window's star: the build goes on
+        log(traceback.format_exc())
+
+
+def make_window_graphics(files):
+    """Makes the window's game graphics from an extracted disc when they are missing."""
+    if isinstance(UI, TextUI):
+        return
+    try:
+        import builder_assets
+        folder = game_ui_folder()
+        if builder_assets.load(folder):
+            return
+        builder_assets.make(files, folder, lambda name, done, total: progress("The game's look for this window",
+                                                                              100 * done / total, name))
+        end_progress()
+        say("  The game's buttons, windows and sky are ready for this window.")
+    except Exception:  # noqa: BLE001 - only the window's looks: the build goes on
+        log(traceback.format_exc())
+        say("  The game's look for this window could not be made. The details are in the log.")
+
+
+def make_loading_screen(files, disc):
+    """The port's loading screen (builder_loading.py) into disc/loading, from the disc's own files
+    before they are converted. It needs Qt's OpenGL: a builder program without Qt (the first ones,
+    run in terminal mode) leaves it out, and the port then starts without it, as before."""
+    out = Path(disc) / "loading"
+    try:
+        import builder_loading
+        if builder_loading.is_current(out):
+            return
+        from PySide6.QtGui import QGuiApplication
+        app = QGuiApplication.instance() or QGuiApplication(["galaxyctr-builder"])  # noqa: F841 - OpenGL needs one
+        progress("The loading screen", -1.0)
+        builder_loading.make(files, Path(disc) / "loading-work", out)
+        end_progress()
+        say("  The loading screen is ready.")
+    except Exception:  # noqa: BLE001 - only the loading screen: the build goes on
+        end_progress()
+        log(traceback.format_exc())
+        say("  The loading screen could not be made, see the log. The game starts without it.")
+    finally:
+        shutil.rmtree(Path(disc) / "loading-work", ignore_errors=True)
+
+
+# The window's look needs a few of the disc's files (builder_assets.needed: LayoutData, AudioRes,
+# ObjectData, ParticleData). nodtool extracts a disc in the order of its file table, which is by
+# name, so once anything after the last of those folders (builder_assets.LAST_FOLDER) has come
+# out they are complete and the rest of the disc is not waited for. LOOK_BYTES is about how much
+# has come out by then.
+LOOK_BYTES = 3_500_000_000
+
+
+def look_files_ready(files):
+    import builder_assets
+    return all(path.is_file() for path in builder_assets.needed(files))
+
+
+def past_look_files(files):
+    import builder_assets
+    try:
+        return any(entry.name.lower() > builder_assets.LAST_FOLDER.lower() for entry in files.iterdir())
+    except OSError:
+        return False
+
+
+def folder_bytes(folder):
+    total = 0
+    for root, _dirs, names in os.walk(folder):
+        for name in names:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
+def extract_for_look(image, target, report=None):
+    """Extracts the disc into target until the window's files are out; report(bytes) meanwhile."""
+    tool = find_tool("nodtool")
+    errors = target.parent / f"{target.name}-nodtool.txt"
+    files = target / "files"
+    with open(errors, "w", encoding="utf-8", errors="replace") as output:
+        process = subprocess.Popen([str(tool), "extract", "-q", str(image), str(target)], stdin=subprocess.DEVNULL,
+                                   stdout=output, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
+        stopped = False
+        while process.poll() is None:
+            time.sleep(0.25)
+            if report:
+                report(folder_bytes(target))
+            if look_files_ready(files) and past_look_files(files):
+                process.terminate()
+                process.wait()
+                stopped = True
+    said = errors.read_text(encoding="utf-8", errors="replace")
+    errors.unlink(missing_ok=True)
+    log(f"Running nodtool extract -q {image} {target}"
+        f"\n{DETAIL}{'Stopped once the needed files were out.' if stopped else f'Finished with code {process.returncode}.'}"
+        + details(said))
+    if not look_files_ready(files):
+        raise BuildError(f"nodtool failed:\n{said.strip()[-800:]}" if said.strip() else
+                         "The disc was read, but its files are not where they should be.")
+
+
+def run_setup():
+    """The first start's setup, from the window: reads the disc once for the game graphics.
+    Returns 0 when they are ready."""
+    code = 0
+    try:
+        settings = Settings()
+        kept = kept_folder(settings)
+        if kept:
+            make_window_graphics(kept / "original" / "files")
+        else:
+            say("The builder reads your disc once, to dress this window in the game's look.")
+            image = choose_disc(None, settings.get("disc_image"))
+            settings.set("disc_image", image)
+            parent = image.parent if os.access(image.parent, os.W_OK) else None
+            temp = Path(tempfile.mkdtemp(prefix="galaxyctr-look-", dir=parent))
+            try:
+                if free_space(temp) < (5 << 30):
+                    raise BuildError(f"Reading the disc needs about 5 GB free in {temp.parent}. "
+                                     f"{free_space(temp) >> 30} GB are free.")
+                extract_for_look(image, temp / "disc", lambda done: progress(
+                    "Reading your disc", min(99.0, 100.0 * done / LOOK_BYTES)))
+                make_window_graphics(temp / "disc" / "files")
+                refresh_look_disc(temp / "disc" / "files", image)
+            finally:
+                shutil.rmtree(temp, ignore_errors=True)
+        import builder_assets
+        if not builder_assets.load(game_ui_folder()):
+            raise BuildError("The game's look could not be made. The details are in the log.")
     except BuildError as error:
+        end_progress()
+        say(f"ERROR: {error}")
+        code = 1
+    except (KeyboardInterrupt, EOFError):
+        end_progress()
+        say("ERROR: Stopped.")
+        code = 1
+    except Exception:  # noqa: BLE001
+        end_progress()
+        log(traceback.format_exc())
+        say("ERROR: something unexpected went wrong. The details are in the log.")
+        code = 1
+    return code
+
+
+def run_build(disc_arg=None, sd_arg=None, work_arg=None):
+    """One whole build; returns 0 when it went well."""
+    code = 0
+    try:
+        build(disc_arg, sd_arg, work_arg)
+    except BuildError as error:
+        end_progress()
         say()
         say(f"ERROR: {error}")
         code = 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
+        end_progress()
         say()
         say("Stopped.")
         code = 1
     except Exception:  # noqa: BLE001 - every unexpected failure is reported, with its details in the log
-        LOG.write(traceback.format_exc())
+        end_progress()
+        log(traceback.format_exc())
         say()
         say("ERROR: something unexpected went wrong. Please report it with the log file below.")
         code = 1
-    say(f"Log file: {log_path}")
+    say(f"Log file: {LOG_PATH}")
+    return code
+
+
+# ############################################################################
+# # The window's build, in a process of its own                             #
+# #                                                                         #
+# # The window runs a build (or the first start's setup) through worker()  #
+# # in another process: the conversion is Python at work for minutes, and  #
+# # in the window's process it held the interpreter (one thread at a time)  #
+# # away from the window's drawing, its sky and its music, which stuttered. #
+# # The worker runs below normal priority, its helpers too (they inherit   #
+# # it), so the window keeps its share of the processor. PipeUI sends what #
+# # the build says, asks and reaches to the window (builder_window's       #
+# # BuildProcess), which answers the questions through the same pipe.      #
+# ############################################################################
+
+class PipeUI:
+    """The build's UI in the worker process: each call is a message to the window."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.last_progress = 0.0
+
+    def say(self, text=""):
+        self.conn.send(("say", text))
+
+    def problem(self, text):
+        self.conn.send(("problem", text))
+
+    def step(self, number, total, title):
+        self.conn.send(("step", number, total, title))
+
+    def progress(self, label, percent=-1.0, detail=""):
+        moment = time.monotonic()
+        if moment - self.last_progress < 0.05 and 0 <= percent < 100:
+            return  # at most 20 a second, as the window shows them
+        self.last_progress = moment
+        self.conn.send(("progress", label, float(percent), detail))
+
+    def end_progress(self):
+        pass
+
+    def _ask(self, kind, question, default=None, **extra):
+        self.conn.send(("ask", kind, question, default, extra))
+        reply = self.conn.recv()
+        if reply[0] == "cancel":
+            raise KeyboardInterrupt
+        return reply[1]
+
+    def ask(self, question, kind="text", default=None):
+        return self._ask(kind, question, default)
+
+    def ask_yes(self, question):
+        return self._ask("yes", question)
+
+    def ask_ftp(self, question, last, connections):
+        return self._ask("ftp", question, last, connections=connections)
+
+
+def lower_priority():
+    """This process (and the programs it starts) below normal priority."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL_PRIORITY_CLASS
+        else:
+            os.nice(5)
+    except (OSError, AttributeError):
+        pass
+
+
+def worker(conn, job):
+    """The worker process: the setup ("setup") or a build, then ("finished", code, RESULT)."""
+    global LOG, UI
+    LOG = LOG_PATH.open("a", encoding="utf-8")  # the window's process writes to it too, also appending
+    UI = PipeUI(conn)
+    lower_priority()
+    code = 1
+    try:
+        code = run_setup() if job == "setup" else run_build(*options())
+    finally:
+        LOG.flush()
+        conn.send(("finished", code, dict(RESULT)))
+        LOG.close()
+
+
+def open_console():
+    """A terminal for the terminal mode of the Windows builder program, which starts without one.
+    True when one was opened."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    if kernel32.GetConsoleWindow() or not kernel32.AllocConsole():
+        return False
+    sys.stdout = sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+    sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+    return True
+
+
+def main():
+    global LOG, UI
+    LOG_PATH.open("w", encoding="utf-8").close()
+    # Appending: the window's build process (worker) writes to the same file.
+    LOG = LOG_PATH.open("a", encoding="utf-8")
+    LOG.write(f"== GalaxyCTR builder log ==\n"
+              f"- Started on {time.strftime('%Y-%m-%d at %H:%M:%S')}\n"
+              f"- Builder version: {RELEASE}\n"
+              f"- Computer: {platform.platform()} ({system_key()})\n\nStarting\n")
+    for line in LAUNCHER_LINES:
+        # The launcher indents what it found ("  Downloading ...") under "Checking for a newer version".
+        LOG.write(log_format(DETAIL + line.strip() if line.startswith("  ") else line) + "\n")
+    LOG.flush()
+    gui = None
+    if "--console" not in sys.argv[1:]:
+        try:
+            import builder_gui
+            if builder_gui.available():
+                gui = builder_gui
+            else:
+                log(f"No window ({builder_gui.UNAVAILABLE}); terminal mode.")
+        except Exception as error:  # noqa: BLE001 - the terminal always works
+            log(f"No window ({error!r}); terminal mode.")
+    if gui is not None:
+        code = gui.run(sys.modules[__name__])
+        LOG.close()
+        return code
+
+    UI = TextUI()
+    if open_console():
+        for line in LAUNCHER_LINES:  # said before there was a terminal to show them
+            print(line)
+    if FROZEN and "--console" not in sys.argv[1:] and getattr(sys.modules.get("builder_gui"), "QT", True) is None:
+        if replace_program():  # a program from before the window: the new one takes over
+            LOG.close()
+            return 0
+        say()
+    code = run_build(*options())
     LOG.close()
-    if FROZEN:
-        input("Press Enter to close this window.")
+    # Only Windows' program opens a terminal of its own (open_console), which would vanish at once;
+    # elsewhere the builder was started from a terminal that stays. No answer (no terminal at all)
+    # just closes.
+    if FROZEN and os.name == "nt":
+        try:
+            input("Press Enter to close this window.")
+        except (EOFError, OSError):
+            pass
     return code
 
 

@@ -24,11 +24,16 @@ void* rvl3DSGetNativeTIMGCapture(const ResTIMG* timg, f32* coeffs);
 void* rvl3DSGetNativeTexture(const void* image, u16 width, u16 height, u32 format, const void* palette, u32 paletteFormat,
                              u16 paletteEntries, u8 wrapS, u8 wrapT, u8 magFilter);
 bool rvl3DSIsEfbCopy(const JUTTexture* texture);
+// A capture (also through a JUTTexture on its image) whose format has no alpha (RGB565): the Wii
+// samples it with alpha 255, the copy here holds the render target's alpha (jut_texture.cpp).
+bool rvl3DSIsOpaqueCapture(const JUTTexture* texture);
 // Forgets the textures made from this image (its texels were rewritten in place, as a Mii icon's).
 void rvl3DSInvalidateTextureImage(const void* image);
 void rvl3DSCaptureJUTTexture(JUTTexture* texture);
 // Captures the Wii frame buffer rectangle [x0, x1) x [y0, y1) (640x456) into the texture.
 void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1);
+// The same into an RGB565 copy, as GXCopyTex into a GX_TF_RGB565 texture (host/gfx.c).
+void rvl3DSCaptureJUTTextureRegionRgb565(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1);
 // Whether the last capture above really copied the screen. In a frame the renderer skips
 // (host/gfx.c, sSkipFrame) nothing is copied and the texture keeps its old image: a one-time
 // capture request (CaptureScreenDirector, GalaxyMapController) must then stay pending.

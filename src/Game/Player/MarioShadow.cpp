@@ -556,13 +556,24 @@ void CollisionShadow::drawAndCaptureTex(J3DModelX* pModel, const TVec3f& rPositi
         buildCaptureDeltas();
     }
     const f32 left = 608.0f - _2FC;
-    sCorner = hostGfxCopyToTexture(sCorner, left, 0.0f, 608.0f, _2FE, sCornerMap);
+    // The copy takes whole 8x8 tiles of the render target (host/gfx.c hostGfxCaptureToTexture):
+    // its texture also holds a few pixels of the scene around the shadow's square, and repeats the
+    // last ones over the rest of it. Materials that project the shadow (ShadowProjDummy) sample
+    // past the square's edge, where the Wii's clamp reads the cleared edge (no shadow); here they
+    // read the sky of the screen's corner, and the Mandibugs' (StinkBugSmall) shells lost their
+    // blue and turned dark orange near Mario (owner, CIA 0.21.10-0.21.14). A margin of more than
+    // a tile around the square is saved, cleared with it and put back.
+    const f32 kMargin = 16.0f;
+    const f32 saveLeft = left - kMargin;
+    const f32 saveRight = 608.0f + kMargin;
+    const f32 saveBottom = _2FE + kMargin;
+    sCorner = hostGfxCopyToTexture(sCorner, saveLeft, 0.0f, saveRight, saveBottom, sCornerMap);
     if (sCorner == nullptr) {
         return;  // the frame is dropped
     }
     if (!(_308 & 2)) {
         setViewMtx(_24);
-        drawFrameRect(left, 0.0f, 608.0f, _2FE, 0, nullptr, nullptr);
+        drawFrameRect(saveLeft, 0.0f, saveRight, saveBottom, 0, nullptr, nullptr);
         Mtx44 projection;
         C_MTXOrtho(projection, -150.0f, 150.0f, 150.0f, -150.0f, 10.0f, 100000.0f);
         const u16 scissor[4] = {static_cast< u16 >(left + 1), 1, static_cast< u16 >(_2FC - 2), static_cast< u16 >(_2FE - 2)};
@@ -605,7 +616,7 @@ void CollisionShadow::drawAndCaptureTex(J3DModelX* pModel, const TVec3f& rPositi
         rvl3DSCaptureJUTTextureRegion(_300, left, 0.0f, 608.0f, _2FE);
     }
 
-    drawFrameRect(left, 0.0f, 608.0f, _2FE, 0xFFFFFFFF, sCorner, sCornerMap);
+    drawFrameRect(saveLeft, 0.0f, saveRight, saveBottom, 0xFFFFFFFF, sCorner, sCornerMap);
     J3DShape::resetVcdVatCache();
     MR::setDefaultViewportAndScissor();
     TDDraw::cameraInit3D();

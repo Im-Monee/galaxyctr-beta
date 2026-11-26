@@ -359,6 +359,89 @@ namespace {
     }
 
     HostGfxState sState;
+    // ##########################################################################################
+    // # A projected coordinate moved to unit 0                                                 #
+    // #                                                                                        #
+    // # Only the PICA's unit 0 divides s/q, t/q per pixel; on units 1 and 2 the shader divides  #
+    // # at the vertex, and native_clip.cpp cuts the triangles into a grid so that the result    #
+    // # stays close. That cost up to 14 ms a drawn frame with Rosalina near the camera (her     #
+    // # hair's reflection, RosettaHairMat_v: coordinate 1 from the normal, 3x4; CIA 0.22.2). A  #
+    // # draw whose unit 0 is not projected swaps the two units instead: the vertex inputs (the  #
+    // # loader's attribute order, gfx.c bindWindow), the coordinate matrices and flags, the     #
+    // # textures and the combiners' texture sources. The GPU then divides per pixel, as GX     #
+    // # does, and nothing is cut. With two projected units the one from the position moves.   #
+    // ##########################################################################################
+    const u8 kSourceTexture0 = 3;  // GPU_TEXTURE0; units 1 and 2 follow it
+    u32 sSwappedDraws;
+
+    template < typename T >
+    void swapItems(T* a, T* b, u32 count) {
+        for (u32 i = 0; i < count; i++) {
+            T k = a[i];
+            a[i] = b[i];
+            b[i] = k;
+        }
+    }
+
+    void swapProjectedUnit(const RvlNativeDraw& d, HostGfxTransform& t, HostGfxState& st) {
+        t.inputSwap = 0;
+        // A screen capture may move too: its rows are in texfinal, which moves with the unit, and
+        // unit 0 applies them to (s, t, q), so they stay right after the per-pixel divide. All of
+        // Rosalina's projections from the position are the capture her dissolve fades to (CIA
+        // 0.22.4: refused here, her ~500 draws every 100 loops were still subdivided).
+        // An approximated indirect texture as one mean offset (RVL_DISTORT_MEAN) may move too: the
+        // offset is in texfinal, which moves with the unit. The black hole's ring (BlackHole.arc,
+        // BKMat) samples WaterRingEnvRef at its screen position (texmtx 1, mode 9) on unit 1 next
+        // to an indirect texture; divided at the vertices only, the landscape's green patches slid
+        // along the ring as the camera moved (owner's report and Wii reference, 24 Nov 2026).
+        // The two-sample kinds use units 0 and 1 as the samples and stay where they are.
+        if (t.divide[0] || t.vtxmtx[0] || (d.distort != RVL_DISTORT_NONE && d.distort != RVL_DISTORT_MEAN)) {
+            return;
+        }
+        u32 unit = 0, projected = 0;
+        for (u32 u = 1; u < 3; u++) {
+            if (t.divide[u] && !t.normalize[u] && !t.vtxmtx[u]) {
+                projected++;
+                unit = u;
+            }
+        }
+        if (projected == 2) {
+            // Two projected units (Rosalina's hair, crown and wand: an environment map from the
+            // normal on unit 1, a projection from the position on unit 2). The one from the
+            // position goes to unit 0: its q is the depth, which changes along the whole model;
+            // the normal's changes little between neighbouring vertices, and the grid cuts little
+            // of it.
+            unit = 0;
+            for (u32 u = 1; u < 3 && unit == 0; u++) {
+                if (d.gen[u].row == 0) {
+                    unit = u;
+                }
+            }
+        }
+        if (unit == 0) {
+            return;
+        }
+        swapItems(t.texmtx[0], t.texmtx[unit * 3], 12);
+        swapItems(t.texpost[0], t.texpost[unit * 3], 12);
+        swapItems(t.texfinal[0], t.texfinal[unit * 2], 8);
+        swapItems(&t.normalize[0], &t.normalize[unit], 1);
+        swapItems(&t.divide[0], &t.divide[unit], 1);
+        swapItems(&t.vtxmtx[0], &t.vtxmtx[unit], 1);
+        swapItems(&t.srtg[0], &t.srtg[unit], 1);
+        swapItems(&st.textures[0], &st.textures[unit], 1);
+        const u8 a = kSourceTexture0, b = static_cast< u8 >(kSourceTexture0 + unit);
+        for (u32 s = 0; s < st.stageCount && s < HOST_GFX_STAGES; s++) {
+            for (u32 k = 0; k < 3; k++) {
+                u8& c = st.stages[s].colorSrc[k];
+                c = c == a ? b : c == b ? a : c;
+                u8& al = st.stages[s].alphaSrc[k];
+                al = al == a ? b : al == b ? a : al;
+            }
+        }
+        t.inputSwap = static_cast< u8 >(unit);
+        sSwappedDraws++;
+    }
+
     HostGfxTransform sTransform;
     HostGfxTransform sPreviousTransform;
     bool sPreviousTransformValid;
@@ -381,7 +464,17 @@ namespace {
 // # guard band, subdivided when a projected texture needs it, or sent as it is. A transform    #
 // # equal to the previous draw's keeps its version, so host.h does not compare it again.       #
 // ##############################################################################################
+void rvlNativeViewToClip(HostGfxTransform& t) {
+    setViewToClip(t);
+}
+
+// os_thread.cpp: the audio interrupts alone, so the sound goes on through long frames.
+extern "C" void rvlPollAudioInterrupts();
+
 bool rvlNativeDrawSubmit(const RvlNativeDraw& d) {
+    // Before this draw touches the renderer's state: JAudio's threads mix the next sound if the
+    // output asks for it (a frame here took up to 100 ms in the full Comet Observatory).
+    rvlPollAudioInterrupts();
     const u64 prepareStart = gGXProfileOn ? hostGetTick() : 0;
     sState = *d.state;
     if (d.distort == RVL_DISTORT_ONE_DRAW) {
@@ -443,6 +536,10 @@ bool rvlNativeDrawSubmit(const RvlNativeDraw& d) {
     }
     t.nrmpalette = d.normals && t.lit;
     t.nrmcofactor = t.nrmpalette;
+    // The CPU clipper reads the vertices' inputs in their own order: only GPU draws swap.
+    if (clip != NATIVE_CLIP_CPU) {
+        swapProjectedUnit(d, t, sState);
+    }
 
     u32 version;
     if (sPreviousTransformValid && memcmp(&t, &sPreviousTransform, sizeof(t)) == 0) {
@@ -457,9 +554,14 @@ bool rvlNativeDrawSubmit(const RvlNativeDraw& d) {
     if (gGXProfileOn) {
         sBuildTicks += start - buildStart;
     }
-    bool submitted = clip == NATIVE_CLIP_CPU       ? rvlNativeClipSubmit(d, &sState, t, version)
-                     : rvlNativeSubdivideNeeded(t) ? rvlNativeSubdivideSubmit(d, &sState, t, version)
-                                                   : hostGfxDrawNativeIndexed(d.first, d.indices, d.indexCount, &sState, &t, version) != 0;
+    bool submitted = false;
+    if (clip == NATIVE_CLIP_CPU) {
+        submitted = rvlNativeClipSubmit(d, &sState, t, version);
+    } else if (rvlNativeSubdivideNeeded(t)) {
+        submitted = rvlNativeSubdivideSubmit(d, &sState, t, version);
+    } else if (!rvlNativeRunCullSubmit(d, &sState, t, version, &submitted)) {
+        submitted = hostGfxDrawNativeIndexed(d.first, d.indices, d.indexCount, &sState, &t, version) != 0;
+    }
     if (gGXProfileOn) {
         gGXProfile.host += hostGetTick() - start;
     }
@@ -537,7 +639,11 @@ namespace {
         // Mario's parts (SysTimer3DS.hpp), always: in the list below they fall past its end.
         static const int kMarioParts[] = {34, 57, 33, 50, 51, 52, 53, 54, 30, 59, 60, 31, 32, 61, 62, 63, 55, 56, 58};
         // os_thread.cpp rvlInterruptsEnabled, on the game thread: handlers, then the woken threads.
-        hostLog("Interrupts ms: handlers %lu, woken threads %lu\n", static_cast< u32 >(sCategoryTicks[6][64] / ms),
+        // The handlers by kind (66-70, dispatchInterrupts).
+        hostLog("Interrupts ms: handlers %lu (alarms %lu, retrace %lu, disc %lu, audio output %lu, DSP %lu), woken threads %lu\n",
+                static_cast< u32 >(sCategoryTicks[6][64] / ms), static_cast< u32 >(sCategoryTicks[6][66] / ms),
+                static_cast< u32 >(sCategoryTicks[6][67] / ms), static_cast< u32 >(sCategoryTicks[6][68] / ms),
+                static_cast< u32 >(sCategoryTicks[6][69] / ms), static_cast< u32 >(sCategoryTicks[6][70] / ms),
                 static_cast< u32 >(sCategoryTicks[6][65] / ms));
         hostLog("Mario parts ms:");
         for (int t : kMarioParts) {
@@ -597,7 +703,8 @@ namespace {
         int category;
         u64 ticks;
     };
-    const int kObjectTimes = 256;
+    // 1024: with 256 the full Comet Observatory left 327 objects out of the table (CIA 0.23.3).
+    const int kObjectTimes = 1024;
     // Timing every object of every frame cost the game about a millisecond a frame (two system
     // tick reads per object, about a thousand objects): one frame in kObjectSampleFrames is timed.
     const u32 kObjectSampleFrames = 8;
@@ -609,7 +716,7 @@ namespace {
     // class share their name string, as the game's own tables do).
     void logObjects(u64 ms) {
         hostLog("Game objects ms:");
-        for (int n = 0; n < 12; n++) {
+        for (int n = 0; n < 24; n++) {
             int best = -1;
             for (int i = 0; i < kObjectTimes; i++) {
                 if (sObjectTimes[i].ticks != 0 && (best < 0 || sObjectTimes[i].ticks > sObjectTimes[best].ticks)) {
@@ -662,7 +769,7 @@ extern "C" void rvlGXObjectEnd(const char* pName, unsigned long long start) {
     const u64 ticks = hostGetTick() - start;
     const int category = sCurrentCategory;
     u32 slot = ((reinterpret_cast< uintptr_t >(pName) >> 2) ^ static_cast< u32 >(category) * 0x9E3779B1u) % kObjectTimes;
-    for (int probe = 0; probe < 16; probe++, slot = (slot + 1) % kObjectTimes) {
+    for (int probe = 0; probe < 32; probe++, slot = (slot + 1) % kObjectTimes) {
         ObjectTime& time = sObjectTimes[slot];
         if (time.ticks == 0 && time.name == nullptr) {
             time.name = pName;
@@ -740,7 +847,9 @@ void rvl3DSEndFrame() {
         if (gGXProfileOn) {
             logCategories(ms);
             logObjects(ms);
-            hostLog("Native submit: %lu ms, %lu draws refused for their lights\n", static_cast< u32 >(gGXProfile.host / ms), gGXProfile.cpuLights);
+            hostLog("Native submit: %lu ms, %lu draws refused for their lights, %lu with a projected unit moved to unit 0\n",
+                    static_cast< u32 >(gGXProfile.host / ms), gGXProfile.cpuLights, static_cast< unsigned long >(sSwappedDraws));
+            sSwappedDraws = 0;
             if (hostDebugNative()) {
                 rvlNativeLogFrame();
             }

@@ -222,6 +222,8 @@ void LensFlareDirector::setDrawSyncToken() {
 #else
     // No GX draw sync: the sun is checked here, against the last finished frame (hostGfxPeekEfb),
     // so with that frame's camera, the other index. Off the flare areas nothing reads the frame.
+    // A frame the 3DS drops runs no draw at all (GameSystem::frameLoop), so this check runs once
+    // per drawn frame; the readers keep its last result between them (BrightObjBase::getBright).
     if (checkArea() != 0) {
         drawSyncCallback(_7C + (mDrawSyncTokenIndex ^ 1));
     }

@@ -23,7 +23,7 @@ take the depth buffer as a depth format.
 **Possible later (not verified on hardware).** The D24S8 depth buffer uses the same 8x8 tiled
 layout as textures and render targets. Pointing an RGBA8 texture at its VRAM address would
 give the depth's top byte in the G channel (bytes in memory: depth bits 0-7, 8-15, 16-23, then
-stencil; RGBA8 texels are A, B, G, R). The values would still need remapping: the 3DS depth
+stencil. RGBA8 texels are A, B, G, R). The values would still need remapping: the 3DS depth
 is reversed (clip z in [-w, 0], 0 = far) and not distributed like GX's. It needs one test on
 the console before any work.
 
@@ -43,7 +43,7 @@ later TEV stage. This gives water refraction, heat haze, normal-map lighting and
 | `FurDrawer` | fur strands bent by the indirect texture | fur layers drawn straight |
 | `SpiderThread` | thread shading | drawn without the indirect term |
 | `WaterCameraFilter` | underwater screen distortion | colour filter only |
-| JPA particles and nw4r layout materials with indirect stages | heat haze, wavy panes | approximated the same way for particles (`gx/particle.cpp`) and for layout materials with one texture and one indirect stage, such as the smoke picture (`lyt_material.cpp`). Other layout materials are drawn without the offset. |
+| JPA particles and nw4r layout materials with indirect stages | heat haze, wavy panes, launch star ripple | particles (`gx/particle.cpp`): each quad becomes a 16 by 16 grid, and the CPU reads the indirect texture at every grid point and moves texture coordinate 0 as GX would. Past 6144 grid vertices in a frame, the rest blend two samples. Layout materials with one texture and one indirect stage, such as the smoke picture (`lyt_material.cpp`), blend two samples. Other layout materials are drawn without the offset. |
 
 **Possible later.**
 - Refraction, heat haze and wavy screens: draw the screen capture on a grid of small quads

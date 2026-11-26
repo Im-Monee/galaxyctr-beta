@@ -74,6 +74,18 @@ void AstroDomeOrbit::drawBloom() const {
 
     initDraw(::cBloomColor);
 
+#ifdef __3DS__
+    // 3DS: the bloom band 1.6 times as wide and high (640 / 400, the Wii's frame buffer width over
+    // the 3DS's). Seen almost edge-on it covers 1-2 pixels here against 2-3 on the Wii, and after
+    // the bloom's 4x reduction it no longer passed the brightness threshold: the domes' orbits had
+    // no glow (owner's Wii references, 23 Nov 2026). The visible orbit keeps the Wii's size.
+    drawCelling(::cBloomWidth * 1.6f, true, ::cBloomHeight * 1.6f);
+    drawCelling(::cBloomWidth * 1.6f, false, ::cBloomHeight * 1.6f);
+    drawSide(::cBloomWidth * 1.6f, true, ::cBloomHeight * 1.6f);
+    drawSide(::cBloomWidth * 1.6f, false, ::cBloomHeight * 1.6f);
+    TDDraw::closeDirect();
+    return;
+#endif
     drawCelling(::cBloomWidth, true, ::cBloomHeight);
     drawCelling(::cBloomWidth, false, ::cBloomHeight);
 

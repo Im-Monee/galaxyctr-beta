@@ -431,6 +431,68 @@ namespace {
         sDecodeTicks += hostGetTick() - start;
         return handle;
     }
+
+    // ##############################################################################################
+    // # Textures with their own mipmaps                                                            #
+    // #                                                                                            #
+    // # The few model textures the converter leaves with their mipmaps (texreduce.MIPMAPPED: their #
+    // # small levels are not the large one halved, Beach Bowl's sea is clear near and blue far)    #
+    // # are decoded level by level and uploaded with all of them (host/gfx.c,                      #
+    // # hostGfxTextureCreateMipmap), with the Wii's filter between levels and its LOD bias. Levels #
+    // # over the size limit are left out: the GPU picks its level by the texels a pixel covers, so #
+    // # level n of the smaller texture is level n + 1 of the whole one, as on the Wii.             #
+    // ##############################################################################################
+    // The Wii draws 640x456 pixels, the 3DS 400x240: a 3DS pixel covers 1.6 to 1.9 times the texels
+    // and the GPU would pick a level about 0.8 smaller than GX for the same view.
+    const f32 kScreenLodBias = -0.8f;
+
+    // The levels to upload of a texture with mipmaps: skip, those left out above limit, and levels,
+    // those kept down to 8 texels a side. False when the texture has no mipmaps to keep.
+    bool mipmapLevels(const ResTIMG* timg, u32 address, u32 limit, u32& skip, u32& levels) {
+        const u32 width = timg->mWidth, height = timg->mHeight, format = timg->mFormat;
+        if (!timg->mMipmap || timg->mImageNum < 2 || timg->mMinType < GX_NEAR_MIP_NEAR || format == TF_C4 || format == TF_C8 ||
+            format == TF_C14X2 || isNativeFormat(format) || (width & (width - 1)) != 0 || (height & (height - 1)) != 0) {
+            return false;
+        }
+        skip = 0;
+        while ((width >> skip) > limit || (height >> skip) > limit) skip++;
+        levels = 0;
+        u32 texels = 0, bytes = 0;
+        for (u32 l = 0; l < timg->mImageNum && (width >> l) >= 8 && (height >> l) >= 8; l++) {
+            bytes += rvl3DSTexBufferSize(width >> l, height >> l, format);
+            if (l >= skip) {
+                levels++;
+                texels += (width >> l) * (height >> l);
+            }
+        }
+        return levels >= 2 && texels <= kScratchTexels && hostIsValidRange(address, bytes);
+    }
+
+    void* createMipmapTexture(const ResTIMG* timg, const u8* image, u32 skip, u32 levels, u32 mode) {
+        const u64 start = hostGetTick();
+        sDecodes++;
+        const u32 format = timg->mFormat;
+        u32* dst = sDecoded;
+        for (u32 l = 0; l < skip + levels; l++) {
+            const u32 w = timg->mWidth >> l, h = timg->mHeight >> l;
+            if (l >= skip) {
+                decodeImage(image, w, h, format, nullptr, 0, dst);
+                dst += w * h;
+            }
+            image += rvl3DSTexBufferSize(w, h, format);
+        }
+        sDecodeTicks += hostGetTick() - start;
+        const f32 bias = timg->mLodBias * 0.01f + kScreenLodBias;
+        const bool mipLinear = timg->mMinType == GX_NEAR_MIP_LIN || timg->mMinType == GX_LIN_MIP_LIN;
+        while (hostGfxLinearFree() < kLinearReserve && evictFinishedTexture()) {
+        }
+        void* handle;
+        do {
+            handle = hostGfxTextureCreateMipmap(reinterpret_cast< const unsigned long* >(sDecoded), timg->mWidth >> skip, timg->mHeight >> skip,
+                                                levels, mode & 3, (mode >> 2) & 3, (mode >> 4) & 1, (mode >> 5) & 1, mipLinear, bias);
+        } while (handle == nullptr && evictFinishedTexture());
+        return handle;
+    }
 }  // namespace
 
 // ##############################################################################################
@@ -571,6 +633,24 @@ bool rvl3DSIsEfbCopy(const JUTTexture* texture) {
     if (texture == nullptr) return false;
     for (CaptureEntry& capture : sCaptures) {
         if (capture.texture == texture && captureMatches(capture, texture)) return true;
+    }
+    return false;
+}
+
+// ##############################################################################################
+// # Captures whose format has no alpha                                                         #
+// #                                                                                            #
+// # A capture here is the render target's RGBA8, alpha included: the clear's 0 and whatever    #
+// # the materials wrote. The Wii copies into the texture's own format, and an RGB565 texel     #
+// # reads with alpha 255. The screen capture is RGB565 (CaptureScreenDirector), so drawn by a  #
+// # J2DPicture it was nearly transparent over the blue clear colour: the closing wipe into a   #
+// # planetarium and the lives count after a fall showed blue (owner, 8 Nov). Also true for a   #
+// # JUTTexture made on the captured texture's image (MR::getScreenResTIMG).                    #
+// ##############################################################################################
+bool rvl3DSIsOpaqueCapture(const JUTTexture* texture) {
+    if (texture == nullptr || texture->mTIMG == nullptr || texture->mTIMG->mFormat != GX_TF_RGB565) return false;
+    for (CaptureEntry& capture : sCaptures) {
+        if (captureMatches(capture, texture)) return true;
     }
     return false;
 }
@@ -749,7 +829,17 @@ bool rvl3DSLastCaptureDone() {
     return sLastCaptureDone;
 }
 
+static void captureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1, bool rgb565);
+
 void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1) {
+    captureRegion(texture, x0, y0, x1, y1, false);
+}
+
+void rvl3DSCaptureJUTTextureRegionRgb565(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1) {
+    captureRegion(texture, x0, y0, x1, y1, true);
+}
+
+static void captureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, f32 y1, bool rgb565) {
     sLastCaptureDone = false;
     if (texture == nullptr) {
         return;
@@ -780,7 +870,7 @@ void rvl3DSCaptureJUTTextureRegion(JUTTexture* texture, f32 x0, f32 y0, f32 x1, 
     float coeffs[4];
     // Null in a frame the renderer skips (or with the command queue full): no copy, and the
     // texture keeps the image of its last capture.
-    void* handle = hostGfxCaptureToTexture(reuse, x0, y0, x1, y1, coeffs);
+    void* handle = rgb565 ? hostGfxCaptureToTextureRgb565(reuse, x0, y0, x1, y1, coeffs) : hostGfxCaptureToTexture(reuse, x0, y0, x1, y1, coeffs);
     if (handle == nullptr) {
         return;
     }
@@ -858,8 +948,11 @@ void* rvl3DSGetNativeTIMGTexture(const ResTIMG* timg) {
     }
 
     void* handle;
+    u32 skip, levels;
     if (native) {
         handle = createNativeTexture(image, format, width, height, mode);
+    } else if (mipmapLevels(timg, address, hostLowMemory() ? kModelTextureLowLimit : kModelTextureLimit, skip, levels)) {
+        handle = createMipmapTexture(timg, image, skip, levels, mode);
     } else {
         u32 decodedWidth = width, decodedHeight = height;
         decodeToScratch(image, decodedWidth, decodedHeight, format, palette, paletteFormat);

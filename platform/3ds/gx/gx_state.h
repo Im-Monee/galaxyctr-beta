@@ -50,7 +50,7 @@ const RvlNativePointLight* rvlNativePointLight();  // null until a point light w
 // A run of RVL_NATIVE_CHUNK_TRIANGLES consecutive triangles of a large group: the bounding sphere
 // (centre, radius) of its vertices in the space of their position matrix row, or row 0xFF when
 // they use several rows or the sphere is unknown (the run is then tested triangle by triangle).
-#define RVL_NATIVE_CHUNK_TRIANGLES 32
+#define RVL_NATIVE_CHUNK_TRIANGLES 128
 struct RvlNativeChunk {
     f32 sphere[4];
     u32 row;
@@ -144,6 +144,17 @@ bool rvlNativeSubdivideNeeded(const HostGfxTransform& transform);
 bool rvlNativeSubdivideSubmit(const RvlNativeDraw& draw, const HostGfxState* pState, const HostGfxTransform& transform, u32 version);
 bool rvlNativeClipSubmit(const RvlNativeDraw& draw, const HostGfxState* pState, const HostGfxTransform& transform,
                          u32 transformVersion);
+// True when every slot sphere of slotMask (each in the space of its palette rows in transform) is
+// wholly outside one and the same screen edge: the test rvlNativeClipNeeded culls with, without
+// its counters (native.cpp rvlNativePacketInView).
+bool rvlNativeOutsideView(const HostGfxTransform& transform, const f32 (*spheres)[4], u32 slotMask);
+// A large group partly off screen (native_clip.cpp): its runs (draw.chunks) wholly outside one
+// screen edge are left out of the triangles sent. False when it did not draw (no run off screen,
+// or no room for the indices): the caller draws the group whole; *pSubmitted otherwise.
+bool rvlNativeRunCullSubmit(const RvlNativeDraw& draw, const HostGfxState* pState, const HostGfxTransform& transform, u32 version,
+                            bool* pSubmitted);
+// The view-to-clip matrix of the next native draws (native_submit.cpp), into transform.clip.
+void rvlNativeViewToClip(HostGfxTransform& transform);
 // Counters for the periodic log: draws that went through the clipper, triangles clipped.
 void rvlNativeClipTakeStats(u32& draws, u32& triangles, u32& invalid, u32& invalidMatrixDraws, u32& culled, u64& ticks);
 

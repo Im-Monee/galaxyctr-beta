@@ -38,7 +38,10 @@ import mat
 # # platform/3ds/gx/native.cpp.                                                                #
 # ##############################################################################################
 MAGIC = b"J3D2"
-VERSION = 16  # 16: mat.compare_stage keeps a stage's alpha in the buffer
+# 16: mat.compare_stage keeps a stage's alpha in the buffer. 17: a group's vertices merged by their
+# stored bytes, and no source position index (ATTR_SOURCE_POS) for models without joint or cluster
+# animations.
+VERSION = 17
 
 ATTR_NRM = 1 << 0
 ATTR_CLR0 = 1 << 1
@@ -46,7 +49,11 @@ ATTR_CLR1 = 1 << 2
 ATTR_TEX0 = 1 << 3  # ATTR_TEX0 << n for texture coordinate set n (0..7)
 ATTR_POS_F32 = 1 << 11  # positions as f32[3] + u8 slot + 3 pad (large shapes: s16 would leave gaps)
 ATTR_TEXMTX = 1 << 12  # per-vertex GX texture matrix indices, kept for direct J3D rendering
-ATTR_SOURCE_POS = 1 << 13  # source VTX1 position index for J3D CPU skinning
+# Source VTX1 position index (4 bytes a vertex), for J3D CPU skinning and fur layers. Models whose
+# archive has no animations that move them (has_moving_animations: colour, texture and visibility
+# animations do not; owner's choice, 25 Nov 2026) go without it: the game never asks for CPU
+# skinning (ModelManager passes only UseSharedDL and DifferedDLBuffer).
+ATTR_SOURCE_POS = 1 << 13
 # Normals stored at half scale (s8 / 63.5): the shape has normals longer than 1. The Wii reads s16
 # normals with 14 fraction bits whatever their length (about 350 models have them near 2) and
 # lights with them as they are; clamped to 1 per component they changed direction by up to 15
@@ -221,6 +228,25 @@ class Stats:
         self.materials = 0
         self.inexact = 0  # materials whose TEV needed approximations (mat.FLAG_INEXACT)
         self.multipass = 0  # materials drawn in more than one pass
+        self.merged = 0  # vertices equal to another of their group once stored, merged (write)
+        self.no_source = 0  # models written without the source position index
+
+
+# The J3D animations that move a model's joints or vertices: joints (bck, bca) and clusters (blk,
+# bla). Colour (brk, bpk), texture (btk, btp) and visibility (bva) animations leave its shape as it
+# is. Each file begins "J3D1" and its tag, or both reversed once converted to little-endian.
+MOVING_ANIMATION_TAGS = (b"bck1", b"bca1", b"blk1", b"bla1")
+
+
+def has_moving_animations(members):
+    """True when an archive's (name, content) files include an animation of MOVING_ANIMATION_TAGS."""
+    for _, content in members:
+        head = content[:8]
+        if head[:4] == b"J3D1" and head[4:] in MOVING_ANIMATION_TAGS:
+            return True
+        if head[:4] == b"1D3J" and head[4:][::-1] in MOVING_ANIMATION_TAGS:
+            return True
+    return False
 
 
 def lod_parent_archive(archive_name):
@@ -324,7 +350,12 @@ def texture_maxima(data, tex1):
     return get
 
 
-def convert_model(data, stats, animated=None, patterned=None):
+def convert_model(data, stats, animated=None, patterned=None, source_positions=True):
+    """source_positions: keep each vertex's source VTX1 position index (ATTR_SOURCE_POS); False for
+    the models of archives without animations that move them (has_moving_animations). A model with
+    fur keeps it anyway:
+    MR::initMultiFur gives fur layers to every model with a "Fur" material, animated or not (the
+    planets of FurPlanetMap), and the port draws the layers from the source positions."""
     found = blocks(data)
     if "SHP1" not in found or "VTX1" not in found:
         raise N3DError("no SHP1/VTX1 block")
@@ -332,6 +363,9 @@ def convert_model(data, stats, animated=None, patterned=None):
     block, size = found["SHP1"]
     count = u16(data, block + 0x08)
     init, index, names, vtx_desc, mtx_table, dl_data, mtx_init, draw_init = [u32(data, block + 0x0C + 4 * i) for i in range(8)]
+    parsed = mat.parse(data, *found["MAT3"]) if "MAT3" in found else []
+    if any("Fur" in m["name"] for m in parsed):
+        source_positions = True
 
     shapes = []
     for s in range(count):
@@ -365,7 +399,7 @@ def convert_model(data, stats, animated=None, patterned=None):
                 mask |= ATTR_TEXMTX
             elif GX_TEX0 <= attr < GX_TEX0 + 8:
                 mask |= ATTR_TEX0 << (attr - GX_TEX0)
-        if any(attr == GX_POS for attr, _ in desc):
+        if source_positions and any(attr == GX_POS for attr, _ in desc):
             mask |= ATTR_SOURCE_POS
 
         groups = []
@@ -393,7 +427,6 @@ def convert_model(data, stats, animated=None, patterned=None):
     materials = []
     passes = []
     if "MAT3" in found:
-        parsed = mat.parse(data, *found["MAT3"])
         texture_max = texture_maxima(data, found.get("TEX1"))
         for m in parsed:
             m["animated_registers"] = (animated or {}).get(m["name"], {})
@@ -405,7 +438,8 @@ def convert_model(data, stats, animated=None, patterned=None):
             stats.inexact += inexact
             stats.multipass += bool(extra)
     stats.models += 1
-    return write(shapes, materials, passes)
+    stats.no_source += not source_positions
+    return write(shapes, materials, passes, stats)
 
 
 def decode_list(data, start, size, desc, vtx, stats):
@@ -474,7 +508,9 @@ def decode_list(data, start, size, desc, vtx, stats):
 
 
 def stride_of(mask):
-    size = (16 if mask & ATTR_POS_F32 else 8) + 4  # position, matrix slot + source VTX1 index
+    size = 16 if mask & ATTR_POS_F32 else 8  # position and matrix slot
+    if mask & ATTR_SOURCE_POS:
+        size += 4  # source VTX1 index
     if mask & ATTR_NRM:
         size += 4
     if mask & ATTR_CLR0:
@@ -498,7 +534,8 @@ def pack_vertex(v, mask, pos_scale, uv_scale):
         b = struct.pack("<3fB3x", *v[GX_POS], v["slot"])
     else:
         b = struct.pack("<3hBB", *[quantize(c, pos_scale, 32767) for c in v[GX_POS]], v["slot"], 0)
-    b += struct.pack("<I", v.get("sourcePos", 0))
+    if mask & ATTR_SOURCE_POS:
+        b += struct.pack("<I", v.get("sourcePos", 0))
     if mask & ATTR_NRM:
         step = 2.0 / 127 if mask & ATTR_NRM_X2 else 1.0 / 127
         b += struct.pack("<3bb", *[quantize(c, step, 127) for c in v[GX_NRM]], 0)
@@ -530,7 +567,7 @@ def align4(b):
     b += bytes(-len(b) % 4)
 
 
-def write(shapes, materials, passes):
+def write(shapes, materials, passes, stats=None):
     out = bytearray(struct.pack("<4sIIIIII", b"N3D1", VERSION, len(shapes), 0x1C, len(materials), 0, len(materials) + len(passes)))
     shape_table = len(out)
     out += bytes(0x34 * len(shapes))
@@ -548,9 +585,24 @@ def write(shapes, materials, passes):
             mask |= ATTR_POS_F32
             pos_scale = 1.0
         for g, (matrices, (verts, tris)) in enumerate(groups):
-            vertex_offset = len(out)
+            # Vertices whose stored bytes are equal are one: decode_list merged the ones with the same
+            # VTX1 indices, but different indices often hold equal values, and the quantized normals,
+            # colours and coordinates make more of them equal (the GPU gets these bytes either way).
+            packed, first_of, remap = [], {}, []
             for v in verts:
-                out += pack_vertex(v, mask, pos_scale, uv_scale)
+                b = pack_vertex(v, mask, pos_scale, uv_scale)
+                k = first_of.get(b)
+                if k is None:
+                    k = first_of[b] = len(packed)
+                    packed.append(b)
+                remap.append(k)
+            if stats is not None:
+                stats.merged += len(verts) - len(packed)
+            tris = [remap[i] for i in tris]
+            verts = packed
+            vertex_offset = len(out)
+            for b in packed:
+                out += b
             align4(out)
             index_offset = len(out)
             out += struct.pack("<%dH" % len(tris), *tris)

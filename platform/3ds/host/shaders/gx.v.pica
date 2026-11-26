@@ -141,6 +141,12 @@
                     dp3 r14.x, r7, innrm
                     dp3 r14.y, r9, innrm
                     dp3 r14.z, r10, innrm
+                    ; The scale is the determinant: negative for a mirrored matrix (Mario's
+                    ; mirrored animations, scale z -1), where the normals came out reversed and
+                    ; the lights hit the wrong side (pale Mario on a wall slide seen from the
+                    ; front, Honeyhive, Nov 2026). Times the determinant, the scale is positive.
+                    dp3 r8.x, r4, r7
+                    mul r14.xyz, r8.xxx, r14
                 .else
                     dp3 r14.x, palette[a0.x], innrm
                     dp3 r14.y, palette[a0.x+1], innrm

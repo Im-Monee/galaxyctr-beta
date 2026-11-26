@@ -10,8 +10,14 @@ Their license texts are in this folder and inside every builder executable.
 | bannertool | [diasurgical/bannertool](https://github.com/diasurgical/bannertool) | 1.2.0 (built from its source on macOS) | MIT | `bannertool-LICENSE.txt` |
 | Python | [python.org](https://www.python.org/) | 3.12 | PSF License | `python-LICENSE.txt` |
 | certifi | [certifi/python-certifi](https://github.com/certifi/python-certifi) | 2026.7.22 | MPL-2.0 | `certifi-LICENSE.txt` |
+| Qt for Python (PySide6-Essentials, shiboken6) and the Qt libraries it carries | [qt.io/qt-for-python](https://www.qt.io/qt-for-python) | 6.11.2 | LGPL-3.0, used under it (the LGPL adds to the GPL-3.0, so both texts are here) | `qt-pyside6-LICENSE-LGPL-3.0.txt`, `qt-pyside6-LICENSE-GPL-3.0.txt` |
 
 The executables are packed with [PyInstaller](https://pyinstaller.org/). Its bootloader is
 GPL-2.0 with an exception that allows packed programs under any license.
+
+Qt and PySide6 are not changed. Their source code is at
+[code.qt.io](https://code.qt.io/cgit/pyside/pyside-setup.git/). To use other Qt libraries, pack
+the builder again with them, as [BUILDER.md](../docs/BUILDER.md#packing-the-builder-yourself)
+explains: everything else needed is in this repository.
 
 The versions are the ones `.github/workflows/builder.yml` downloads and installs.

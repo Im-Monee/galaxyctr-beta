@@ -39,9 +39,25 @@ TOOLS = ("nodtool", "bannertool", "makerom")
 # the save icon with, the CIA's metadata and the port's version.
 SOURCE_FILES = (
     "tools/beta/galaxyctr_builder.py",
+    "tools/beta/builder_gui.py",
+    "tools/beta/builder_window.py",
+    "tools/beta/builder_assets.py",
+    "tools/beta/builder_sky.py",
+    "tools/beta/builder_layout.py",
+    "tools/beta/builder_game.py",
+    "tools/beta/builder_sounds.py",
+    "tools/beta/builder_firststart.py",
+    "tools/beta/builder_font.py",
+    "tools/beta/builder_music.py",
+    "tools/beta/builder_particles.py",
+    "tools/beta/builder_halo.py",
+    "tools/beta/builder_loading.py",
+    "tools/beta/builder_exeicon.py",
+    "branding/title.png",
     "tools/3ds/convert_smg_files.py",
     "tools/3ds/cia_showcase.rsf",
     "tools/3ds/builder/*.py",
+    "tools/3ds/native/*.py",  # the model readers builder_assets.py uses for the window's sky
     "platform/3ds/host/build_version.h",
 )
 
@@ -178,13 +194,28 @@ def main():
     elf = Path(args.elf).resolve() if args.elf else build_release_elf()
     added.append(f"{elf}{sep}payload")
 
-    command = [sys.executable, "-m", "PyInstaller", "--onefile", "--console", "--clean", "--noconfirm",
+    # The window (tools/beta/builder_window.py) needs Qt's core, drawing and widgets modules; the
+    # source files are packed as plain files, so PyInstaller is told about them. On Windows the
+    # program then starts without a terminal window (the builder opens one in terminal mode); on
+    # Linux and macOS it stays a terminal program, which shows the window too.
+    qt = []
+    try:
+        import PySide6  # noqa: F401 - only checked for
+        qt = ["--hidden-import", "PySide6.QtCore", "--hidden-import", "PySide6.QtGui",
+              "--hidden-import", "PySide6.QtWidgets", "--hidden-import", "PySide6.QtOpenGL",
+              "--hidden-import", "PySide6.QtOpenGLWidgets",  # these two: the game's sky (builder_sky.py)
+              "--hidden-import", "PySide6.QtMultimedia"]  # the game's music (builder_music.py)
+    except ImportError:
+        print("Note: PySide6 is not installed (pip install PySide6-Essentials): the builder will have no window.")
+    terminal = "--windowed" if os.name == "nt" and qt else "--console"
+    command = [sys.executable, "-m", "PyInstaller", "--onefile", terminal, "--clean", "--noconfirm",
                "--name", f"GalaxyCTR-Builder-{key}",
                "--distpath", str(REPO / "build" / "beta" / "dist"),
                "--workpath", str(REPO / "build" / "beta" / "pyinstaller"),
                "--specpath", str(REPO / "build" / "beta")]
     for module in stdlib_imports():
         command += ["--hidden-import", module]
+    command += qt
     try:
         import certifi  # noqa: F401 - only checked for: the launcher's HTTPS certificates on macOS
         command += ["--hidden-import", "certifi", "--collect-data", "certifi"]

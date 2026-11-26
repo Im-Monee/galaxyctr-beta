@@ -166,7 +166,7 @@ def main():
                     if is_converted_j3d(content):
                         content = j3d.restore_model(content)
                     result = n3d.convert_model(content, stats, n3d.animated_registers(animations),
-                                               n3d.patterned_materials(animations))
+                                               n3d.patterned_materials(animations), n3d.has_moving_animations(animations))
                 except (n3d.N3DError, struct.error, KeyError, IndexError) as e:
                     failures.append("%s/%s: %s" % (rel, member, e))
                     continue

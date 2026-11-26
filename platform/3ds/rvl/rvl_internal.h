@@ -15,6 +15,10 @@ u64 rvlOSTimeToHostTick(OSTime time);
 // Called when interrupts go from disabled to enabled: delivers pending interrupts.
 void rvlInterruptsEnabled();
 
+// In the renderer's long work (native_submit.cpp): delivers only the audio interrupts, so the
+// game's audio threads run on time (os_thread.cpp).
+extern "C" void rvlPollAudioInterrupts();
+
 // The running thread's interrupt enable state, kept per thread by the context switch (the Wii
 // keeps it in each thread's saved MSR), without delivering anything.
 extern "C" BOOL rvlInterruptLevel();

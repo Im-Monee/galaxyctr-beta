@@ -39,7 +39,7 @@ from tevcheck import gx_eval
 # # changes their colours) with at least a few draws.                                          #
 # ##############################################################################################
 MAGIC = b"N3DF"
-VERSION = 1
+VERSION = 2  # 2: no far model for a model whose triangles cover a texture pattern (_hides_detail)
 HEADER = struct.Struct("<4sIHHIIf4fB3xI")
 VERTEX = struct.Struct("<3h3bx4B2x")
 
@@ -202,6 +202,26 @@ class _Textures:
         self.cache[index] = result
         return result
 
+    def spread(self, index, uvs):
+        """The largest difference of a colour channel between the texture cells a triangle's
+        coordinates (uvs, one per corner) cover; 0 when the texture cannot be read."""
+        g = self.grid(index)
+        if g is None or any(uv is None for uv in uvs):
+            return 0
+        cells, gw, gh, wrap, _ = g
+        lo_u, hi_u = min(uv[0] for uv in uvs), max(uv[0] for uv in uvs)
+        lo_v, hi_v = min(uv[1] for uv in uvs), max(uv[1] for uv in uvs)
+        def covered(lo, hi, n, mode):
+            # The cells between the two coordinates, each found as sample() finds it.
+            first, last = math.floor(lo * n), math.floor(hi * n)
+            if last - first >= n:
+                return set(range(n))  # the whole texture, or more
+            return {self.cell((k + 0.5) / n, n, mode) for k in range(first, last + 1)}
+
+        xs, ys = covered(lo_u, hi_u, gw, wrap[0]), covered(lo_v, hi_v, gh, wrap[1])
+        values = [cells[y][x] for y in ys for x in xs]
+        return max(max(c[k] for c in values) - min(c[k] for c in values) for k in range(3))
+
     def sample(self, index, uv):
         g = self.grid(index)
         if g is None:
@@ -209,19 +229,20 @@ class _Textures:
         cells, gw, gh, wrap, mean = g
         if uv is None:
             return mean
+        return cells[self.cell(uv[1], gh, wrap[1])][self.cell(uv[0], gw, wrap[0])]
 
-        def coord(v, n, mode):
-            if mode == 0:  # clamp
-                v = min(max(v, 0.0), 0.999999)
-            elif mode == 2:  # mirror
-                v = v % 2.0
-                v = 2.0 - v if v > 1.0 else v
-                v = min(v, 0.999999)
-            else:
-                v = v % 1.0
-            return min(n - 1, int(v * n))
-
-        return cells[coord(uv[1], gh, wrap[1])][coord(uv[0], gw, wrap[0])]
+    @staticmethod
+    def cell(v, n, mode):
+        """The cell (of n) a texture coordinate falls in, with the texture's wrap mode."""
+        if mode == 0:  # clamp
+            v = min(max(v, 0.0), 0.999999)
+        elif mode == 2:  # mirror
+            v = v % 2.0
+            v = 2.0 - v if v > 1.0 else v
+            v = min(v, 0.999999)
+        else:
+            v = v % 1.0
+        return min(n - 1, int(v * n))
 
 
 # ##############################################################################################
@@ -236,6 +257,41 @@ def _opaque(m):
     blend = M.fragment_state(m)
     return (m["mode"] == 1 and m["blend"][0] == 0 and blend[3] == M.TEST_ALWAYS and m["zmode"][0] and m["zmode"][2]
             and not m["indirect"])
+
+
+# A triangle whose texture coordinates cover cells this far apart in a colour channel (0-255)
+# shows a pattern: checks, arrows, letters. Loopdeeloop's race signs (SurfingRaceSignBoard, a few
+# big quads) became plain blue boards far away and their checks and arrows showed only near
+# (owner, CIA 0.22.0). A model gets no far model when such triangles make more than
+# _DETAIL_SHARE of its surface: a sign is mostly pattern, a planet has a few patterned spots that
+# do not show at the far model's size (47 of the game's 362 far models are left out, signs and
+# pictures among them; without the share, 114).
+_DETAIL_SPREAD = 96
+_DETAIL_SHARE = 0.2
+
+
+def _area(a, b, c):
+    """The area of a triangle given by three points."""
+    u = [b[i] - a[i] for i in range(3)]
+    v = [c[i] - a[i] for i in range(3)]
+    x, y, z = u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]
+    return 0.5 * math.sqrt(x * x + y * y + z * z)
+
+
+def _hides_detail(m, corners, textures):
+    """True when the triangle's texture holds a pattern its three vertex colours cannot keep."""
+    for s in range(m["stage_count"]):
+        coord, tmap, _ = m["orders"][s]
+        if tmap == 0xFF or coord >= len(m["texgens"]):
+            continue
+        number = m["tex_numbers"][tmap] if tmap < len(m["tex_numbers"]) else 0xFFFF
+        src = m["texgens"][coord][1]
+        if number == 0xFFFF or not 4 <= src <= 11:
+            continue
+        uvs = [v.get(n3d.GX_TEX0 + src - 4) for v in corners]
+        if textures.spread(number, uvs) >= _DETAIL_SPREAD:
+            return True
+    return False
 
 
 def _vertex_colour(m, v, textures):
@@ -318,6 +374,7 @@ def build(data, animations):
     material_triangles = [0] * len(materials)
     textures = _Textures(data, found)
     source_triangles = 0
+    total_area = detail_area = 0.0  # model-space triangle areas, all and patterned (_hides_detail)
     for s in range(shape_count):
         si = sb + init + _be16(data, sb + index + s * 2) * 0x28
         if data[si] not in (0, 3):
@@ -361,11 +418,18 @@ def build(data, animations):
                     return None
                 placed.append((_apply(w, v[n3d.GX_POS]), normal, colour))
             for k in range(0, len(tris) - 2, 3):
-                corners.append((placed[tris[k]], placed[tris[k + 1]], placed[tris[k + 2]]))
+                triangle = (placed[tris[k]], placed[tris[k + 1]], placed[tris[k + 2]])
+                area = _area(*(corner[0] for corner in triangle))
+                total_area += area
+                if _hides_detail(m, [verts[tris[k + c]] for c in range(3)], textures):
+                    detail_area += area
+                corners.append(triangle)
             material_triangles[mi] += len(tris) // 3
             source_triangles += len(tris) // 3
     if not corners or not used_draws:
         return None
+    if total_area > 0.0 and detail_area > _DETAIL_SHARE * total_area:
+        return None  # mostly a pattern the vertex colours lose
 
     # The space of the draw matrix of the lowest joint drawn.
     base = min(used_draws, key=lambda d: (draws[d][1], d))

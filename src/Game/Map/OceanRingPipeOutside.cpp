@@ -71,30 +71,73 @@ void OceanRingPipeOutside::draw() const {
         return;
 
 #ifdef __3DS__
-    void* indirect = rvl3DSGetJUTTexture(mWaterPipeIndirectTex);
+    // ##########################################################################################
+    // # The outside of the pipe in loadMaterial's colours                                      #
+    // #                                                                                        #
+    // # The Wii adds the highlight (an environment map from the normals) to the strong blue    #
+    // # sTevReg0, then a white rim where the alpha channel, lit by the camera's light 2, is    #
+    // # low (the faces turned away from the camera). This branch multiplied the indirect       #
+    // # texture by the highlight, a dark grey. Loopdeeloop's water shows the screen behind it, #
+    // # this pipe, so its track stayed grey instead of azure (owner, CIA 0.22.0 to 0.22.12).    #
+    // # The indirect warp of the highlight has no 3DS equivalent and is left out. The rim is   #
+    // # worked out at the vertices: the alpha channel as clamp(1.4 cos) (light 2's alpha about #
+    // # 0.7 of a normal twice unit length, as GX reads these s16 normals with 14 fraction      #
+    // # bits), then (A0 (1 - alpha) - 0.5) * 2, clamped, as stage 0's alpha.                   #
+    // ##########################################################################################
     void* highlight = rvl3DSGetJUTTexture(mWaterPipeHighLightTex);
-    f32 row = 0.0f;
+    const TPos3f& view = MR::getCameraViewMtx();
+    const f32 a0 = ::sTevReg0.a / 255.0f;
+    HostGfxState state = WaterRender3DS::makeState(highlight, nullptr, nullptr, false, true);
+    state.cull = mRingPipe->_90 ? 1 : 0;  // GX_CULL_BACK (GPU_CULL_FRONT_CCW) or none
+    state.stageCount = 2;
+    std::memset(state.stages, 0, sizeof(state.stages));
+    HostGfxStage& colour = state.stages[0];
+    colour.colorSrc[0] = 0x03;  // the highlight
+    colour.colorSrc[1] = 0x0E;  // sTevReg0
+    colour.colorFunc = 2;       // add
+    colour.alphaSrc[0] = 0x0E;
+    colour.alphaFunc = 0;
+    colour.constant = 0xFF000000ul | (static_cast< unsigned long >(::sTevReg0.b) << 16) | (static_cast< unsigned long >(::sTevReg0.g) << 8) |
+                      ::sTevReg0.r;
+    HostGfxStage& rim = state.stages[1];
+    rim.colorSrc[0] = 0x0F;  // previous
+    rim.colorSrc[1] = 0x00;  // the rim, in the vertex colour
+    rim.colorFunc = 2;       // add
+    rim.alphaSrc[0] = 0x0F;
+    rim.alphaFunc = 0;
     for (s32 i = 0; i < mRingPipe->_9C - 1; i++) {
         HostGfxVertex vertices[mRingPipe->_98 * 2];
-        f32 u = 0.0f;
         for (s32 j = 0; j < mRingPipe->_98; j++) {
             s32 base = j * mRingPipe->_9C + i;
             s32 indices[2] = {base + 1, base};
             for (s32 k = 0; k < 2; k++) {
                 s32 index = indices[k];
                 const TVec3f& position = mRingPipe->_A0[index];
-                const TVec3s& normal = mRingPipe->_A4[index];
-                f32 envS = 0.5f + static_cast<f32>(normal.x) / 65535.0f;
-                f32 envT = 0.5f - static_cast<f32>(normal.y) / 65535.0f;
-                vertices[j * 2 + k] = WaterRender3DS::makeVertex(position, u + mTexU, row + k * ::sTexRateV,
-                                                                 envS * ::sEnvMapScale, envT * ::sEnvMapScale);
+                const TVec3s& stored = mRingPipe->_A4[index];
+                const TVec3f normal(stored.x / 16384.0f, stored.y / 16384.0f, stored.z / 16384.0f);
+                // Texture matrix 0x21: the view's rotation times sEnvMapScale times qMtx2, of the
+                // normal with w = 1.
+                const TVec3f q((0.5f * normal.x + 0.5f) * ::sEnvMapScale, (0.5f - 0.5f * normal.y) * ::sEnvMapScale, normal.z * ::sEnvMapScale);
+                const f32 envS = view.mMtx[0][0] * q.x + view.mMtx[0][1] * q.y + view.mMtx[0][2] * q.z;
+                const f32 envT = view.mMtx[1][0] * q.x + view.mMtx[1][1] * q.y + view.mMtx[1][2] * q.z;
+                HostGfxVertex& vertex = vertices[j * 2 + k];
+                vertex = WaterRender3DS::makeVertex(position, envS, envT);
+                // The rim: light 2 sits at the camera, so its cosine is the view-space normal
+                // against the direction to the camera.
+                TVec3f viewNormal, viewPosition;
+                view.mult(position, viewPosition);
+                viewNormal.set(view.mMtx[0][0] * normal.x + view.mMtx[0][1] * normal.y + view.mMtx[0][2] * normal.z,
+                               view.mMtx[1][0] * normal.x + view.mMtx[1][1] * normal.y + view.mMtx[1][2] * normal.z,
+                               view.mMtx[2][0] * normal.x + view.mMtx[2][1] * normal.y + view.mMtx[2][2] * normal.z);
+                const f32 distance = viewPosition.length();
+                const f32 cosine = distance > 0.0f ? -viewNormal.dot(viewPosition) / distance : 0.0f;
+                const f32 lit = MR::clamp(0.7f * cosine, 0.0f, 1.0f);
+                const f32 white = MR::clamp((a0 * (1.0f - lit) - 0.5f) * 2.0f, 0.0f, 1.0f);
+                const u8 level = static_cast< u8 >(white * 255.0f);
+                vertex.rgba[0] = vertex.rgba[1] = vertex.rgba[2] = level;
             }
-            u += ::sTexRateU;
         }
-        HostGfxState state = WaterRender3DS::makeState(indirect, highlight, nullptr, false, true);
-        state.cull = mRingPipe->_90 ? 1 : 0;  // GX_CULL_BACK (GPU_CULL_FRONT_CCW) or none
         WaterRender3DS::draw(vertices, mRingPipe->_98 * 2, nullptr, mRingPipe->_98 * 2, HOST_GFX_STRIP, state);
-        row += ::sTexRateV;
     }
 #else
     loadMaterial();

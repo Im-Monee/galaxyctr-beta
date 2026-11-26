@@ -11,14 +11,14 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   `CFL_Res.dat` component archive through the host FS bridge and submits the real face, hair,
   forehead, nose, nose-line, beard and glasses model sections as native Citro3D triangles.
   The face-provided hair, nose/glasses and goatee anchors are applied before the shared Wii
-  scale; the selected `MiiData` controls the face, hair, nose, beard and glasses indices,
+  scale. The selected `MiiData` controls the face, hair, nose, beard and glasses indices,
   sizes, positions, hair variant, skin colour and hair colour. Eyes, eyebrows, mouth, mole,
   makeup and wrinkles are decoded into a transparent CFL face canvas and drawn on the
   corresponding face-canvas model. The first implementation covers the normal expression
-  with CPU ETC1/ETC1A4 decoding; expression-specific masks and exact dual-colour CFL
+  with CPU ETC1/ETC1A4 decoding. Expression-specific masks and exact dual-colour CFL
   compositing remain approximated. The shared model origin is lowered on 3DS to match the
   Wii file-select placement. The CPU decoder's 128x128 temporary buffer and 64x64 canvas use static
-  storage because the 3DS thread stack cannot hold the former; this avoids a stack fault while
+  storage because the 3DS thread stack cannot hold the former. This avoids a stack fault while
   composing the decals. The ETC1A4 decoder keeps its 8-byte alpha plane separate from the
   following 8-byte ETC1 colour block and indexes alpha relative to each block. Eye and eyebrow
   placement reads their full 32-bit packed MiiData fields rather than truncating them to 16 bits.
@@ -39,19 +39,19 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   `GPU_CULL_FRONT_CCW`, as the native renderer).
   - Depth: `DrawUtil.cpp` shadow volumes (`GX_GEQUAL`), `ClipFieldFillDraw.cpp` (`GX_ALWAYS`), `KirairaChain.cpp`
     and `ElectricRailMoving.cpp` (`GX_LEQUAL`, world-space view mode), `MarioActorSpecialDraw.cpp` (`GX_GREATER`),
-    `WaterRender3DS.hpp`; `DrawUtil.cpp` `clearZBuffer` writes the far plane at z = 0 (z = 1 was clipped).
+    `WaterRender3DS.hpp`. `DrawUtil.cpp` `clearZBuffer` writes the far plane at z = 0 (z = 1 was clipped).
   - Blend: `MarioSearchLight.cpp`, `StarPointerBlur.cpp`, `MarioActorSpecialDraw.cpp`, `ImageEffectLocalUtil.cpp`,
     `ShadowVolumeDrawer.cpp` (add, then reverse subtract), `VolumeModelDrawer.cpp`, `MarioShadow.cpp`.
   - Cull: `SnowFloor.cpp`, `SnowFloorTile.cpp`, `OceanRingPipeOutside.cpp`, `AstroDomeOrbit.cpp`,
     `ShadowSurfaceDrawer.cpp`, `BigBubbleGoalArea.cpp`.
-  - `ClipFieldFillDraw.cpp`: the Wii's pixel projection and fill blend mode; `WhirlPoolAccelerator.cpp` and
+  - `ClipFieldFillDraw.cpp`: the Wii's pixel projection and fill blend mode. `WhirlPoolAccelerator.cpp` and
     `SpinDriverPathDrawer.cpp`: their `GX_GREATER 0` alpha compare.
   - `ElectricRail.cpp` `ElectricRailShadowDrawer::drawShape` sends only vertices (the pass state is
     `ShadowVolumeDrawer::draw`'s, as on the Wii).
-  - `DirectDraw.cpp`: every draw takes the setters' state (blend, alpha compare, depth, scissor); Z is
-    written only through an enabled Z test (as `GXSetZMode`); `drawJ2DPictureTriangles` blends further
+  - `DirectDraw.cpp`: every draw takes the setters' state (blend, alpha compare, depth, scissor). Z is
+    written only through an enabled Z test (as `GXSetZMode`). `drawJ2DPictureTriangles` blends further
     textures as J2DPicture's stages (previous x (1 - k) + texture x k, then the vertex colour).
-  - Particles (`JPABaseShape.cpp`): `setGX` sets blend, Z mode and alpha compare; prm/env TEV colours
+  - Particles (`JPABaseShape.cpp`): `setGX` sets blend, Z mode and alpha compare. Prm/env TEV colours
     and the shape's colour/alpha modes are drawn by `TDDraw::drawParticleTriangles`. The billboards
     passed one colour where six were read.
 
@@ -61,16 +61,16 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   log never ran. (2026-10-22, Claude)
 - **Layouts, J2D and 2D particles use their own projection and matrices on 3DS** (2026-10-22, Claude):
   - `src/Game/Util/DrawUtil.cpp` `setupDrawForNW4RLayout` loads the layout's orthographic projection
-    (the Wii's `GXSetProjection`), culling and depth test off;
+    (the Wii's `GXSetProjection`), culling and depth test off.
   - `src/nw4r/lyt/lyt_pane.cpp` `Pane::LoadMtx` loads the pane matrix as the DirectDraw view matrix
-    (the Wii's `GXLoadPosMtxImm`);
-  - `src/nw4r/lyt/lyt_material.cpp` `Material::SetupGX` sets the material's alpha compare and blend mode;
+    (the Wii's `GXLoadPosMtxImm`).
+  - `src/nw4r/lyt/lyt_material.cpp` `Material::SetupGX` sets the material's alpha compare and blend mode.
   - `src/JSystem/J2DGraph/J2DOrthoGraph.cpp` `setPort`/`setLookat`, `J2DGrafContext.cpp` `fillBox` and
-    `J2DPicture.cpp` draw with the graph's projection and their own matrix (DirectDraw view mode 3);
+    `J2DPicture.cpp` draw with the graph's projection and their own matrix (DirectDraw view mode 3).
   - `src/JSystem/JParticle/JPAEmitterManager.cpp` (+ `JPAEmitterManager.hpp` `JPASetDirectProjection`)
     and `src/Game/Effect/ParticleDrawExecutor.cpp` `draw2D`: the 2D groups keep the orthographic
     projection, and `closeDirect` no longer runs after every emitter (it put the camera view back, so
-    every emitter but the first was transformed twice);
+    every emitter but the first was transformed twice).
   - `src/Game/Util/DirectDraw.cpp`: view mode 3 keeps the caller's matrices, `closeDirect` resets
     only the 3D modes, `setDirectScissor` stores x0, y0, x1, y1 as `HostGfxState` expects.
   Before, the layout quads used whatever camera projection and view an unrelated draw had left: a
@@ -79,12 +79,12 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **3DS startup no longer initializes the Wii GX FIFO** (`src/Game/System/GameSystem.cpp`):
   `GameSystem::initGX` returns before allocating the Wii FIFO or calling `GXInit` on 3DS.
   The `GXInit.c` translation unit remains in the target only because it owns the shared
-  `__GXData` compatibility state still consumed by the parser and SDK texture/state helpers;
-  no 3DS startup path enters the Wii FIFO initialization.
+  `__GXData` compatibility state still consumed by the parser and SDK texture/state helpers.
+  No 3DS startup path enters the Wii FIFO initialization.
 - **3DS draw-sync recovery no longer re-enters the Wii FIFO** (`src/Game/System/DrawSyncManager.cpp`,
   `src/Game/System/MainLoopFramework.cpp`): reset handling, draw-done waits and the GX abort alarm
   are native-target no-ops. The Wii callback, alarm, FIFO reset and abort command sequence remain
-  unchanged for the original build; frame presentation still uses the existing native host end-frame
+  unchanged for the original build. Frame presentation still uses the existing native host end-frame
   path.
 - **3DS frame clear and presentation use the host render target** (`platform/3ds/host/host.h`,
   `platform/3ds/host/gfx.c`, `src/Game/System/MainLoopFramework.cpp`): clear operations begin and
@@ -95,7 +95,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **J3D display-list drawing is explicitly disabled on 3DS** (`src/JSystem/J3DGraphBase/J3DShape.cpp`,
   `src/JSystem/J3DGraphBase/J3DPacket.cpp`, `src/JSystem/J3DGraphBase/J3DShapeDraw.cpp`,
   `src/Game/System/ShapePacketUserData.cpp`, `src/Game/Player/J3DModelX.cpp`): native `.n3d`
-  packets remain the only model draw path; direct Wii display-list entry points return without
+  packets remain the only model draw path. Direct Wii display-list entry points return without
   submitting GX commands on 3DS. The original implementations remain unchanged for Wii.
 - **Remaining legacy draw callers no longer submit GX on 3DS** (`src/JSystem/JUtility/JUTVideo.cpp`,
   `src/JSystem/JParticle/JPABaseShape.cpp`, `src/Game/System/Overwrite.cpp`,
@@ -108,13 +108,13 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   `GXCallDisplayList`, `GXCopyDisp`, `GXDrawDone`, or display-list/FIFO setup APIs.
 - **Camera/progression projection setters no longer write GX state on 3DS** (`src/Game/Util/CameraUtil.cpp`,
   `src/Game/Scene/ScenarioSelectScene.cpp`): native projection state remains owned by the Citro3D
-  direct renderer; the original GX projection writes remain available on Wii. `JUTVideo` also
+  direct renderer. The original GX projection writes remain available on Wii. `JUTVideo` also
   avoids registering the Wii draw-done callback on 3DS.
 - **Direct draw utility services are native-only on 3DS** (`src/Game/Util/DirectDraw.cpp`,
   `src/Game/Util/DirectDrawUtil.cpp`, `src/Game/Util/DrawUtil.cpp`): shared camera,
   projection, primitive setup, texture, model and legacy GX utility paths are excluded from
-  the 3DS translation units. The existing Citro3D direct helpers are used where available;
-  unsupported EFB-copy, J3D setup and framebuffer utility operations are explicit no-ops
+  the 3DS translation units. The existing Citro3D direct helpers are used where available.
+  Unsupported EFB-copy, J3D setup and framebuffer utility operations are explicit no-ops
   rather than hidden GX fallbacks.
 - **Procedural-geometry limitations are recorded for the next compositing pass**:
   `BezierSurface` still omits Wii normal/texture-generator interpolation, arbitrary J3D
@@ -124,7 +124,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **Screen effects and compositing are native-only in the 3DS target** (`src/Game/Screen`):
   the shared capture/blur/bloom, depth-of-field, screen-alpha, star-pointer blur, Home
   Button, ODH capture and THP GX entry points no longer emit GX. Existing direct overlays
-  remain available where already converted; Wii EFB-copy, TEV/indirect blur, depth-alpha
+  remain available where already converted. Wii EFB-copy, TEV/indirect blur, depth-alpha
   capture, video YUV conversion and ODH JPEG capture are explicit 3DS skips pending a
   framebuffer-native implementation. This preserves the zero-GX invariant but does not
   claim visual parity for those effects.
@@ -135,7 +135,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **Star Pointer blur uses native textured strips** (`src/Game/Screen/StarPointerBlur.cpp`):
   the Wii two-pass texture strip is rebuilt as horizontal and vertical Citro3D triangle
   strips using the existing direct 2D submitter. Pointer depth probing and layout
-  behaviour are unchanged; the texture remains subject to the native JUT texture bridge.
+  behaviour are unchanged. The texture remains subject to the native JUT texture bridge.
 - **Framebuffer capture services use the native render target** (`src/Game/Screen/CaptureScreenDirector.cpp`,
   `src/Game/Screen/ScreenAlphaCapture.cpp`, `src/Game/Screen/GalaxyMapController.cpp`,
   `src/Game/Screen/ImageEffectLocalUtil.cpp`): color and alpha capture requests no
@@ -165,7 +165,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **Talk depth peek uses the native 3DS render target** (`src/Game/NPC/TalkDirector.cpp`):
   the 3DS path uses `hostGfxPeekEfb` and reconstructs the world position with the active
   camera matrices, replacing Wii draw-sync and `GXPeekZ`. `JUTTexture::capture` is also
-  explicitly disabled on 3DS until a native texture ownership path is added; screen
+  explicitly disabled on 3DS until a native texture ownership path is added. Screen
   effects therefore cannot silently enter the GX copy implementation.
 - **Legacy DOL texture capture is disabled on 3DS** (`src/Game/System/Overwrite.cpp`,
   `src/Game/Player/MarioShadow.cpp`): `captureDolTexture` and its copy-filter setup no
@@ -173,17 +173,17 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   native EFB-to-texture ownership is implemented.
 - **Removed 2026-10-22 (Claude):** the scenario/zone-list, `GalaxyStatusAccessor` and
   `StageDataHolder` null guards added on 2026-10-20. They only hid the consequence of a CIA built
-  with the non-existent stage `BeachBowlGalaxy:1` (Atollo is `HeavenlyBeachGalaxy`); the files
+  with the non-existent stage `BeachBowlGalaxy:1` (Beach Bowl is `HeavenlyBeachGalaxy`). The files
   are back to their committed state.
 - **Ring beam shadow strips use DirectDraw** (`src/Game/Enemy/RingBeam.cpp`, 3DS):
   the four shadow-volume triangle strips now submit world-space vertices through the
-  Citro3D direct strip helper; Wii immediate-mode setup and submission remain unchanged.
+  Citro3D direct strip helper. Wii immediate-mode setup and submission remain unchanged.
 - **FireBall light colour uses `Color8`** (`src/Game/Enemy/FireBall.cpp`):
-  the light colour constant no longer depends on the Wii GX colour type; its channel values
+  the light colour constant no longer depends on the Wii GX colour type. Its channel values
   and point-light behaviour are unchanged.
 - **Boss point-light colours use `Color8`** (`src/Game/Boss/TripodBossCore.cpp`):
   the three point-light requests now use the engine's platform-independent colour type
-  instead of the Wii GX colour type; this removes a non-rendering GX dependency from the
+  instead of the Wii GX colour type. This removes a non-rendering GX dependency from the
   Boss sources without changing the colour values or light behaviour.
 - **JParticle submits use Citro3D** (`src/Game/Effect/ParticleDrawExecutor.cpp`,
   `src/JSystem/JParticle/*`, `include/Game/Util/DirectDraw.hpp`,
@@ -191,7 +191,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   the 3DS particle executor and JPA shape paths now submit billboard, point, line and stripe
   geometry through the direct Citro3D backend. Particle point/line sizing, emitter TEV
   registration, child-shape setup, extended-texture setup, clip-mode restoration and
-  resource TEV/array/indirect setup are excluded from the 3DS target; they cannot invoke
+  resource TEV/array/indirect setup are excluded from the 3DS target. They cannot invoke
   the GX backend after native geometry submission. Wii GX state, array, TEV and indirect
   setup remains available only to the non-3DS build.
 - **J3D DrawBuffer is native-only on 3DS** (`src/Game/System/DrawBuffer.cpp`,
@@ -199,10 +199,10 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   the 3DS draw buffer always routes model packets through the `.n3d` Citro3D renderer,
   and model registration is no longer gated by the debug `native=1` option. Unsupported
   packet features are counted and skipped by the native path instead of falling back to
-  GX display lists; `native=2/3/4` remains available for material diagnostics.
+  GX display lists. `native=2/3/4` remains available for material diagnostics.
 - **J3D palette textures use the native Citro3D decoder** (`platform/3ds/gx/native.cpp`):
   C4, C8 and C14X2 textures are accepted by the native material path because
-  `rvl3DSGetNativeTIMGTexture` expands their palettes to RGBA8; they no longer trigger a
+  `rvl3DSGetNativeTIMGTexture` expands their palettes to RGBA8. They no longer trigger a
   GX fallback.
 - Native submit failures now propagate to the J3D packet path, so a rejected native draw is not
   reported as a successful native submission or silently counted as rendered.
@@ -217,14 +217,14 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   orthographic matrix setup, `draw`, `drawOut` and `drawTexCoord` no longer emit GX commands
   on 3DS. The direct picture path preserves corner colours, alpha modulation, mirroring,
   rotated coordinates and the explicit picture transform. Up to three picture textures are
-  composed by native Citro3D stages; a fourth texture is submitted by an explicit native
+  composed by native Citro3D stages. A fourth texture is submitted by an explicit native
   alpha-blended pass because the host interface exposes three texture coordinates. The
   native scissor state is applied to direct geometry, and `setTevMode` is a 3DS no-op so
   it cannot re-enter the GX backend.
 - **J3D special cases use native workarounds** (`src/Game/System/ShapePacketUserData.cpp`,
   `src/Game/System/Overwrite.cpp`, `src/Game/Player/J3DModelX.cpp`,
   `platform/3ds/gx/native.cpp`):
-  CPU-skin vertices now retain their source VTX1 position index in `.n3d`; the native path
+  CPU-skin vertices now retain their source VTX1 position index in `.n3d`. The native path
   reads the current `J3DVertexBuffer` arrays after `J3DSkinDeform` and uploads them with the
   packet base matrix. Matrixless shapes use the packet base matrix, missing matrix tables use
   the base matrix, and LOD packets use the active J3D shape selection. Packed U8/S8/U16/S16
@@ -239,7 +239,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   native multi-pass decomposition before this coverage item can be considered complete.
 - **Native packets reject truncated materials** (`platform/3ds/gx/native.cpp`):
   materials exceeding the six-stage/three-unit native limits are counted as material fallbacks
-  and skipped before upload. Deliberate `FLAG_INEXACT` approximations remain renderable; this
+  and skipped before upload. Deliberate `FLAG_INEXACT` approximations remain renderable. This
   prevents valid approximated materials from disappearing while the native multipass
   representation is being implemented. The packet never re-enters the Wii GX path on 3DS.
 - **Native packets reject malformed shape tables** (`platform/3ds/gx/native.cpp`):
@@ -250,39 +250,39 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   stage/unit limits are checked before allocating or retaining the registration block. Invalid
   files are rejected without partially initialized model state.
 - Shape vertex strides are checked against the attribute mask during registration, including
-  position format, source-position, normal/colour, UV and texture-matrix fields; malformed
+  position format, source-position, normal/colour, UV and texture-matrix fields. Malformed
   vertex records cannot reach the decoder.
 - Group records are checked after loading as well: matrix count and vertex/index count limits
   are enforced before the model is retained, while zero-sized groups remain accepted for
   assets whose primitive decoder intentionally emits no triangles.
-- The loader uses the source file size to validate every table and vertex/index payload range;
-  aligned but out-of-file offsets are rejected before any native draw can read them.
+- The loader uses the source file size to validate every table and vertex/index payload range.
+  Aligned but out-of-file offsets are rejected before any native draw can read them.
 - Triangle index counts must be multiples of three, and each decoded index is checked against
   its group's vertex count before the index is rebased into the native arena.
-- Group matrix references are checked against the J3D model draw-matrix table; only the
+- Group matrix references are checked against the J3D model draw-matrix table. Only the
   `0xFFFF` carry-forward sentinel may bypass that range check.
 - A group cannot begin with `0xFFFF`: the converter resolves carry-forward entries before
   serialization, so an unresolved first entry is malformed and rejected by registration.
-- Native packet failures now propagate even after an earlier group was submitted; partial
+- Native packet failures now propagate even after an earlier group was submitted. Partial
   geometry is never reported as a fully successful packet. The 3DS display-list path remains
   disabled, so this does not reintroduce a GX fallback.
-- Matrix submission checks both animation sources before dereferencing them; missing
+- Matrix submission checks both animation sources before dereferencing them. Missing
   `J3DMtxBuffer` or draw matrices are reported as unsupported packet data instead of crashing
   or using an incomplete transform.
 - Native packet entry now validates the packet, shape, model, model-data and base-matrix
   pointers before reading any J3D state.
 - Native group uploads invalidate the cached `Upload` record before rebuilding it, close the
-  source file on every allocation/range failure, and reject missing CPU-skinned normal data;
-  failed transient or persistent uploads cannot be reused as successful submissions.
+  source file on every allocation/range failure, and reject missing CPU-skinned normal data.
+  Failed transient or persistent uploads cannot be reused as successful submissions.
 - Native material validation also rejects texgen tables larger than the eight entries supported
   by the serialized material and deferred texture-matrix decoder.
 - Native packet submission verifies that its `rvlNativeBegin()` model context is initialized,
-  live and belongs to the packet's model; out-of-order or stale packet calls are rejected
+  live and belongs to the packet's model. Out-of-order or stale packet calls are rejected
   instead of using global draw state from another model.
 - Concat-view packets now reject a missing animation matrix table instead of silently drawing
   with the packet base matrix, which could produce visibly incorrect joint transforms.
 - CPU-skinning setup now validates position/normal component types and fractional-bit ranges
-  before decoding; unknown formats no longer fall through to signed-16 decoding or undefined
+  before decoding. Unknown formats no longer fall through to signed-16 decoding or undefined
   shifts.
 - Material snapshots and native begin now reject missing J3D TEV/color blocks, out-of-range
   material indices and invalid material nodes before reading animated colors, constants or
@@ -290,15 +290,15 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - Native begin rejects models without model data before consulting the registered `.n3d`
   resource table.
 - The 3DS RVLFaceLib bridge now retains per-character model matrices and expressions,
-  validates model lifecycle and draw settings, and exposes `RFLGetExpression`; these values
+  validates model lifecycle and draw settings, and exposes `RFLGetExpression`. These values
   are ready for the native Mii geometry submit instead of being discarded by empty stubs.
 - EFB capture now rejects null destination addresses and coefficient buffers at both the GX
-  cache boundary and host copy boundary; invalid copies cannot leave a consumer with a
+  cache boundary and host copy boundary. Invalid copies cannot leave a consumer with a
   success-shaped texture mapping.
 - 3DS depth-of-field now uses the native texture blur helper over the captured frame instead
-  of compositing an unfiltered copy; the remaining difference from Wii is the absence of
+  of compositing an unfiltered copy. The remaining difference from Wii is the absence of
   depth-weighted multi-target reconstruction.
-- 3DS bloom now also uses the native multi-sample blur helper for its additive composite; the
+- 3DS bloom now also uses the native multi-sample blur helper for its additive composite. The
   remaining approximation is that Wii's luminance threshold and two-level blur chain are not
   yet represented as separate native render targets.
 - Native THP YUV conversion now handles odd frame dimensions with ceil-divided chroma
@@ -308,21 +308,21 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   converted to `u32`.
 - Material records are checked for valid active texture-map/coordinate pairs and explicit
   `0xFFFF/0xFF` sentinels on unused units before registration. Active texture indices are also
-  checked against the J3D model's actual texture table; a missing texture table is accepted only
+  checked against the J3D model's actual texture table. A missing texture table is accepted only
   when the material has no active texture units.
 - The currently generated native asset set contains 7 models and 7780 material records, all
-  within the single-pass limits. The converter still rejects future overflow assets explicitly;
-  no overflow material is silently packaged or rendered.
+  within the single-pass limits. The converter still rejects future overflow assets explicitly.
+  No overflow material is silently packaged or rendered.
 - Native draw failures are now separated from light-configuration diagnostics: a rejected host
   submit is counted as `FB_SUBMIT`, while `FB_LIGHTS` remains reserved for an actual
   non-representable actor-light configuration.
-- Actor-light channel masks are checked before submission; colour channels may request only
+- Actor-light channel masks are checked before submission. Colour channels may request only
   the two physical `ActorLightInfo` lights, while alpha channels may additionally request the
   dedicated alpha slot. Other GX light slots are rejected as `FB_LIGHTS` instead of silently
   dropping their contributions.
 - The native shader exposes six light uniform slots. `ActorLightInfo` supplies at most two
   physical lights for each colour/alpha channel, so a representable actor-light submission
-  stays within that budget; `buildGpuTransform` remains the final guard for any future light
+  stays within that budget. `buildGpuTransform` remains the final guard for any future light
   source extension.
 - **The native converter preserves matrix-table overflow for validation** (`tools/3ds/native/n3d.py`):
   SHP1 groups are no longer truncated to ten matrices while decoding. An asset exceeding the
@@ -336,15 +336,15 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
   `src/Game/Enemy`, `src/Game/Boss`): the remaining direct geometry, water, shadow,
   footprint, fur, snow, search-light, ribbon and special-draw paths either use the
   existing Citro3D helpers or explicit 3DS workarounds. A per-source 3DS preprocessing
-  audit found no active GX function calls in these directories; Wii implementations
+  audit found no active GX function calls in these directories. Wii implementations
   remain in the non-3DS branches.
 - **J3DModelX delegates packet-owned draws to native J3D** (`src/Game/Player/J3DModelX.cpp`):
   when a standard `J3DModel` owner exists, its packet is submitted through the native
-  Citro3D renderer; standalone J3DModelX display-list-only draws are skipped on 3DS rather
+  Citro3D renderer. Standalone J3DModelX display-list-only draws are skipped on 3DS rather
   than entering GX.
 - **Shadow volume model fallbacks are explicit on 3DS** (`src/Game/LiveActor/ShadowVolumeFlatModel.cpp`,
   `VolumeModelDrawer.cpp`): arbitrary J3D display-list volume meshes use a native bounding-box
-  approximation rather than invoking `MR::drawSimpleModel`/GX; parametric box, line, sphere,
+  approximation rather than invoking `MR::drawSimpleModel`/GX. Parametric box, line, sphere,
   oval and cylinder shadows continue through the direct Citro3D geometry helpers.
 - **Collision shadow alpha passes use direct Citro3D geometry** (`src/Game/Player/MarioShadow.cpp`):
   the two Wii destination-alpha texture passes now write the equivalent alpha mask from the
@@ -352,28 +352,28 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 - **Bezier surface strips use direct Citro3D geometry** (`src/Game/Util/BezierSurface.cpp`,
   `src/Game/Ride/BigBubble.cpp`): triangle strips are expanded to triangle submits on 3DS,
   avoiding immediate GX geometry. The native workaround intentionally ignores Wii-only normal/
-  texture-generator state; the generated positions remain identical.
+  texture-generator state. The generated positions remain identical.
 - **Mario special draw GX services are excluded on 3DS** (`src/Game/Player/MarioActorSpecialDraw.cpp`):
   screen-box EFB capture, raster-scroll framebuffer copies, dynamic display-list material
-  updates, and the dark-mask alpha-buffer path return explicitly on 3DS; procedural spin
+  updates, and the dark-mask alpha-buffer path return explicitly on 3DS. Procedural spin
   lines, sphere masks, and wall-blend rectangles use DirectDraw state where supported.
 - **J3D reset generators and collision-shadow GX paths are excluded on 3DS**
   (`src/JSystem/J3DGraphBase/J3DSys.cpp`, `src/Game/Player/MarioShadow.cpp`):
   J3D draw/state reset methods no longer emit Wii GX command streams, texture-cache
   initialization is skipped, and collision-shadow modes that require destination-alpha
   or immediate-mode geometry return explicitly. Parametric volume shadows continue
-  through the existing DirectDraw box helper; Wii behavior is unchanged.
+  through the existing DirectDraw box helper. Wii behavior is unchanged.
 - **Unsupported search-light and bubble material generators are explicit 3DS skips**
   (`src/Game/Player/MarioSearchLight.cpp`, `src/Game/MapObj/BigBubbleDrawer.cpp`):
   the Wii destination-alpha/TEV search-light pass and BigBubble's legacy material
   setup no longer submit GX on 3DS. Native model draws remain owned by the regular
-  J3D path; the Wii implementations are unchanged.
+  J3D path. The Wii implementations are unchanged.
 - **Remaining Wii-only state generators are explicit 3DS skips**
   (`src/Game/NPC/MiiFacePartsHolder.cpp`, `src/Game/MapObj/FallOutFieldDraw.cpp`,
   `src/JSystem/JUtility/JUTTexture.cpp`, `src/JSystem/JUtility/JUTPalette.cpp`):
   Mii TEV/material setup, FallOutField destination-alpha compositing, and GX texture/TLUT
   object loading no longer emit GX on 3DS. Native texture decoders continue to consume
-  the resource metadata directly; the original Wii paths remain unchanged.
+  the resource metadata directly. The original Wii paths remain unchanged.
 - **Wii draw-done signaling is excluded on 3DS** (`src/JSystem/JUtility/JUTVideo.cpp`):
   `drawDoneStart` no longer enters the emulated Wii FIFO.
 
@@ -382,7 +382,7 @@ Changes the 3DS port needs in `src/`, `include/` or `libs/`. They live only on t
 This section replaces the 2026-10-21 list of "remaining active Wii-compatible rendering paths": since block 8 the 3DS target links no GX or GD function, and the GX interpreter (`processor`, `fifo`, `pixel`, `texture`, `pe`, `capture`, legacy `draw`) is deleted.
 - J3D models draw natively from pre-converted `.n3d` files (`platform/3ds/gx/native.cpp`, `native_submit.cpp`, `native_clip.cpp`). Packets the native path cannot draw are skipped and counted in the log ("skipped unsupported packets"). They do not fall back to GX.
 - Direct geometry (particles, lines, screen effects, procedural surfaces) draws through `TDDraw` (`src/Game/Util/DirectDraw.cpp`) and `hostGfxDraw`.
-- nw4r layouts and glyphs use their TEV compiled into Citro3D combiners (block 3, `tev_compile.cpp`); `CharWriter` keeps its own native glyph path.
+- nw4r layouts and glyphs use their TEV compiled into Citro3D combiners (block 3, `tev_compile.cpp`). `CharWriter` keeps its own native glyph path.
 - Mii heads are drawn as the Mii's icon on a square (block 12): `src/RVLFaceLib` is not in the target.
 - Limits the PICA cannot reproduce (depth as a texture, indirect textures) are in `platform/3ds/HARDWARE_LIMITS.md` (block 13).
 
@@ -440,22 +440,22 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
   through the native path using the shape and matrix selection already resolved by J3D.
 - **Miis from Mii Maker's database** (`platform/3ds/rvl/rfl.cpp`, `platform/3ds/host/main.c`): the
   official RVLFaceLib database is Mii Maker's `CFL_DB.dat` (shared extdata 0xF000000B), read once,
-  so `MiiSelect` lists and pages the Miis exactly as the Wii lists the Mii Channel's; the system
+  so `MiiSelect` lists and pages the Miis exactly as the Wii lists the Mii Channel's. The system
   Mii Selector applet is no longer opened (its call in `MiiSelect::appear` is gone, the file is as
   the original). Heads are drawn from the console's `CFL_Res.dat` with Citro3D, icons by a CPU
   rasteriser from the same parts. `MiiSelect::collectValidMiiIndex` keeps its 3DS reset of the
   counts.
 - **Mirror plane read big-endian** (`src/Game/LiveActor/MirrorCamera.cpp`, `#ifdef __3DS__`):
   `setMirrorMapInfo` takes the mirror plane from the first position and normal of the mirror
-  model; those arrays are big-endian for the GX layer, so they are now read big-endian. Before,
+  model. Those arrays are big-endian for the GX layer, so they are now read big-endian. Before,
   the plane had a garbage position and orientation (wrong or missing reflections).
 - **`MR::downFracVtx` halves big-endian positions** (`src/Game/Util/ModelUtil.cpp`, `#ifdef __3DS__`):
-  it lowers a model's position fraction by one bit and halves every s16 coordinate in place;
-  the array is big-endian for the GX layer, so the halving now reads and writes big-endian.
+  it lowers a model's position fraction by one bit and halves every s16 coordinate in place.
+  The array is big-endian for the GX layer, so the halving now reads and writes big-endian.
   Before, every coordinate was destroyed (Dino Piranha's planet in EggStarGalaxy drawn as a box).
 - **Fur layers read the GPU's big-endian data** (`src/Game/Util/FurShader.cpp`, `#ifdef __3DS__`):
   `CShader::calc` reads the model's positions, normals and texture coordinates and writes the
-  pushed-out layer positions; `makeIndexData` / `checkBorderVtx` read vertex indices from the
+  pushed-out layer positions. `makeIndexData` / `checkBorderVtx` read vertex indices from the
   display lists. Those arrays stay big-endian for the GX layer, so they are now read and
   written big-endian. Before, every fur layer had garbage positions (Dino Piranha's planet in
   EggStarGalaxy drawn as a box).
@@ -474,54 +474,54 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
   `J3DTexMtxInfo::setEffectMtx`, `J3DTextureSRTInfo::operator=`, `MR::vecScaleAdd`,
   `MR::PSvecBlend`): an `#else` with the same operations in C. Without it they did nothing.
 - **ARAM transfers** (`Overwrite.cpp`, `JKRAramPiece::startDMA`): the Wii refuses a transfer
-  whose main-RAM address is below `0x80000000`; on the 3DS main RAM is there, so only a null
+  whose main-RAM address is below `0x80000000`. On the 3DS main RAM is there, so only a null
   address is refused. The ARAM itself is the Wii SDK's own dummy ARAM in MEM2
-  (`src/RVL_SDK/aralt/aralt.c`, now built for the 3DS; it includes `<string.h>` there because
+  (`src/RVL_SDK/aralt/aralt.c`, now built for the 3DS. It includes `<string.h>` there because
   it is compiled as C). Before, ARAM functions were empty stubs, the audio ARAM heap had a null
   base and every stream and wave allocation failed.
 - **Sound IDs** (`JAISound.hpp`, `JAISoundID`): the section/group/wave parts overlay the u32
-  composite; on a little-endian CPU they are declared in reverse so that the composite keeps
+  composite. On a little-endian CPU they are declared in reverse so that the composite keeps
   the section in its top byte. Without it every sound ID pointed at the wrong table entry (the
   title waited forever for its music, so the logo never appeared).
 - **Word/byte/bitfield views fixed after an audit of unions and bitfields** (3DS only):
-  `GXTev.c` (`GXSetTevOp` tables are bitfield structs read as words: packed from the fields;
-  text was drawn with garbage TEV stages), `MarioEffect.cpp` (FlagWord bytes reversed so
+  `GXTev.c` (`GXSetTevOp` tables are bitfield structs read as words: packed from the fields.
+  Text was drawn with garbage TEV stages), `MarioEffect.cpp` (FlagWord bytes reversed so
   mByte0 is the top byte of the table's word), `MarioSound.cpp` (the first flag byte taken
   from the word's top byte), `RushEndInfo.hpp` (damage type bitfield declared in reverse to
   match the `(_20 >> 24) & 15` reads), `JAUSoundAnimator.hpp` (flag bits of the converted .bas
   word declared in reverse). Left for block J: `JAUAudible.hpp` / `JAUAudibleParam.hpp`
   (bitfields over the audible switch word, also read as bytes).
 - **J3DModelX flags tested as a word** (`J3DModelX.cpp`, `drawIn`): the extra display lists
-  are chosen by testing bits 0-15 of the `mFlags` bitfield read as a u32; Metrowerks allocates
+  are chosen by testing bits 0-15 of the `mFlags` bitfield read as a u32. Metrowerks allocates
   bitfields from the top bit, so on the 3DS bit i is field (31 - i). Without it the shadow
   mode (`_1E`) display list never ran and Mario's shadow pass left a black square in the
   top-right corner of the screen.
 - **Texture numbers read from display lists big-endian** (`J3DTevs.cpp`, `getTexNoReg`): BDL
-  models keep the texture number in a BP command of their (big-endian) display list; read as a
+  models keep the texture number in a BP command of their (big-endian) display list. Read as a
   native u32 it came out as the register number (e.g. 148), so materials loaded garbage
   textures. Every BDL model was affected.
 - **Material and ambient colours as words** (`J3DMatBlock.cpp`, `loadMatColors` /
   `loadAmbColors`): the colours are assembled R-G-B-A instead of read as a native u32.
 - **Depth-clear texture as bytes** (`MainLoopFramework.cpp`, `clearZTexData`): the Z24X8
   texture that resets the depth buffer was a `u32` array, whose bytes come out reversed on a
-  little-endian CPU; on the 3DS it is written as the same bytes in GX order.
+  little-endian CPU. On the 3DS it is written as the same bytes in GX order.
 - **Collision files relocated once** (`KCollision.cpp`, `isBinaryInitialized`): the Wii
-  marks a relocated `.kcl` by its first pointer being negative (0x8xxxxxxx); on the 3DS the
+  marks a relocated `.kcl` by its first pointer being negative (0x8xxxxxxx). On the 3DS the
   check compares the first field with the file's address instead. Without it a collision file
   shared by several objects was relocated again and again, and the game wrote to wild
   addresses (seen in EggStarGalaxy and in the title scene).
 - **Ghost race data read big-endian** (`GhostPacket.cpp`): the u32, s16 and TVec3s reads
-  assemble their bytes in big-endian order; the `.gst` files stay unchanged.
+  assemble their bytes in big-endian order. The `.gst` files stay unchanged.
 - **Returning the address of a temporary** (`SimpleEffectObj.hpp`, `MorphItemObjNeo.hpp`,
   `EffectObjGravityDust.cpp`, `FloaterFloatingForce.hpp`, `MarioCollision.cpp`,
-  `TVec2::subInline`): a static copy (or a copy by value) is returned; GCC returns null.
+  `TVec2::subInline`): a static copy (or a copy by value) is returned. GCC returns null.
 - **`FunctionAsyncExecutor::isEnd` / `waitForEnd` with a removed name**: the Wii read the
-  stale entry past the end of the list; the 3DS reports "ended" and returns.
+  stale entry past the end of the list. The 3DS reports "ended" and returns.
 
 - **Linked lists with hard-coded node offsets** (nw4r `lyt/arcResourceAccessor.h`,
   `group.h` x2, `layout.h`, `pane.h`, `types.h`). Metrowerks places the vtable pointer after
   the data members and GCC places it first. The decomp already used `offsetof` for
-  Metrowerks and `0` otherwise; the 3DS now uses the `offsetof` branch too.
+  Metrowerks and `0` otherwise. The 3DS now uses the `offsetof` branch too.
   `JUTConsole`'s list (debug console) is unchanged.
 - **`nw4r::ut::Color` from a number** (`libs/nw4r/include/nw4r/ut/Color.h`): on the 3DS
   the u32 conversions use shifts so `0xRRGGBBAA` means the same as on the Wii. The builder
@@ -546,7 +546,7 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
   register blocks to a dummy buffer on the 3DS.
 
 - **HOME Menu module** (`src/Game/System/HomeButtonMenuWrapper.cpp`): the Wii loads the HOME
-  Menu as a PowerPC module, which cannot run on the 3DS; its entry points are empty functions.
+  Menu as a PowerPC module, which cannot run on the 3DS. Its entry points are empty functions.
 - **Stack slot reuse**: the game keeps pointers into buffers whose block has ended
   (`LayoutManager::LayoutManager`), which Metrowerks tolerates. The 3DS build passes
   `-fstack-reuse=none` instead of changing the code.
@@ -555,7 +555,7 @@ This section replaces the 2026-10-21 list of "remaining active Wii-compatible re
 
 - `nw4r::lyt::TexMap::ReplaceImage` binds a TPL again whenever `descriptorArray < 0x80000000`.
   `platform/3ds/rvl/tpl.cpp` makes `TPLBind` idempotent instead.
-- MSL prints a null `%s` as an empty string (newlib prints "(null)"); `LayoutHolder::count`
+- MSL prints a null `%s` as an empty string (newlib prints "(null)"). `LayoutHolder::count`
   relies on it. `platform/3ds/rvl/printf.cpp` reproduces MSL behaviour for the sprintf family.
 - The DSP is emulated in `platform/3ds/rvl/dsp.cpp`, replying to commands as the real one does.
 
@@ -586,9 +586,9 @@ keep the Wii build byte-identical.
   `MarioActor.cpp`, `MarioWarp.cpp`, `SurfRay.cpp`, `GameEventFlagChecker.cpp`,
   `JMapInfo.cpp`, `JKRMemArchive.cpp`).
 - **Undefined behaviour in the original that GCC exploits**: two vectors accessed as an array
-  through a union, now one array (`Mario.hpp`, `MarioEnforce.cpp`, `MarioInit.cpp`); conditions
-  on member function pointers that are always true (`MapPartsRailPosture.cpp`, `Sandstorm.cpp`);
-  plus the returned temporaries and assembly-only helpers listed under "Done"
+  through a union, now one array (`Mario.hpp`, `MarioEnforce.cpp`, `MarioInit.cpp`). Conditions
+  on member function pointers that are always true (`MapPartsRailPosture.cpp`, `Sandstorm.cpp`).
+  Plus the returned temporaries and assembly-only helpers listed under "Done"
   (`SimpleEffectObj.hpp`, `FloaterFloatingForce.hpp`, `EffectObjGravityDust.cpp`,
   `MarioCollision.cpp`, `MathUtil.cpp`, `J3DMtxBuffer.hpp`, `J3DDrawBuffer.hpp`,
   `J3DStruct.hpp`, `J3DStruct.cpp`, `J3DShapeMtx.cpp`, `J3DAnimation.cpp`, `JMath.hpp`,
@@ -609,7 +609,7 @@ keep the Wii build byte-identical.
   scene was reported initialized while still placing objects),
   `ParticleEmitterHolder.cpp` (out-of-line definition GCC needs), `MainLoopFramework.cpp`
   (the triple-buffer wait polls for the retrace interrupt, which the port only delivers at OS
-  calls; without it the main thread could spin forever).
+  calls. Without it the main thread could spin forever).
 - **Endianness and the GX command stream** (details under "Done"): `GXRegs.h`, `GXVert.h`,
   `GXFDLShortcut.h`, `GXTransform.c`, `GXLight.c`, `GXPixel.c`, `GXTev.c`, `J3DTevs.hpp`,
   `J3DShapeDraw.cpp`, `JASSeqReader.hpp`, `JAUSoundTable.hpp`, `JAUSectionHeap.cpp`,
@@ -617,7 +617,7 @@ keep the Wii build byte-identical.
   searched by big-endian words: without the swap units were handed out twice), `Color.h`, `GhostPacket.cpp`, and the nw4r list offsets
   (`arcResourceAccessor.h`, `group.h`, `layout.h`, `pane.h`, `types.h`).
 - **No Wii Remote screens on the 3DS** (owner's request, 3DS only): `LogoScene.cpp` skips the
-  wrist strap reminder (boot goes straight to the title, its layout is not loaded);
+  wrist strap reminder (boot goes straight to the title, its layout is not loaded).
   `PlayerActionGuidance.cpp` (spin and rolling-ball tutorials), `SurfingGuidance.cpp` (tilt
   tutorial) and `StarPointerDirector.cpp` (pointer guidance) do not show their Wii Remote
   pictures.
@@ -628,8 +628,8 @@ keep the Wii build byte-identical.
 
 - **Sky debug switch** (`src/Game/Util/ObjUtil.cpp`, `MR::connectToSceneSky` / `connectToSceneAir`,
   `#ifdef __3DS__`): debug.txt "sky=0" keeps sky actors out of the scene (the title's sky model was ~95% of its
-  draws; the clear colour shows instead, as in Wii stages without a sky); "air=0" does the same for air
-  (atmosphere) actors. The sky was hidden by default for a while; since 2026-10-16 it is drawn by default again
+  draws. The clear colour shows instead, as in Wii stages without a sky). "air=0" does the same for air
+  (atmosphere) actors. The sky was hidden by default for a while. Since 2026-10-16 it is drawn by default again
   (owner's request, for the announcement video).
 
 - **Frame phase timing** (`src/Game/System/GameSystem.cpp`, `GameSystem::frameLoop`, `#ifdef __3DS__`):
@@ -639,26 +639,26 @@ keep the Wii build byte-identical.
 - **Stall phase diagnostics** (`src/Game/System/GameSystem.cpp`, `src/Game/System/MainLoopFramework.cpp`,
   `platform/3ds/gx/processor.cpp`, `platform/3ds/host/debug.c`, `#ifdef __3DS__`): track the current game frame
   phase in a volatile diagnostic value. The VBlank watchdog logs it after 300 retraces without a rendered frame.
-  CIA 0.4.2 reported the broad `end render` phase; 0.4.3 adds subphases for `endGX`, framebuffer copy and
+  CIA 0.4.2 reported the broad `end render` phase. 0.4.3 adds subphases for `endGX`, framebuffer copy and
   `calcCombinationRatio`. CIA 0.4.4 marks the `endGX` setup, console draw, assertion flush and `GXFlush` separately.
   CIA 0.4.5 logs the GX parser's current FIFO offset, opcode, display-list depth, command count and draw/parser
   stage if the watchdog catches a freeze in `GXFlush`. CIA 0.4.7 adds primitive/VAT/vertex-size/count and draw
   pipeline substage (setup, decode, GPU submit or CPU submit). CIA 0.4.8 adds a 256-entry RAM trace ring for frame
-  phases, GX commands, per-vertex progress, cache/range work, arena allocation, Citro3D frame begin and draw submit;
-  the watchdog dumps recent entries for stalls in any frame phase. CIA 0.4.9 uses `C3D_FRAME_NONBLOCK` and drops a
-  frame if the previous Citro3D queue remains busy, so the main thread does not wait indefinitely there; busy and
-  resumed states are logged. 3DS-only diagnostic/recovery behavior; Wii rendering is unchanged and the trace ring
+  phases, GX commands, per-vertex progress, cache/range work, arena allocation, Citro3D frame begin and draw submit.
+  The watchdog dumps recent entries for stalls in any frame phase. CIA 0.4.9 uses `C3D_FRAME_NONBLOCK` and drops a
+  frame if the previous Citro3D queue remains busy, so the main thread does not wait indefinitely there. Busy and
+  resumed states are logged. 3DS-only diagnostic/recovery behavior. Wii rendering is unchanged and the trace ring
   writes no SD log entries on the hot path.
 
 - **Retrace callback during JUTVideo construction** (`src/JSystem/JUtility/JUTVideo.cpp`, `#ifdef __3DS__`):
   `VISetPreRetraceCallback`/`VISetPostRetraceCallback` can restore interrupts and synchronously deliver a pending
   3DS VBlank before `JUTVideo::createManager` assigns `sManager` (the assignment occurs after the constructor).
-  The callbacks now return while `sManager` is null; the first callback after construction proceeds normally. This
+  The callbacks now return while `sManager` is null. The first callback after construction proceeds normally. This
   prevents a data abort at `sManager->mPreCallback` (`FAR=0x24`) and leaves Wii behavior unchanged.
 
 - **Scene category timing** (`src/Game/Scene/SceneFunction.cpp`, `CategoryList::execute` / `entryDrawBuffer*` /
   `drawOpa` / `drawXlu`, `#ifdef __3DS__`): a scoped timer per call feeds the "Game categories" line of the
-  profile log (debug.txt profile=1; without it the timer only checks a flag). No behaviour change.
+  profile log (debug.txt profile=1. Without it the timer only checks a flag). No behaviour change.
 
 - **Audio: missing instrument bank** (`src/Game/AudioLib/OverwriteJAudio.cpp`, `JASTrack::channelStart`,
   `#ifdef __3DS__`): when a note cannot start and the track's bank is null, the note is dropped (logged) instead of
@@ -670,7 +670,7 @@ keep the Wii build byte-identical.
 
 - **Wave data wait polls interrupts** (`src/Game/Scene/GameScene.cpp`, `GameScene::init`, `#ifdef __3DS__`): the
   empty `while (!isLoadDoneScenarioWaveData()) {}` loop calls `rvlPollInterrupts()`. The port delivers interrupts
-  only at OS calls; without it the disc read completion of the wave archive being loaded never arrives.
+  only at OS calls. Without it the disc read completion of the wave archive being loaded never arrives.
 
 - **Audio mixer bus bitfield order** (`libs/JSystem/include/JSystem/JAudio2/JASChannel.hpp`, `JASChannel::MixConfig`,
   `#ifdef __3DS__`): the bitfields are declared in reverse so `upper` is the high byte of `whole` as on the Wii
@@ -679,7 +679,7 @@ keep the Wii build byte-identical.
   only single fields are used, never the whole byte.
 
 - **J3D model draw knock-out** (`src/Game/System/DrawBuffer.cpp`, `DrawBufferShapeDrawer::draw`, `#ifdef __3DS__`):
-  debug.txt `j3dskip=1` returns at once (no model drawn) to time what the J3D models cost; off by default.
+  debug.txt `j3dskip=1` returns at once (no model drawn) to time what the J3D models cost. Off by default.
 
 - **Native J3D drawing, block N** (`#ifdef __3DS__`, debug.txt `native=1`, off by default):
   - `src/Game/System/ResourceHolder.cpp`, `ResourceHolder::createAndRegisterObject`: after a .bdl/.bmd becomes a
@@ -688,7 +688,7 @@ keep the Wii build byte-identical.
     archive path (`rvlNativeSetArchive`) while the holder creates its models (the archives are in memory: no disc
     entry number).
   - `src/Game/System/DrawBuffer.cpp`, `DrawBufferShapeDrawer::draw`: with native=1 the packets are drawn by
-    `rvlNativePacket` (platform/3ds/gx/native.cpp) without the material and shape display lists; a packet it does
+    `rvlNativePacket` (platform/3ds/gx/native.cpp) without the material and shape display lists. A packet it does
     not take (billboards, per-joint texture matrices, CPU skinning, palette textures) is drawn as before, after the
     material display list. Lights are still loaded by ActorLightCtrl::loadLight.
   - `src/Game/LiveActor/DisplayListMaker.cpp`, `DisplayListMaker::diff`: after each material's diff (the shared
@@ -698,7 +698,7 @@ keep the Wii build byte-identical.
     remaining native packets are dropped without falling back into GX, preventing a pathological scene from
     filling the Citro3D command queue before `C3D_FrameEnd`.
   - The deferred Citro3D texture deletion queue was increased from 256 to 4096 entries. Native J3D texture
-    cache eviction can churn while the GPU queue is busy; silently dropping deferred deletions exhausted VRAM
+    cache eviction can churn while the GPU queue is busy. Silently dropping deferred deletions exhausted VRAM
     and made subsequent native texture lookups fail.
   - The direct native J3D texture cache was increased from 64 to 256 entries so the initial Atollo scene can
     retain its material textures instead of repeatedly decoding and uploading them during scene assembly.
@@ -709,20 +709,20 @@ keep the Wii build byte-identical.
 
 - **Mario Foo beam e trail direct drawing** (`src/Game/Player/MarioFoo.cpp`, `#ifdef __3DS__`):
   the beam and ribbon quads retain the Wii geometry and texture coordinates but submit triangulated,
-  textured quads through `TDDraw::drawTexturedTintedTriangles`; the Wii TEV/GX path remains unchanged.
+  textured quads through `TDDraw::drawTexturedTintedTriangles`. The Wii TEV/GX path remains unchanged.
 
-- **Submit e presentazione Citro3D (solo host 3DS)** (platform/3ds/host/gfx.c, CIA 0.4.10): abilita GSPGPU performance logging e registra i primi ritorni C3D_FrameBegin/C3D_FrameEnd; durante la coda occupata campiona delta P3D/PPF, tempi Citro3D e gspIsPresentPending(GSP_SCREEN_TOP). Serve a distinguere completamento GPU, display transfer e swap del top screen; e diagnostica, non cambia il percorso Wii. Il perflog libctru ha limiti di sincronizzazione documentati, quindi usare i delta insieme agli altri indicatori.
+- **Citro3D submit and presentation (3DS host only)** (`platform/3ds/host/gfx.c`, CIA 0.4.10): turns on GSPGPU performance logging and logs the first returns of `C3D_FrameBegin` and `C3D_FrameEnd`. While the queue is busy it samples the P3D and PPF deltas, the Citro3D times and `gspIsPresentPending(GSP_SCREEN_TOP)`, to tell GPU completion, display transfer and the top screen's swap apart. Diagnostics only, the Wii path is unchanged. libctru's perflog has documented synchronisation limits, so its deltas are read together with the other signs.
 
 
-- **Dump command buffer PICA iniziale** (platform/3ds/host/gfx.c, CIA 0.4.11): prima di C3D_FrameEnd salva una volta il buffer GPUCMD del primo frame in sdmc:/smg/c3d_first_frame.bin (header CMD1, capacita e lunghezza in parole, poi stream raw). Serve ad analizzare il command list rimasto senza completamento P3D; diagnostica solo host 3DS, nessun effetto Wii.
+- **First PICA command buffer dump** (`platform/3ds/host/gfx.c`, CIA 0.4.11): before `C3D_FrameEnd`, the first frame's GPUCMD buffer is saved once to `sdmc:/smg/c3d_first_frame.bin` (a CMD1 header, the capacity and length in words, then the raw stream), to study a command list that never completed P3D. Diagnostics of the 3DS host only, no effect on the Wii.
 
-- **Indici uniform Citro3D corretti** (`platform/3ds/host/gfx.c`, CIA 0.4.12): `shaderInstanceGetUniformLocation` restituisce ID con base `0x60` per gli interi e `0x68` per i booleani; `C3D_IVUnifSet` e `C3D_BoolUnifSet` applicano già la sottrazione interna. Rimosse le sottrazioni duplicate, che producevano indici negativi: in particolare `pretransformed` restava falso nei draw con vertici già trasformati e l'ID del loop luci poteva scrivere fuori dagli array Citro3D. Solo renderer host 3DS; nessun effetto Wii.
+- **Citro3D uniform indices fixed** (`platform/3ds/host/gfx.c`, CIA 0.4.12): `shaderInstanceGetUniformLocation` returns IDs based at `0x60` for the integers and `0x68` for the booleans, and `C3D_IVUnifSet` and `C3D_BoolUnifSet` already subtract that base. The port subtracted it a second time, which gave negative indices: `pretransformed` stayed false in draws of already transformed vertices, and the light loop's ID could write outside Citro3D's arrays. The duplicate subtractions are gone. 3DS host renderer only, no effect on the Wii.
 ### Native J3D animated texture matrices
 
 The 3DS native `.n3d` material path now snapshots all eight J3D texture-matrix
 slots when `__3DS__` is active.  The previous snapshot loop covered only slots
-0-3 even though the native material format and submit path support slots 0-7;
-animated complex materials using TEXMTX4-7 therefore used the identity matrix.
+0-3 even though the native material format and submit path support slots 0-7.
+Animated complex materials using TEXMTX4-7 therefore used the identity matrix.
 Wii code keeps the original four-slot snapshot behavior and is not changed.
 - Frame lifecycle on 3DS no longer emits unconditional Wii GX cache/pixel-format commands:
   `MainLoopFramework::preGX()` is native-only no-op, and `endGX()` flushes the emulated FIFO only
@@ -736,7 +736,7 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
 - Main FIFO overflow now grows the capture buffer without parsing a partial command. This keeps
   multi-byte GX commands intact until an explicit flush point.
 - GX FIFO writes are serialized because asynchronous scene initialization can emit GX commands
-  concurrently with the main thread on 3DS; each complete value is appended under the FIFO lock.
+  concurrently with the main thread on 3DS. Each complete value is appended under the FIFO lock.
 - The main FIFO starts at 1 MiB and is capped at 16 MiB. Complete command batches are
   flushed automatically at 512 KiB, keeping the capture buffer and its temporary processing
   copy bounded while preserving headroom for scene heaps.
@@ -745,7 +745,7 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
 - **Removed 2026-10-22 (Claude):** the low-memory null guards added during CIA 0.8.x
   (DinoPackun/DinoPackunVs2 including the extra `mVsCount` member, `NerveExecutor`,
   `ModelManager`, the `MR::start*` animation helpers, `LightFunction`, `LightDirector`,
-  `LightDataHolder`, `LightZoneDataHolder`). They chased symptoms of exhausted scene heaps; the
+  `LightDataHolder`, `LightZoneDataHolder`). They chased symptoms of exhausted scene heaps. The
   root cause, the global preload of every galaxy's scenario archive, is addressed instead
   (per-screen archive loading). The files are back to their committed state.
 - GX FIFO parsing is now restricted to the thread that initialized the FIFO (the main/render
@@ -757,27 +757,27 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
   from native J3D draws.
 - Disabled the 3DS runtime GX fallback: frame writes outside display-list construction are
   discarded, `rvlGXProcess()` no longer interprets command streams, and pending-work checks never
-  schedule the legacy renderer. Native Citro3D paths are now the only runtime renderer on 3DS;
-  legacy UI, particles, RFL, and special GX drawers require explicit native implementations.
-- Layout UI already has a native Citro3D quad path; 3DS `GXLoadTexObj` and `GXLoadTlut` now
+  schedule the legacy renderer. Native Citro3D paths are now the only runtime renderer on 3DS.
+  Legacy UI, particles, RFL, and special GX drawers require explicit native implementations.
+- Layout UI already has a native Citro3D quad path. 3DS `GXLoadTexObj` and `GXLoadTlut` now
   skip Wii texture-register setup so `nw4r::lyt::Material::SetupGX` reaches that native path
   without dereferencing disabled GX texture state.
 - Layout UI materials without a texture now use a native vertex-colour triangle path instead of
-  falling through to `GXBegin`; the texture-backed path also uses the real native texture
+  falling through to `GXBegin`. The texture-backed path also uses the real native texture
   conversion in normal builds, while the Wii implementation remains unchanged.
 - Native 2D direct draws now force the affine clip-space `w` component to one. Wii-compatible
   matrix producers may leave the fourth projection row unspecified, but Citro3D cannot accept
   the resulting zero homogeneous coordinate.
 - The 3DS layout quad entry point is now unconditional under `__3DS__`, including color-only
-  materials with zero texture generators; those quads use the native vertex-color path and never
+  materials with zero texture generators. Those quads use the native vertex-color path and never
   reach the Wii `GXBegin` implementation.
 - `nw4r::ut::CharWriter` now skips GX texture/state setup on 3DS. Its existing glyph triangle
-  submission is the sole native font path; the Wii GX setup and immediate quad path remain
+  submission is the sole native font path. The Wii GX setup and immediate quad path remain
   unchanged.
 - `ElectricRailShadowDrawer` now submits the rail shadow extrusion as native triangles on 3DS.
   The Wii display-list construction and submission path remains unchanged.
 - `JUTTexture::capture()` now uses the native host EFB-copy bridge on 3DS. Captured textures are
-  owned by the 3DS texture bridge and are invalidated with their `JUTTexture`; Wii GX texture
+  owned by the 3DS texture bridge and are invalidated with their `JUTTexture`. Wii GX texture
   copies remain unchanged. The current bridge copies the full top-screen render target, so
   effect-specific crop/coordinate remapping remains a follow-up limitation.
 - `ScreenBlurEffect` now consumes the native captured render target on 3DS and composites it as a
@@ -792,30 +792,30 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
   processor through a display-list call.
 - `BloomEffect::postDraw()` now captures the current native top-screen target and composites it
   with Citro3D additive blending on 3DS. This is intentionally a single-pass approximation of
-  the Wii threshold plus multi-pass blur chain; it removes the previous no-op while the native
+  the Wii threshold plus multi-pass blur chain. It removes the previous no-op while the native
   crop/remap and intermediate-target pipeline is completed.
 - `NormalMapBase::draw()` submits converted native packets on 3DS and passes the actor's resolved
   light information to the native renderer. The Wii custom normal/gradient/indirect texture
   graph, BTK transforms, thresholds, and back-light modes are still not equivalent and remain
-  an explicit native-rendering gap; no Wii GX setup is emitted by this path.
+  an explicit native-rendering gap. No Wii GX setup is emitted by this path.
 - `BloomEffectSimple::draw()` uses the same native single-pass additive capture as `BloomEffect`
   instead of returning immediately on 3DS. Thresholding and the Wii multi-pass blur remain
   approximations until native intermediate textures and crop/remap are available.
-- `DepthOfFieldBlur::draw()` (0.18.3): the blur only beyond the area's distance, by depth-tested rectangles (`TDDraw::drawTextureTapsAtDepth`); it was on the whole screen. Before that:
+- `DepthOfFieldBlur::draw()` (0.18.3): the blur only beyond the area's distance, by depth-tested rectangles (`TDDraw::drawTextureTapsAtDepth`). It was on the whole screen. Before that:
 - `DepthOfFieldBlur::draw()` now captures and composites the native top-screen target on 3DS
   instead of returning immediately. This preserves a controlled DOF-like overlay without
-  touching GX; the Wii depth mask, blur pass, and focus-distance interpolation still require
+  touching GX. The Wii depth mask, blur pass, and focus-distance interpolation still require
   native depth/crop intermediate targets for a faithful implementation.
 - `ElectricRailMoving::draw()` now submits its rail strips through `TDDraw::drawDirectStrip()`
   on 3DS. The Wii display-list and GX strip paths remain unchanged.
 - The final special-drawer audit confirms `MarioActorSpecialDraw` and `WaterCameraFilter` keep
   their GX-only operations behind Wii guards and already use native direct drawing where needed.
   `KirairaChain` remains an explicit 3DS no-op because its Wii model display-list path has no
-  native chain-material equivalent yet. `MarioShadow` volume drawing is native on 3DS; its
+  native chain-material equivalent yet. `MarioShadow` volume drawing is native on 3DS. Its
   trailing Wii destination-alpha reset is now also excluded from the 3DS target.
 - (Superseded: these files were deleted later, see "Block 8" below.) The 3DS build intentionally still compiled `platform/3ds/gx/draw.cpp`, `pixel.cpp`,
   `texture.cpp`, `pe.cpp`, and `processor.cpp` as compatibility shims. Symbol-level inspection
-  confirms they are not native draw entry points; `rvlGXProcess()` is empty, FIFO processing
+  confirms they are not native draw entry points. `rvlGXProcess()` is empty, FIFO processing
   discards pending commands, and `GXCallDisplayList()` returns immediately on 3DS. Removing the
   objects would risk breaking SDK state-generation and diagnostic links without reducing the
   active native rendering path.
@@ -831,83 +831,83 @@ Wii code keeps the original four-slot snapshot behavior and is not changed.
 
 ## Phase 4 end (Oct 22 2026): remaining invisible GX geometry
 
-- `J3DModelX.hpp/.cpp`: `J3DModelXVisibleDraw` scope; inside it `directDraw(nullptr)` draws the model's own packets natively. Used by `MarioActor::drawMarioModel` (body, cap, hands), `GhostPlayer` and `FlexibleSphere`. Shadow, reflection, blur and indirect uses stayed undrawn until stencil/multipass (now drawn: blocks 4 and 11).
+- `J3DModelX.hpp/.cpp`: `J3DModelXVisibleDraw` scope. Inside it `directDraw(nullptr)` draws the model's own packets natively. Used by `MarioActor::drawMarioModel` (body, cap, hands), `GhostPlayer` and `FlexibleSphere`. Shadow, reflection, blur and indirect uses stayed undrawn until stencil/multipass (now drawn: blocks 4 and 11).
 - `FlexibleSphere.cpp`: `shapeCallBack`'s texture matrix through `rvlNativeSetTexMtxOverride`.
-- `ClipArea.cpp`: volume counted in destination alpha only (front: add, back: reverse subtract), alpha write mask, reversed depth test; `ClipAreaShape.cpp` includes `GXImmediate3DS.hpp`, so `GXLoadPosMtxImm` is `TDDraw::loadDirectPosMtx` before `drawSimpleModel`.
+- `ClipArea.cpp`: volume counted in destination alpha only (front: add, back: reverse subtract), alpha write mask, reversed depth test. `ClipAreaShape.cpp` includes `GXImmediate3DS.hpp`, so `GXLoadPosMtxImm` is `TDDraw::loadDirectPosMtx` before `drawSimpleModel`.
 - `Overwrite.cpp`: superseded by "Particles drawn as the Wii draws them" (Oct 28 2026) below.
 - `BigBubbleDrawer.cpp`: GX material helpers Wii-only.
 - Platform: `intrinsics.cpp` also exports `__frsqrte` with C linkage.
-- Not ported in phase 4: `MarioShadow` volumes (since done with the stencil, block 4) and the `NormalMapBase` indirect normal map (PICA has no indirect textures; the model draws with its material, block 13).
+- Not ported in phase 4: `MarioShadow` volumes (since done with the stencil, block 4) and the `NormalMapBase` indirect normal map (PICA has no indirect textures. The model draws with its material, block 13).
 
 ## Block 3 (Oct 22 2026): nw4r layout materials with their TEV
 
-- `lyt_material.cpp`: `Material::SetupNativeTev` (3DS) gives the Wii `SetupGX` as data: channel and material colour, swap tables, TEV registers and konst colours, the material's TEV stages or nw4r's default stages for its texture count (plus the C0/C1 and raster stages), compiled into Citro3D combiners by `rvlTevCompile` (`platform/3ds/gx/tev_compile.cpp`, the same rules as `pixel.cpp` through `tev_terms.h`). Textures come from `rvl3DSGetNativeTexture`, coordinates from the texgen source and SRT matrix. The 3DS `SetupGX` calls it; the dead `__3DS__` blocks inside the Wii branch are gone.
-- `common.h` / `lyt_common.cpp`: `detail::NativeQuadMaterial` and `SetNativeMaterial` replace `SetNativeTexture`/`ClearNativeTexture`; `DrawQuad` draws its two triangles with the material's combiners, UVs per unit and material colour.
+- `lyt_material.cpp`: `Material::SetupNativeTev` (3DS) gives the Wii `SetupGX` as data: channel and material colour, swap tables, TEV registers and konst colours, the material's TEV stages or nw4r's default stages for its texture count (plus the C0/C1 and raster stages), compiled into Citro3D combiners by `rvlTevCompile` (`platform/3ds/gx/tev_compile.cpp`, the same rules as `pixel.cpp` through `tev_terms.h`). Textures come from `rvl3DSGetNativeTexture`, coordinates from the texgen source and SRT matrix. The 3DS `SetupGX` calls it. The dead `__3DS__` blocks inside the Wii branch are gone.
+- `common.h` / `lyt_common.cpp`: `detail::NativeQuadMaterial` and `SetNativeMaterial` replace `SetNativeTexture`/`ClearNativeTexture`. `DrawQuad` draws its two triangles with the material's combiners, UVs per unit and material colour.
 - `DirectDraw.hpp/.cpp`: `TDDraw::drawStateTriangles` (clip transform, given Citro3D state plus the direct blend/depth/alpha-test state).
-- Platform: `tev_terms.h` constants of 0/255 are flagged zero/one (simpler lerps); a lerp between two constants driven by the previous result is split into modulate + add/subtract (one constant per combiner).
+- Platform: `tev_terms.h` constants of 0/255 are flagged zero/one (simpler lerps). A lerp between two constants driven by the previous result is split into modulate + add/subtract (one constant per combiner).
 - Not covered: TextBox (CharWriter) keeps its own path.
 
 ## Block 6 (Oct 22 2026): no J3D display lists generated on 3DS
 
-- `J3DPacket.cpp`: `J3DDisplayListObj::newDisplayList`/`newSingleDisplayList` allocate nothing, `single_To_Double` copies nothing; `beginDL`/`endDL` point GD at a scratch buffer (a writer left running cannot touch freed or file memory).
+- `J3DPacket.cpp`: `J3DDisplayListObj::newDisplayList`/`newSingleDisplayList` allocate nothing, `single_To_Double` copies nothing. `beginDL`/`endDL` point GD at a scratch buffer (a writer left running cannot touch freed or file memory).
 - `J3DMaterial.cpp`: `makeDisplayList_private`, `patch` (after setting the packet's diff flag) and `diff` write nothing. The native renderer reads the material blocks (`DisplayListMaker::diff` still snapshots them per model).
-- `J3DShape.cpp`: `makeVcdVatCmd` only runs `makeVtxArrayCmd`'s vertex format/flag part (the vertex types and fractions are read by native skinning); no GD commands.
+- `J3DShape.cpp`: `makeVcdVatCmd` only runs `makeVtxArrayCmd`'s vertex format/flag part (the vertex types and fractions are read by native skinning). No GD commands.
 - `J3DModelData.cpp`: `indexToPtr` does not patch texture pointers into display lists.
-- `MarioActorDraw.cpp`: `createTextureDL` leaves an empty holder; `MarioShadow.cpp`: `CollisionShadow::createDL` builds nothing.
+- `MarioActorDraw.cpp`: `createTextureDL` leaves an empty holder. `MarioShadow.cpp`: `CollisionShadow::createDL` builds nothing.
 - Known gap (already present): Mario's texture switches done through `J3DModelX` texture display lists (`_1C8`) are not represented natively.
-- Not changed: geometry display lists from the files (`J3DShapeDraw`, read by `FurShader`), `addTexMtxIndexInDL`; the GD/J3DGD code itself stays compiled until phase 7.
+- Not changed: geometry display lists from the files (`J3DShapeDraw`, read by `FurShader`), `addTexMtxIndexInDL`. The GD/J3DGD code itself stays compiled until phase 7.
 
 ## Block 7 (Oct 22 2026): GX state calls out of the 3DS game code
 
-On 3DS every GX call already had no effect (the FIFO interpreter discards it); they are now out of the 3DS target, so that the GX SDK can be unlinked (block 8). All under `#ifndef __3DS__` (or `#ifdef __3DS__ … #else … #endif` where a 3DS branch returned early and the Wii code followed it):
+On 3DS every GX call already had no effect (the FIFO interpreter discards it). They are now out of the 3DS target, so that the GX SDK can be unlinked (block 8). All under `#ifndef __3DS__` (or `#ifdef __3DS__ … #else … #endif` where a 3DS branch returned early and the Wii code followed it):
 - Bodies made Wii-only: `LightFunction` light loads (lights reach native draws as `ActorLightInfo`), `ElectricRailShadowDrawer::loadModelDrawMtx`, `ElectricRailHolder::initDraw`, FlexibleSphere `shapeCallBack`, `FallOutFieldDraw::setUpFillScreen/setUpEdgeAndClearAlpha`, `MiiFacePartsHolder::setTevOpa/setTevXlu`, `ShapePacketUserData::init/loadTexMtx`, `CollisionShadow::draw1/sendVtx/sendZsortedVtx`, `DrawSyncManager::pushBreakPoint`, `MainLoopFramework::prepareCopyDisp`, `JPAGenTexCrdMtxAnm`, nw4r `SetIndTexMtx` and `SetVertexFormat`, and the NormalMapBase GX material functions (`loadTexMtxBtk`, `updateLightMtx`, `shapeAnalyzeDraw`, `loadDiffuseGradTex`, `loadNormalTex`, `drawMaterialSetting`, `drawSetting`, `setTevForObject(_Material)`, `setTevForDebug`, `drawSettingForDebug`, `indirectCapture`, `loadDirectLightTex`, `drawSettingForCapture`).
-- Single statements made Wii-only: GameScene `drawMirror`/`draw3D` colour/alpha update, dst alpha and dither; GhostPlayer and MarioActorDraw (`drawMarioModel`, `drawReflectModel`) update/dst-alpha/z-offset; `CollisionShadow::drawAndCaptureTex` projection/viewport/scissor/update state; DrawSyncManager breakpoints and draw-sync callback; MainLoopFramework flushes and clear-Z texture object; Overwrite JPA projection texture matrices; LayoutUtil cull/Z; TextBox alpha compare; ResourceHolderManager's GD current-list restorer.
+- Single statements made Wii-only: GameScene `drawMirror`/`draw3D` colour/alpha update, dst alpha and dither. GhostPlayer and MarioActorDraw (`drawMarioModel`, `drawReflectModel`) update/dst-alpha/z-offset. `CollisionShadow::drawAndCaptureTex` projection/viewport/scissor/update state. DrawSyncManager breakpoints and draw-sync callback. MainLoopFramework flushes and clear-Z texture object. Overwrite JPA projection texture matrices. LayoutUtil cull/Z. TextBox alpha compare. ResourceHolderManager's GD current-list restorer.
 - Wii code after a returning 3DS branch put under `#else`: ClipArea, `MarioActor::createTextureDL`, `CollisionShadow::createDL`, `J3DModelData::indexToPtr`, `J3DMaterial::makeDisplayList_private/diff`, `J3DDisplayListObj::beginDL/endDL`, `J3DShape::makeVcdVatCmd`, `CharWriter` print, DirectDraw `close`/`setup`, nw4r `DrawQuad`, `TexMap::Get`.
-- Data paths given a 3DS form (JUTTexture3DS.hpp, jut_texture.cpp): `rvl3DSTexBufferSize` replaces `GXGetTexBufferSize` in `JUTTexture(int, int, GXTexFmt)`; `JUTTexture::initTexObj` now records the texture in its `GXTexObj` (`rvl3DSInitTexObj/LOD`) and nw4r `TexMap::Get/Set` read and write that record, so `TexMap(texture.getTexObj())` (LayoutUtil, LayoutManager, MiiSelectIcon) gets the real texture (before, the object was left empty on 3DS).
+- Data paths given a 3DS form (JUTTexture3DS.hpp, jut_texture.cpp): `rvl3DSTexBufferSize` replaces `GXGetTexBufferSize` in `JUTTexture(int, int, GXTexFmt)`. `JUTTexture::initTexObj` now records the texture in its `GXTexObj` (`rvl3DSInitTexObj/LOD`) and nw4r `TexMap::Get/Set` read and write that record, so `TexMap(texture.getTexObj())` (LayoutUtil, LayoutManager, MiiSelectIcon) gets the real texture (before, the object was left empty on 3DS).
 
 ## Block 8 (Oct 22 2026): the GX interpreter and the GX/GD SDK leave the 3DS target
 
-- Platform: `platform/3ds/gx/{processor,fifo,pixel,texture,pe,capture,draw}.cpp` and `gx_capture.h` deleted; `tools/3ds/configure.py` no longer builds `src/RVL_SDK/gx` or `src/RVL_SDK/gd`. `native_submit.cpp` holds the native draw submission (the native part of the former `buildGpuTransform`), the profile counters, the frame-phase and category timers and `rvl3DSEndFrame` (the "GX frame" log line keeps its form for the test suite). `gx_state.h`/`gx_internal.h` keep only the native renderer's declarations. `jut_texture.cpp`: screen captures are recognised by its own capture registry; `os_core.cpp`: cache flushes no longer notify a GX vertex cache; `vi.cpp` defines `GXNtsc480Int` (JUTException); `debug.c` no longer reports a GX parser state.
-- Decomp (all `__3DS__`): `MainLoopFramework::endGX` flushes nothing; J3D bodies made Wii-only because they only write display lists or FIFO commands: in `J3DMatBlock.cpp` the colour/texgen/TEV/indirect/PE blocks' `load`, `patch*`, `diff*` (TEV blocks' `diffTevReg`, `diffTevStage`, `diffTexCoordScale`, `diffTevStageIndirect` included), `ptrToIndex`, `indexToPtr_private`; in `J3DTevs.cpp` `J3DLightObj::load`, `loadTexCoordGens`, `loadTexNo`, `patchTexNo_PtrToIdx`, `J3DTexMtx::loadTexMtx/loadPostTexMtx`; in `J3DShapeMtx.cpp` the matrix `load*`/`loadNrmMtx` functions and the concat-view `load`s (`J3DDifferedTexMtx::loadExecute` keeps computing matrices for native.cpp, without loading them); `J3DSys::loadPosMtxIndx/loadNrmMtxIndx`; `J3DLoadCPCmd`; the whole of `J3DGD.cpp`; `J3DDisplayListObj::beginDL/endDL/endPatch` do nothing.
+- Platform: `platform/3ds/gx/{processor,fifo,pixel,texture,pe,capture,draw}.cpp` and `gx_capture.h` deleted. `tools/3ds/configure.py` no longer builds `src/RVL_SDK/gx` or `src/RVL_SDK/gd`. `native_submit.cpp` holds the native draw submission (the native part of the former `buildGpuTransform`), the profile counters, the frame-phase and category timers and `rvl3DSEndFrame` (the "GX frame" log line keeps its form for the test suite). `gx_state.h`/`gx_internal.h` keep only the native renderer's declarations. `jut_texture.cpp`: screen captures are recognised by its own capture registry. `os_core.cpp`: cache flushes no longer notify a GX vertex cache. `vi.cpp` defines `GXNtsc480Int` (JUTException). `debug.c` no longer reports a GX parser state.
+- Decomp (all `__3DS__`): `MainLoopFramework::endGX` flushes nothing. J3D bodies made Wii-only because they only write display lists or FIFO commands: in `J3DMatBlock.cpp` the colour/texgen/TEV/indirect/PE blocks' `load`, `patch*`, `diff*` (TEV blocks' `diffTevReg`, `diffTevStage`, `diffTexCoordScale`, `diffTevStageIndirect` included), `ptrToIndex`, `indexToPtr_private`. In `J3DTevs.cpp` `J3DLightObj::load`, `loadTexCoordGens`, `loadTexNo`, `patchTexNo_PtrToIdx`, `J3DTexMtx::loadTexMtx/loadPostTexMtx`. In `J3DShapeMtx.cpp` the matrix `load*`/`loadNrmMtx` functions and the concat-view `load`s (`J3DDifferedTexMtx::loadExecute` keeps computing matrices for native.cpp, without loading them). `J3DSys::loadPosMtxIndx/loadNrmMtxIndx`. `J3DLoadCPCmd`. The whole of `J3DGD.cpp`. `J3DDisplayListObj::beginDL/endDL/endPatch` do nothing.
 
 ## Block 9 (Oct 22 2026): faithful bloom
 
-- `BloomEffect.cpp` (3DS): `preDraw` keeps the scene in `_24` and clears the screen as on the Wii; `postDraw` runs the Wii's chain in frame-buffer tiles (reduction, brightness mask with `_20`, blurs on the rings of `sL1RadAndOfs`/`sL2RadAndOfs` from the `initBlurMtx` matrices, intensity, scene back plus bloom); `initDraw`, `drawTexture` and `blurTexture` have 3DS bodies. `BloomEffectSimple::draw` likewise (mask channel from `mMaskFilter`, threshold `mThreshold`).
-- `ImageEffectLocalUtil.cpp` (3DS): `capture` copies the rectangle the Wii copies (from the tile, the texture's size, doubled for the mipmap argument; the last argument clears it); `drawTexture` multiplies the colour by the intensity (alpha for type 2); `blurTexture` samples the Wii's circle of offsets.
-- `DirectDraw.hpp/.cpp` (3DS): `TDDraw::drawTextureTaps` (up to three offset samples summed with a weight) and `TDDraw::drawTextureBrightPass` (luminance or channel mask as a steep ramp, x16, the combiners having no comparison); `drawTexturedQuadDirect` samples screen captures through their mapping (they are stored on their side).
+- `BloomEffect.cpp` (3DS): `preDraw` keeps the scene in `_24` and clears the screen as on the Wii. `postDraw` runs the Wii's chain in frame-buffer tiles (reduction, brightness mask with `_20`, blurs on the rings of `sL1RadAndOfs`/`sL2RadAndOfs` from the `initBlurMtx` matrices, intensity, scene back plus bloom). `initDraw`, `drawTexture` and `blurTexture` have 3DS bodies. `BloomEffectSimple::draw` likewise (mask channel from `mMaskFilter`, threshold `mThreshold`).
+- `ImageEffectLocalUtil.cpp` (3DS): `capture` copies the rectangle the Wii copies (from the tile, the texture's size, doubled for the mipmap argument. The last argument clears it). `drawTexture` multiplies the colour by the intensity (alpha for type 2). `blurTexture` samples the Wii's circle of offsets.
+- `DirectDraw.hpp/.cpp` (3DS): `TDDraw::drawTextureTaps` (up to three offset samples summed with a weight) and `TDDraw::drawTextureBrightPass` (luminance or channel mask as a steep ramp, x16, the combiners having no comparison). `drawTexturedQuadDirect` samples screen captures through their mapping (they are stored on their side).
 - Platform: `rvl3DSCaptureJUTTextureRegion` and `rvl3DSMapJUTTextureCoord` (jut_texture.cpp) keep each capture's coordinate mapping.
 
 ## Block 4 (Oct 23 2026): shadows with the stencil
 
 Where the Wii counts or masks in the destination alpha, the 3DS frame buffer alpha holds the native materials' alpha, so the count goes in the stencil (`GPU_RB_DEPTH24_STENCIL8`, cleared with the depth at each frame start).
-- Platform: `HostGfxState` gains a stencil test; `hostGfxSetStencilAmbient` gives draws that set none a stencil (gfx.c). `TDDraw::setDirectStencil` (DirectDraw). `RvlGXDelta` (GXDelta3DS.hpp, gx_delta.cpp): GX state changes as data, applied by the native renderer over a material (`rvlNativeSetDelta`; cull, Z, alpha compare, blend and updates, destination alpha, a single TEV stage compiled with `rvlTevCompile`, TEV registers, channel control and colours, fog, a texture map's image, stencil). `rvlNativeSetViewport` (projection folded with a `GXSetViewport` rectangle, scissor). `rvlNativeDrawSimpleModelSlots` (a matrix per position-matrix slot). Native materials whose texture image is a screen capture's (`rvl3DSGetNativeTIMGCapture`) sample it through its mapping (texfinal rows).
-- `J3DModelX.cpp`: `drawIn` builds the sixteen mode lists of the constructor as `RvlGXDelta`s (same calls and values; lists 3, 10, 15 use the stencil; 6-9 unsupported, draw skipped) and merges the dynamic list and the material texture list (both hold an `RvlGXDelta` on 3DS); special modes draw without a `J3DModelXVisibleDraw` scope.
+- Platform: `HostGfxState` gains a stencil test. `hostGfxSetStencilAmbient` gives draws that set none a stencil (gfx.c). `TDDraw::setDirectStencil` (DirectDraw). `RvlGXDelta` (GXDelta3DS.hpp, gx_delta.cpp): GX state changes as data, applied by the native renderer over a material (`rvlNativeSetDelta`. Cull, Z, alpha compare, blend and updates, destination alpha, a single TEV stage compiled with `rvlTevCompile`, TEV registers, channel control and colours, fog, a texture map's image, stencil). `rvlNativeSetViewport` (projection folded with a `GXSetViewport` rectangle, scissor). `rvlNativeDrawSimpleModelSlots` (a matrix per position-matrix slot). Native materials whose texture image is a screen capture's (`rvl3DSGetNativeTIMGCapture`) sample it through its mapping (texfinal rows).
+- `J3DModelX.cpp`: `drawIn` builds the sixteen mode lists of the constructor as `RvlGXDelta`s (same calls and values. Lists 3, 10, 15 use the stencil. 6-9 unsupported, draw skipped) and merges the dynamic list and the material texture list (both hold an `RvlGXDelta` on 3DS). Special modes draw without a `J3DModelXVisibleDraw` scope.
 - `GameScene::draw3D`: the destination-alpha-0 window (start of the 3D scene to the lens flare token) resets the stencil wherever something is drawn (`hostGfxSetStencilAmbient`).
-- `ShadowVolumeDrawer::draw`: back faces increment, front faces decrement the stencil (saturating, as the clamped alpha), colour off; the shared `setupShadowVolumeDraw` state stays for the next drawer (no `closeDirect`).
+- `ShadowVolumeDrawer::draw`: back faces increment, front faces decrement the stencil (saturating, as the clamped alpha), colour off. The shared `setupShadowVolumeDraw` state stays for the next drawer (no `closeDirect`).
 - `DrawUtil.cpp`: `fillSilhouetteColor` fills black 0x80 (SRCALPHA/INVSRCALPHA) where the stencil is not 0, resetting it.
-- `VolumeModelDrawer::draw`: the real mesh (`MR::drawSimpleModel`) in the Wii's four passes (clear, back faces mark, front faces clear, colour added once) with the stencil; the bounding box approximation is gone.
+- `VolumeModelDrawer::draw`: the real mesh (`MR::drawSimpleModel`) in the Wii's four passes (clear, back faces mark, front faces clear, colour added once) with the stencil. The bounding box approximation is gone.
 - `ShadowVolumeFlatModel`: `loadModelDrawMtx` computes the root and drop joint matrices into their slots and `drawShape` draws the mesh with them (was skipped).
-- `MarioShadow.cpp` (`CollisionShadow`): `drawAndCaptureTex` saves the frame buffer corner, draws the model from the light (mode lists 1 and 14 plus a colour change: colour and alpha alike, as the I8 texture reads), masks it with the circle, copies it into `_300` (`rvl3DSCaptureJUTTextureRegion`) and restores the corner; `draw1` projects the polygons (GEQUAL, alpha > 1, black by the texture's alpha); `draw2` marks the floor inside the box in the stencil (`drawVolumeBox`) and blackens it under the texture; `draw3` is drawn as `draw2` with the sorted, offset polygons (the Wii's per-polygon alpha refinement is not reproduced); `drawVolume` uses mode list 10.
+- `MarioShadow.cpp` (`CollisionShadow`): `drawAndCaptureTex` saves the frame buffer corner, draws the model from the light (mode lists 1 and 14 plus a colour change: colour and alpha alike, as the I8 texture reads), masks it with the circle, copies it into `_300` (`rvl3DSCaptureJUTTextureRegion`) and restores the corner. `draw1` projects the polygons (GEQUAL, alpha > 1, black by the texture's alpha). `draw2` marks the floor inside the box in the stencil (`drawVolumeBox`) and blackens it under the texture. `draw3` is drawn as `draw2` with the sorted, offset polygons (the Wii's per-polygon alpha refinement is not reproduced). `drawVolume` uses mode list 10.
 
 ## Block 10 (Oct 23 2026): screen captures with their rectangles
 
 - `DirectDraw.cpp`: every function that samples a `JUTTexture` (textured, coloured, tinted, colour-lerp, masked, J2D picture, particle triangles, and the immediate path's textures) goes through `rvl3DSMapJUTTextureCoord`, so screen captures (stored on their side) are sampled right. `drawTextureTaps` sums the taps' alpha as their colour. New `TDDraw::drawTextureStages` (a texture over a rectangle with given combiner stages, optionally on the far plane).
 - `ClipArea::draw`: the shape colour reaches the vertex colour as 0xRRGGBBAA (it was passed as 0xAABBGGRR, so the count added 0), and the volume keeps `setupShadowVolumeDraw`'s `GX_GEQUAL` (it was `GX_LEQUAL`, which counts nothing for a closed volume) and state for the next areas. `ClipAreaHolder` (3DS) clears the alpha in the pre-draw: the Wii's earlier draws leave it at 0 (destination alpha 0).
-- `FallOutFieldDraw::draw`: the Wii's steps with the same captures, tiles and blend modes (mask from the clip areas' alpha as a x64 ramp, its 5-tap sum, the edge colour blended, the fill on the far plane); the TEV each step sets is given as combiner stages. `capture(texture, 0, 1, ...)` is taken as division 1, tile 0 (Broadway's divide by zero gives 0).
-- `MarioActorSpecialDraw.cpp`: `captureScreenBox` copies the box and clears it (colour 0, depth far), `writeBackScreenBox` puts it back where the reflection left the alpha at 0 (INVDSTALPHA, DSTALPHA) at depth 0.9999; `drawRasterScroll` and `drawColdWaterDamage` redraw each row shifted from one copy of the screen; `drawDarkMask` marks the noise texture's pixels in the stencil (the texture is re-read each frame), which J3DModelX's list 15 tests. Not done: `drawWallShade` (noise shade on the wall during the bee's wall walk) and the bee wall-walk destination-alpha box in `drawScreenBlend` keep their former 3DS forms.
+- `FallOutFieldDraw::draw`: the Wii's steps with the same captures, tiles and blend modes (mask from the clip areas' alpha as a x64 ramp, its 5-tap sum, the edge colour blended, the fill on the far plane). The TEV each step sets is given as combiner stages. `capture(texture, 0, 1, ...)` is taken as division 1, tile 0 (Broadway's divide by zero gives 0).
+- `MarioActorSpecialDraw.cpp`: `captureScreenBox` copies the box and clears it (colour 0, depth far), `writeBackScreenBox` puts it back where the reflection left the alpha at 0 (INVDSTALPHA, DSTALPHA) at depth 0.9999. `drawRasterScroll` and `drawColdWaterDamage` redraw each row shifted from one copy of the screen. `drawDarkMask` marks the noise texture's pixels in the stencil (the texture is re-read each frame), which J3DModelX's list 15 tests. Not done: `drawWallShade` (noise shade on the wall during the bee's wall walk) and the bee wall-walk destination-alpha box in `drawScreenBlend` keep their former 3DS forms.
 
 ## Block 11 (Oct 23 2026): Mario's reflection, blur and indirect model
 
 The display lists Mario's models call after their material hold, on 3DS, the same GX changes as an `RvlGXDelta` (block 4), which `J3DModelX::drawIn` applies:
-- `MarioActorSpecialDraw.cpp`: `updateAlphaDL` (texture colour with alpha from TEVREG2, blended), `updateSimpleAlphaDL` (destination alpha), `updateReflectAlphaDL` (stage-0 alpha from TEVREG2: the draw's final alpha), `updateLightDL` (ambient and material colour of COLOR0A0, linear fog with the Wii's start/end; channel 1 not used natively), `createRainbowDL` (the blur's TEVREG0 colours; buffers sized for the delta).
-- `MarioActorDraw.cpp`: `createTextureDL` records the eye-lid texture swap (`GDSetTexImgPtr` of map 0) as a delta, so `swapTexture` reaches the native draw (closes the gap noted in block 6); `drawIndirectModel` draws in a `J3DModelXVisibleDraw` scope like `drawMarioModel`.
+- `MarioActorSpecialDraw.cpp`: `updateAlphaDL` (texture colour with alpha from TEVREG2, blended), `updateSimpleAlphaDL` (destination alpha), `updateReflectAlphaDL` (stage-0 alpha from TEVREG2: the draw's final alpha), `updateLightDL` (ambient and material colour of COLOR0A0, linear fog with the Wii's start/end. Channel 1 not used natively), `createRainbowDL` (the blur's TEVREG0 colours. Buffers sized for the delta).
+- `MarioActorDraw.cpp`: `createTextureDL` records the eye-lid texture swap (`GDSetTexImgPtr` of map 0) as a delta, so `swapTexture` reaches the native draw (closes the gap noted in block 6). `drawIndirectModel` draws in a `J3DModelXVisibleDraw` scope like `drawMarioModel`.
 - With the mode lists of block 4, `drawReflectModel` (lists 5, 2, 11 with the reflection view and the alpha list), `drawModelBlur` (list 12 with the rainbow colours over the blur matrices) and the indirect model draw natively. Not reproduced: `GXSetZScaleOffset(1, 0.00001)` of the reflection's depth pass, and `J3DModelX`'s shape replacement (`_12C`).
 
 ## Block 12 (Oct 23 2026): Mii heads, THP movies, ODH
 
-- `MiiFacePartsHolder::drawExtra`: no face library draw settings or TEV on 3DS; each head is drawn through `MiiFaceParts::drawOpa` with no setting, which reaches `RFLDrawOpa` (`platform/3ds/rvl/rfl.cpp`): the Mii's icon on a square facing the camera, at the head's place (the face library's part shapes and textures are not available to a 3DS application).
+- `MiiFacePartsHolder::drawExtra`: no face library draw settings or TEV on 3DS. Each head is drawn through `MiiFaceParts::drawOpa` with no setting, which reaches `RFLDrawOpa` (`platform/3ds/rvl/rfl.cpp`): the Mii's icon on a square facing the camera, at the head's place (the face library's part shapes and textures are not available to a 3DS application).
 - `MoviePlayingSequence::exePlayStart`: there is no THP video decoder yet (plan K), so the movie never starts playing and the sequence would wait forever (new file prologue, final battle, endings). It forces the wipe closed and goes to `EndWait`, as `trySkip` does for FinalBattle.
-- ODH: unchanged (the capture works; there is no Message Board on 3DS).
+- ODH: unchanged (the capture works. There is no Message Board on 3DS).
 
 ## Block 13 (Oct 23 2026): hardware limits
 
@@ -923,7 +923,7 @@ The display lists Mario's models call after their material hold, on 3DS, the sam
 - `LightFunction::loadActorLightInfo` (3DS): records the loaded light (`rvlNativeLoadLight`, `platform/3ds/gx/native.cpp`), as GX keeps the loaded lights.
 - `DrawBufferShapeDrawer::draw` (3DS): calls each packet's light loader where the Wii does and draws every packet with the light loaded last (`rvlNativeLoadedLight`). Packets without a light of their own (map planets, Good Egg's pipe) were drawn with no light at all: the rim effect of their materials (alpha channel lit by light 2, its inverse added as white) whitened them.
 - `CollisionShadow::drawAndCaptureTex` (3DS): the circle that masks Mario's silhouette goes from 0xC0 at the centre to 0 at the edge, as the Wii's vertex colours (it was 0xC0 everywhere: a hard-edged, uniformly dark shadow).
-- `ut::CharWriter::PrintGlyph` (3DS): the glyph's combiner follows `SetupGX` — the colour mapping (`SetupGXWithColorMapping`: texture from the min to the max colour, times the vertex colour) and the intensity setup of I4/I8 fonts (vertex colour, texture alpha); `TDDraw::drawNativeTexturedTriangles` takes the mode and the two colours. Text boxes with black/white colours (the life meter's number: yellow to orange with a dark outline) were drawn with the glyph's own white and grey.
+- `ut::CharWriter::PrintGlyph` (3DS): the glyph's combiner follows `SetupGX`: the colour mapping (`SetupGXWithColorMapping`: texture from the min to the max colour, times the vertex colour) and the intensity setup of I4/I8 fonts (vertex colour, texture alpha). `TDDraw::drawNativeTexturedTriangles` takes the mode and the two colours. Text boxes with black/white colours (the life meter's number: yellow to orange with a dark outline) were drawn with the glyph's own white and grey.
 - `ShadowVolumeSphere`, `ShadowVolumeOval`, `ShadowVolumeCylinder`, `ShadowVolumeOvalPole::drawShape` (3DS): the volume model, as on the Wii (`ShadowVolumeModel::drawShape`, a native draw transformed by the GPU), instead of spheres and cylinders of 24 segments built and transformed on the CPU in both passes (the shadow volume category cost about 94 ms a frame in Good Egg, CIA 0.10.15).
 - `J3DModelX.cpp` (`drawIn`, 3DS branch): packets are drawn with `rvlNativeLoadedLight()`, the light loaded last, as GX keeps lights as global state. `SceneExecutor` loads the player's light before `DrawType_Player`. With no light, the rim-light alpha channel was unlit, its inverse was added as white, and Mario's red turned pink (CIA 0.11.8 photo). `Plant.cpp` leaves (`rvlNativeDrawShape`, platform side) use the light loaded last too.
 - `J3DModelX.cpp` (`drawIn`, 3DS branch): the native draw begins with the material packet's material (`matPacket->mpMaterial`), as the Wii calls that packet's display list. `MarioActor::copyMaterial` lends the face model (MarioFace) Mario's "Face" material this way. With the face model's own material, texture 0 of Mario's texture table (MarioBody.0, the blue overalls) covered Mario's face. On the platform side, `rvlNativeBegin` reads the record from the .n3d of the model that owns the material (`findMaterialOwner`).
@@ -951,9 +951,9 @@ The display lists Mario's models call after their material hold, on 3DS, the sam
 
 - `PlantGroup::initAfterPlacement` (3DS): flower and grass groups clip at 50 m (`setClippingFar50m`) instead of 100 m. Each member is a model of its own, 7 a group by default. In the CIA 0.12.13 log their draw buffer (NoSilhouettedMapObjWeakLight, CutBushModelObj) cost 2-2.5 ms a frame in Good Egg.
 - `OceanSphere` (3DS `draw`, `drawSphere`): the sphere is drawn. The 3DS branch built every strip's vertices (~1 ms a frame, draw type OceanSphere) and never sent them. `draw` runs the Wii's passes:
-  - the environment-mapped back with `loadMaterialBack`: C0 · (1 - texture), opaque, cull front;
-  - the face with `loadMaterialFace`, translated to three PICA stages: texture 0 · K0, then texture 1 · previous · 2, then C1 · (1 - previous) + previous with alpha A1. That is GX's lerp(C1, C2, previous), as C2 is white in both colour sets;
-  - the face is drawn culling front, then culling back with the back colours.
+  - the environment-mapped back with `loadMaterialBack`: C0 · (1 - texture), opaque, cull front.
+  - The face with `loadMaterialFace`, translated to three PICA stages: texture 0 · K0, then texture 1 · previous · 2, then C1 · (1 - previous) + previous with alpha A1. That is GX's lerp(C1, C2, previous), as C2 is white in both colour sets.
+  - The face is drawn culling front, then culling back with the back colours.
   GX stage 2 (`GX_TEV_COMP_R8_EQ`, adds C0 where the red equals A0) is left out, as the PICA has no comparing combiner. The strips are built once per frame (`sOceanSphereVertices`) and the face's second pass draws them again.
 
 ## Performance and profiling (Oct 24 2026, CIA 0.12.15: ocean sphere draws, object timing)
@@ -966,7 +966,7 @@ The native model files are version 7 (`platform/3ds/gx/native.cpp` `kVersion`, `
 
 ## Particles drawn as the Wii draws them (Oct 28 2026, CIA 0.13.7: JPA equivalence)
 
-The JPA draws keep the Wii's code; where they send GX their vertex arrays, display lists, matrices and TEV state, the 3DS branches hand the same values to `platform/3ds/gx/particle.cpp` (`JPA3DS`, `platform/3ds/include/JPADraw3DS.hpp`). It builds the vertices and texture coordinates GX would and draws them with the combiners of `platform/3ds/gx/particle_tev.inc`, generated and checked against the Wii TEV by scripts of the development repository (3159 of 3327 effects the same; 162 use the indirect texture, which the PICA lacks; 6 use an alpha test on a range, reduced to its lower bound).
+The JPA draws keep the Wii's code. Where they send GX their vertex arrays, display lists, matrices and TEV state, the 3DS branches hand the same values to `platform/3ds/gx/particle.cpp` (`JPA3DS`, `platform/3ds/include/JPADraw3DS.hpp`). It builds the vertices and texture coordinates GX would and draws them with the combiners of `platform/3ds/gx/particle_tev.inc`, generated and checked against the Wii TEV by scripts of the development repository (3159 of 3327 effects the same. 162 use the indirect texture, which the PICA lacks. 6 use an alpha test on a range, reduced to its lower bound).
 - `JPABaseShape.cpp` (3DS):
   - `JPASetPointSize`, `JPASetLineWidth`: the sizes go to `JPA3DS::setPointSize` / `setLineWidth`.
   - `JPAGenTexCrdMtxIdt/Anm/Prj`: `JPA3DS::setTexGen`.
@@ -974,8 +974,8 @@ The JPA draws keep the Wii's code; where they send GX their vertex arrays, displ
   - `JPALoadPosMtxCam`: `JPA3DS::loadPosMtx`.
   - `JPADrawBillboard`, `JPADrawRotBillboard`, `JPADrawRotation`: `loadPosMtx`, the Wii's `p_prj`, then `JPA3DS::callDisplayList` of `jpa_dl` or `p_dl[mDLType]`. `JPADrawQuad3DS` and `particleTexture` are gone.
   - `JPADrawPoint`, `JPADrawLine`: `JPA3DS::begin/vertex/end` with the Wii's vertices.
-  - `JPADrawStripe`, `JPADrawStripeX`: empty on the 3DS; `Game/System/Overwrite.cpp`'s versions are the ones linked. `drawDirectStripe` is gone.
-  - `setGX`: the alpha test goes to `JPA3DS::setAlphaCompare`, which reduces the two comparisons to one exactly over the 256 alpha values (a range keeps its lower bound); the colour and alpha modes to `JPA3DS::setModes`.
+  - `JPADrawStripe`, `JPADrawStripeX`: empty on the 3DS. `Game/System/Overwrite.cpp`'s versions are the ones linked. `drawDirectStripe` is gone.
+  - `setGX`: the alpha test goes to `JPA3DS::setAlphaCompare`, which reduces the two comparisons to one exactly over the 256 alpha values (a range keeps its lower bound). The colour and alpha modes to `JPA3DS::setModes`.
 - `Game/System/Overwrite.cpp` (3DS): `loadPrj` and `loadPrjAnm` call `JPA3DS::loadTexMtx`. Direction, RotDirection, DBillboard, YBillboard and RotYBillboard draw through `loadPosMtx` + `p_prj` + `callDisplayList`. `JPADrawLine`, `JPADrawStripe` and `JPADrawStripeX` are built on the 3DS too, with each GX call replaced by `JPA3DS` (the vertex descriptor calls stay Wii-only).
 - `JPAResource::setPTev` (3DS): `JPA3DS::setArrays` with `jpa_pos`/`jpa_crd` at the Wii's offsets (scale centre, base plane, tiling) and `setExTex` (second texture, indirect). `setCTev`: the child arrays, no extra texture, identity coordinates, then the child texture as before.
 - `JPALoadExTex` (`JPAExTexShape.cpp`, 3DS): loads the indirect texture into GX_TEXMAP2 and the second texture into GX_TEXMAP3.
@@ -998,7 +998,7 @@ The THP movies are converted by `tools/3ds/builder/movie.py` (builder `build_fil
   - `THPNativeDraw`: draws the last picture over the Wii's polygon, in frame buffer pixels. The CPU YUV conversion is gone.
 - `THPSimplePlayerWrapper.cpp` (3DS):
   - `endReadHeader` accepts the 3DS version.
-  - `tryFinishDvdOpen` starts the decoder from the video info's type word (the encoded size); `close` and `quit` stop it.
+  - `tryFinishDvdOpen` starts the decoder from the video info's type word (the encoded size). `close` and `quit` stop it.
   - `decode` passes the video component's size to `videoDecode`, which sends the NAL units to the decoder (an empty component keeps the picture).
   - Without sound output, the audio component is left out: the mix callback that empties its buffers never runs, and the movie would stop after 20 frames.
 - `MoviePlayingSequence::exePlayStart` (3DS): skips the movie, as before, only when `THPNativeIsMoviePlayable` fails (an Old 3DS, or a file not converted).
@@ -1008,19 +1008,19 @@ The THP movies are converted by `tools/3ds/builder/movie.py` (builder `build_fil
 
 ## Effects drawn by object code, checked against the Wii (Oct 28 2026, CIA 0.13.11)
 
-A development script (not published) lists every draw function outside JPA with the Wii branch's GX state and the 3DS branch's draws (52 functions in 47 files). The 13 seen most often were compared stage by stage. New `TDDraw::drawStageTriangles` (`DirectDraw.hpp/.cpp`, 3DS) draws with given combiner stages, each with its own constant, and a vertex colour (or one per vertex); `TDDraw::stageConstant` packs a colour for it. The effects now translate their Wii TEV into it.
+A development script (not published) lists every draw function outside JPA with the Wii branch's GX state and the 3DS branch's draws (52 functions in 47 files). The 13 seen most often were compared stage by stage. New `TDDraw::drawStageTriangles` (`DirectDraw.hpp/.cpp`, 3DS) draws with given combiner stages, each with its own constant, and a vertex colour (or one per vertex). `TDDraw::stageConstant` packs a colour for it. The effects now translate their Wii TEV into it.
 - `WarpPod::drawCylinder`: the alpha is 1, as the Wii's `(TEXA * K + 1/2) * 2` clamps. It was the texture alpha, which faded the additive cylinder.
 - `MarioFoo::draw3D` (Red Star beam and trail):
-  - colour `lerp(C0, C1, TEXA)` and alpha `TEXA * A0 * 2`, as on the Wii; it blended toward white before;
-  - the camera view (view mode 0); it was mode 1, which kept the previous view;
-  - the trail's own texture coordinates;
-  - the trail colour packed as (255, 0, 0, alpha); before, the alpha went into red.
+  - colour `lerp(C0, C1, TEXA)` and alpha `TEXA * A0 * 2`, as on the Wii. It blended toward white before.
+  - The camera view (view mode 0). It was mode 1, which kept the previous view.
+  - The trail's own texture coordinates.
+  - The trail colour packed as (255, 0, 0, alpha). Before, the alpha went into red.
 - `ClipFieldFillDraw::draw`: colour C0, and alpha = (TEXA > 1/255 ? A0 : 0), or the reverse, as the Wii's comparing stage. It is rebuilt with five combiners: subtract, ×4 four times (saturating), then times A0. It used to blend toward white with the texture alpha.
-- `TrampleStar::drawSelf`: lit per vertex on the CPU as the Wii's channel. COLOR0 is ambient (0x7F, 0x7F, 0x93) + 0xCC · max(N·L, 0) · the actor light's first light. ALPHA0 is 0xC3 + max(N·L, 0) · alpha 2, from the camera. Then the Wii's two stages (RASC, K·RASA·2; CPREV·TEXC + APREV, TEXA). Before, it was the texture only. Mario's shadow on it (stage 2) is not drawn.
+- `TrampleStar::drawSelf`: lit per vertex on the CPU as the Wii's channel. COLOR0 is ambient (0x7F, 0x7F, 0x93) + 0xCC · max(N·L, 0) · the actor light's first light. ALPHA0 is 0xC3 + max(N·L, 0) · alpha 2, from the camera. Then the Wii's two stages (RASC, K·RASA·2. CPREV·TEXC + APREV, TEXA). Before, it was the texture only. Mario's shadow on it (stage 2) is not drawn.
 - `MarioActor::drawSpinEffect`: the Wii's line widths (36 and 18 sixths of a pixel).
 - `MarioActor::drawWallShade`: drawn (it was empty): a black fan with alpha TEXA · RASA where the depth test passes GREATER.
 - Found the same as the Wii: GCaptureRibbon, SpinDriverPathDrawer, DashRing, ClipAreaDropLaser, MarineSnow, FootPrint, drawSphereMask.
-- Still different: KirairaChain (a grey band instead of the chain link model at each point, which needs a native model draw per instance); the search light (`drawSearchLight`, a translucent box instead of the cone counted in destination alpha, which needs the cone model drawn into the stencil).
+- Still different: KirairaChain (a grey band instead of the chain link model at each point, which needs a native model draw per instance). The search light (`drawSearchLight`, a translucent box instead of the cone counted in destination alpha, which needs the cone model drawn into the stencil).
 
 ## Color8 from a u32 (Oct 31 2026)
 
@@ -1055,7 +1055,7 @@ A development script (not published) lists every draw function outside JPA with 
 
 ## Mario on undrawn frames (Oct 31 2026)
 
-- `MarioAnimator::calc` (3DS): with `gRvl3DSSkipJointCalc`, no joints; `_88` of the players is cleared so the animation advances. The first calculation of an animator is always made.
+- `MarioAnimator::calc` (3DS): with `gRvl3DSSkipJointCalc`, no joints. `_88` of the players is cleared so the animation advances. The first calculation of an animator is always made.
 - `ModelManager::updateDL` (3DS): nothing with `gRvl3DSSkipJointCalc`.
 - `GameSystemObjHolder::update` (3DS): `SysTimer3DS` around each of its four calls.
 
@@ -1069,31 +1069,31 @@ A development script (not published) lists every draw function outside JPA with 
 
 ## Square roots without the estimate (Oct 31 2026)
 
-- `TUtil::sqrt`, `sqrtInline`, `inv_sqrt`, `TQuat4::normalize`, `JMASqrt` (3DS): the Wii refines the `frsqrte` estimate with a Newton step; the ARM's `vsqrt` is exact, so the step and the division are skipped.
+- `TUtil::sqrt`, `sqrtInline`, `inv_sqrt`, `TQuat4::normalize`, `JMASqrt` (3DS): the Wii refines the `frsqrte` estimate with a Newton step. The ARM's `vsqrt` is exact, so the step and the division are skipped.
 
 ## Undrawn frames on the Old 3DS: no joints (Oct 31 2026)
 
 - `GameScene::calcAnim` (3DS): with 96 MB (`hostLowMemory`), on a frame the host will not draw, `gRvl3DSSkipJointCalc` is on during the scene's calcAnim list.
-- `LiveActor::calcAnmMtx` (3DS): with the flag on, the base matrix is still set; joints and materials are skipped, unless the actor has collision and an animation player. Direct calculations outside the list (`MR::calcAnimDirect`) are not affected. Mario's own `calcAnim` does not pass here.
-- `ModelManager::calcAnimSkipped`, `mCalculatedOnce` (3DS only): clears `XanimePlayer::_88` so the animation frame still advances; a model never calculated is calculated.
+- `LiveActor::calcAnmMtx` (3DS): with the flag on, the base matrix is still set. Joints and materials are skipped, unless the actor has collision and an animation player. Direct calculations outside the list (`MR::calcAnimDirect`) are not affected. Mario's own `calcAnim` does not pass here.
+- `ModelManager::calcAnimSkipped`, `mCalculatedOnce` (3DS only): clears `XanimePlayer::_88` so the animation frame still advances. A model never calculated is calculated.
 
 ## Mario's shadow on the Old 3DS (Oct 30 2026)
 
-- `MarioActor::drawShadow` (3DS): with 96 MB (`hostLowMemory`) the silhouette is captured every third drawn frame; the captured texture stays between them.
+- `MarioActor::drawShadow` (3DS): with 96 MB (`hostLowMemory`) the silhouette is captured every third drawn frame. The captured texture stays between them.
 
 ## Scene archives that do not fit the file cache (Oct 30 2026)
 
-- `FileLoaderThread` (3DS): before loading a file bound for the file cache, checks its real size; if it does not fit, the file goes to the scene heap with the most room, as `MR::getAproposHeapForSceneArchive` sends the later ones.
+- `FileLoaderThread` (3DS): before loading a file bound for the file cache, checks its real size. If it does not fit, the file goes to the scene heap with the most room, as `MR::getAproposHeapForSceneArchive` sends the later ones.
 
 ## Particles and text in batches (Oct 30 2026)
 
-- `TDDraw::drawParticleTriangles` and `drawParticleDistortedTriangles` (3DS): a colour per vertex instead of one `prm`; `platform/3ds/gx/particle.cpp` keeps the particles until a texture or a mode changes.
+- `TDDraw::drawParticleTriangles` and `drawParticleDistortedTriangles` (3DS): a colour per vertex instead of one `prm`. `platform/3ds/gx/particle.cpp` keeps the particles until a texture or a mode changes.
 - `JPABaseShape::setGX` and `JPAEmitterManager` draw (3DS): `JPA3DS::flush` before the direct state changes and before `closeDirect`.
 - `CharWriter::PrintGlyph` (3DS): while `TextBox::DrawSelf` has the batch open (`rvl3DSGlyphBatch`), the glyphs wait for one draw. `TextWriterBase< wchar_t >::PrintImpl` (`CustomTagProcessor.cpp`, 3DS) flushes before and after a tag.
 
 ## Old 3DS memory (Oct 30 2026, block R)
 
-- `GameSystemSceneController::initializeScene` (3DS): with 96 MB (`hostLowMemory`) the file cache heap is 8 MB instead of 16.25; archives that do not fit already go to the scene heap (`MR::getAproposHeapForSceneArchive`).
+- `GameSystemSceneController::initializeScene` (3DS): with 96 MB (`hostLowMemory`) the file cache heap is 8 MB instead of 16.25. Archives that do not fit already go to the scene heap (`MR::getAproposHeapForSceneArchive`).
 
 ## Memory budget measurements (Oct 28 2026, block R: Old 3DS)
 
@@ -1124,12 +1124,12 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 ## Hitches and paths (Oct 29 2026, CIA 0.14.8, block T)
 
 - `HeapMemoryWatcher::destroySceneHeap` (3DS): empties the GPU vertex arena (`hostGfxArenaReset`) as the scene's models go. Left full of the previous scene's vertices, it emptied in the middle of the next one and every model there uploaded again (about 4 s entering the Comet Observatory, CIA 0.14.7).
-- `SpinDriverPathDrawer::draw` (3DS): each point of a ribbon is three shared vertices drawn as indexed triangles (`TDDraw::drawMaskedTexturedIndexed`, new), not 12 vertices a segment; the paths cost about 6 ms a frame in the Comet Observatory. While `hostPerfDetail()` is under 1, every other point is drawn (the last one always).
+- `SpinDriverPathDrawer::draw` (3DS): each point of a ribbon is three shared vertices drawn as indexed triangles (`TDDraw::drawMaskedTexturedIndexed`, new), not 12 vertices a segment. The paths cost about 6 ms a frame in the Comet Observatory. While `hostPerfDetail()` is under 1, every other point is drawn (the last one always).
 - `SceneFunction::executeMovementList` and `GameSystem::update` (3DS, profile log only): kind "sys" timers (`SYS_TIMER`, `rvlGXCategoryMark` kind 6) around the whole movement list (1), `SceneNameObjMovementController::movement` (2), the requirement connect/disconnect calls (3), `GameSystemObjHolder::update` (4), `checkRequestAndChangeScene` (5) and the system nerve where the scene updates (6). In HeavensDoorInsidePlanet about 5 ms of the 10.6 ms update a frame were outside every category (CIA 0.14.7).
 
 ## Point light (Oct 29 2026, block U)
 
-- `LightFunction::loadPointLightInfo` (3DS): passes the point light (`PointLightInfo`) to the native draws (`rvlNativeLoadPointLight`, `platform/3ds/gx/native.cpp`), which give it as GX_LIGHT4 to materials whose colour channel enables light 4 (165 materials: Mario's, Luigi's, Bowser's and other bodies, U3 audit). The Wii loads it with `GXInitLightDistAttn` and the view-space position; the native side does the same (the GX SDK's attenuation formula). Before, the 3DS never had this light.
+- `LightFunction::loadPointLightInfo` (3DS): passes the point light (`PointLightInfo`) to the native draws (`rvlNativeLoadPointLight`, `platform/3ds/gx/native.cpp`), which give it as GX_LIGHT4 to materials whose colour channel enables light 4 (165 materials: Mario's, Luigi's, Bowser's and other bodies, U3 audit). The Wii loads it with `GXInitLightDistAttn` and the view-space position. The native side does the same (the GX SDK's attenuation formula). Before, the 3DS never had this light.
 
 ## Particle alpha ranges (Oct 29 2026, block V)
 
@@ -1138,10 +1138,10 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 ## Effects drawn by code (Oct 29 2026, block V part 3)
 
 - `TDDraw::drawTextureBrightPass` (3DS, `DirectDraw.cpp`): the bloom mask compares as the Wii's `GX_TEV_COMP_R8_GT` does: the mask value (luminance with the I8 copy's +16, or one channel for `BloomEffectSimple`'s R8/G8/B8 filters) goes in the alpha and the alpha test keeps the pixels over the threshold, over a black rectangle. Before, a ramp 16 times steeper than the threshold step half-lit the pixels just over it, and the R8/G8/B8 filters took the +16 too. Comments in `BloomEffect.cpp` and `BloomEffectSimple.cpp` follow.
-- `TDDraw::drawStageTriangles` (3DS, `DirectDraw.hpp`/`.cpp`): two last parameters, a second texture and its coordinates (unit 1); defaults as before.
+- `TDDraw::drawStageTriangles` (3DS, `DirectDraw.hpp`/`.cpp`): two last parameters, a second texture and its coordinates (unit 1). Defaults as before.
 - `OceanSphere::draw` (3DS): after each face pass, the pixels where loadMaterialFace's red equals A0 (`GX_TEV_COMP_R8_EQ`) get stage 2's C0: a pass with the red in the alpha, an equal alpha test and the constant difference added (`makeGlintState`). Before, that stage was left out.
 - `TrampleStar::drawSelf` (3DS): the Wii's stage 2, Mario's shadow texture at the position through the same texture matrix (and the same early returns), within the player's shadow height.
-- `WaterCameraFilter` (3DS): `init` loads the filter texture as on the Wii (the `#ifndef` around it removed; the Wii's code is the same), `initScreenTex` makes an 8x8 texture that names the screen capture, and `draw` is the Wii's pass: the screen captured and drawn back as screen - C0 at the water alpha, moved by the filter texture's indirect offsets taken on the CPU at the corners of a 40 x 30 grid. Before, a flat blue tint up to opaque.
+- `WaterCameraFilter` (3DS): `init` loads the filter texture as on the Wii (the `#ifndef` around it removed. The Wii's code is the same), `initScreenTex` makes an 8x8 texture that names the screen capture, and `draw` is the Wii's pass: the screen captured and drawn back as screen - C0 at the water alpha, moved by the filter texture's indirect offsets taken on the CPU at the corners of a 40 x 30 grid. Before, a flat blue tint up to opaque.
 - Comments only (3DS branches): `FurDrawer::setupMaterial` (the indirect offset and the specular channel are never on in the game's data), `J3DModelX.cpp` (which mode lists are skipped and why).
 
 ## Report on CIA 0.15.0: ambient, lower detail models, sun flare (Oct 30 2026)
@@ -1167,15 +1167,15 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 - `Material::SetupNativeTev` (3DS): a layout's indirect stage on its only texture as the same blend of two samples (PicSmoke).
 
 ## Scenario selection camera (Oct 30 2026)
-- `ScenarioSelectScene::draw` (3DS): the native draws take this scene's projection through `rvlNativeSetViewport`, as the Wii's `setupCameraMtx` loads it with `GXSetProjection`; reset after them.
+- `ScenarioSelectScene::draw` (3DS): the native draws take this scene's projection through `rvlNativeSetViewport`, as the Wii's `setupCameraMtx` loads it with `GXSetProjection`. Reset after them.
 
 - `MR::drawFullScreenBlur` (0.18.4): the darkening the Wii's second layer gives, as a black rectangle (about 74% at alpha 80, measured on Wii footage of the Dino Piranha's roars).
 - `GameScene::calcAnim`, `ShadowControllerHolder::movement` (0.18.6): the undrawn loops' savings also on a New 3DS that is behind (`hostGfxFallingBehind`).
 - `OceanSphere` (0.18.8): later passes reuse the first's vertices (`hostGfxDrawAgain`).
 - `Rock::control`, `Rock::exeMove` (0.18.10): out of view and over 3000 units from Mario, a rock follows its rail with no collisions.
-- `Rock::control` (3DS): out-of-view rocks over 3000 units from Mario skip the remaining collision and velocity preparation; `Rock::exeMove` continues their rail motion.
+- `Rock::control` (3DS): out-of-view rocks over 3000 units from Mario skip the remaining collision and velocity preparation. `Rock::exeMove` continues their rail motion.
 - `TDDraw::drawParticleTriangles`, `drawParticleDistortedTriangles` (0.18.11, 3DS): take clip-space vertices and indices (new `TDDraw::particleVertexToClip`, split from `transformToClip`).
-- **Schermo nero nei frame showcase senza draw** (`platform/3ds/host/gfx.c`): i build showcase inviano un primo frame anche durante il caricamento del titlescreen e ripuliscono in nero i frame senza draw, evitando il blu lasciato dal buffer Citro3D non inizializzato o dal clear del gioco. Il build normale non cambia.
+- **Black screen in showcase frames without draws** (`platform/3ds/host/gfx.c`): showcase builds send a first frame while the title screen loads, and clear frames without draws to black, instead of the blue left by the uninitialised Citro3D buffer or the game's clear. The normal build is unchanged.
 
 ## Warp pod paths: one indexed draw, skipped off screen (Nov 4 2026)
 - `WarpPod::drawCylinder` (3DS): the same quads from the same points, but each cross-section's four vertices are shared by the quads on both sides of it (240 vertices a path instead of 708 transformed on the CPU) and the path is one indexed draw instead of four of 192 vertices. A path whose bounding sphere is outside the view (`MR::isJudgedToClipFrustum`) is not drawn. The pods' paths cost 192 ms every 100 frames in the Observatory (CIA 0.19.8 log), a fifth of the draw phase.
@@ -1183,12 +1183,12 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 
 ## Far models: one draw for a fixed model small on screen (Nov 5 2026)
 - `DrawBuffer::drawOpa` (3DS): `rvlNativeFarPrepare(mModel)` before the shape drawers, which builds the far draw's state from the model's main material once and counts the buffer's draw.
-- `DrawBufferShapeDrawer::draw` (3DS): a packet goes to `rvlNativePacket` only when `rvlNativeFarPacket` did not take it. An instance whose far model (`.far` next to its `.n3d`, written by the converter, `tools/3ds/native/far.py`) is under 16 pixels of radius on screen (back at 20) is drawn as that one draw at its first packet, and its other packets are skipped. Only models with no joint, colour, pattern or visibility animation, no billboard or weighted vertex and only opaque materials have one; an instance with a hidden shape is drawn in full.
+- `DrawBufferShapeDrawer::draw` (3DS): a packet goes to `rvlNativePacket` only when `rvlNativeFarPacket` did not take it. An instance whose far model (`.far` next to its `.n3d`, written by the converter, `tools/3ds/native/far.py`) is under 16 pixels of radius on screen (back at 20) is drawn as that one draw at its first packet, and its other packets are skipped. Only models with no joint, colour, pattern or visibility animation, no billboard or weighted vertex and only opaque materials have one. An instance with a hidden shape is drawn in full.
 
 ## Captures, lower detail colours, joint callbacks, LOD count (Nov 5 2026)
 - `JUTTexture::~JUTTexture` (3DS): `rvl3DSInvalidateJUTTexture(this)`. A texture made later at the same address took the screen capture of the one before it: GalaxyMapController's, made in each scene's heap, showed the scenario selector's galaxy (or Gateway's planet) on the Observatory's map board.
-- `GalaxyMapController::init` (3DS): the texture is cleared to black instead of copying the frame buffer while the scene loads (black behind the wipe on the Wii; here the last 3D frame left in the render target).
-- `LiveActor::calcAnmMtx` (3DS): a model with a joint callback this loop (JointController) is calculated in the loops that are not drawn too. Dino Piranha's tail nodes read their joints' places and directions back every loop; a loop or two old, the tail shook and stretched.
+- `GalaxyMapController::init` (3DS): the texture is cleared to black instead of copying the frame buffer while the scene loads (black behind the wipe on the Wii. Here the last 3D frame left in the render target).
+- `LiveActor::calcAnmMtx` (3DS): a model with a joint callback this loop (JointController) is calculated in the loops that are not drawn too. Dino Piranha's tail nodes read their joints' places and directions back every loop. A loop or two old, the tail shook and stretched.
 - `LodCtrl::update` (3DS): counts the instances showing their high, middle and low model (and hidden) for the periodic log (`gRvl3DSLodShown`).
 
 ## Mario's parts timed (Nov 5 2026)
@@ -1200,7 +1200,7 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
 ## Mario's rainbow trail in the loops the 3DS draws (Nov 5 2026)
 - `MarioActor::calcViewBlurModel` (3DS): a pose is stored once three loops have passed since the last one, instead of when `_37C % 3 == 0`. The function runs only in the loops the 3DS draws (one in three when behind), which can all fall on another remainder: the trail kept its first pose, a white Mario (seven colours added) where the recovery bubble started (CIA 0.19.15).
 ## Particles of several emitters in one draw (Nov 5 2026)
-- `JPABaseShape::setGX` (3DS): blending and depth go through `JPA3DS::setShapeState`, which draws the kept particles first only when they change, instead of `JPA3DS::flush` before every emitter; `JPA3DS::setAlphaCompare` likewise draws them first only when the PICA test changes. Emitters sharing their state and textures join one batch (the 3D particles were about 5 ms a drawn frame in the paused Comet Observatory, CIA 0.20.12).
+- `JPABaseShape::setGX` (3DS): blending and depth go through `JPA3DS::setShapeState`, which draws the kept particles first only when they change, instead of `JPA3DS::flush` before every emitter. `JPA3DS::setAlphaCompare` likewise draws them first only when the PICA test changes. Emitters sharing their state and textures join one batch (the 3D particles were about 5 ms a drawn frame in the paused Comet Observatory, CIA 0.20.12).
 - `JPAEmitterManager::draw` (3DS): `JPA3DS::beginDraw()` after its direct setup, so the first emitter sets that state again.
 
 ## Upstream syncs
@@ -1210,7 +1210,7 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
   - `SpinDriverPathDrawer.cpp`: upstream's `GXCmd1f32` writes on the Wii side of our `#ifndef __3DS__`.
   - `LayoutUtil.cpp`: upstream version with our two guards put back (`__MWERKS__` template instantiation, `__3DS__` GX state).
   - `HashUtil.cpp`: upstream version as is. Its local `tolower` moved to `<cctype>`, so our `__MWERKS__` guard is no longer needed.
-  - `README.md`: the port's README stays; upstream's new one is kept, renamed, in the development repository.
+  - `README.md`: the port's README stays. Upstream's new one is kept, renamed, in the development repository.
 
   Wii `main.dol` SHA-1 is still `9a71008ae1ee9010e267fa67d1f0b0d4f0e895dd`, and the 3DS build is clean.
 
@@ -1221,92 +1221,254 @@ The console's game logic costs 12-18 ms of the 16.7 ms retrace, and the game run
   - The 3DS build now defines `cStoryProgressTable`, `cGalaxyInfoTable` and `cErrorMessageArchive` in `platform/3ds/rvl/port_data.cpp`. It fills them at startup from `sdmc:/smg/port/`, which the converter writes from the user's own `main.dol` (SHA-1 checked).
   - **Why:** the CIA contains no Nintendo data and can be shared.
   - `tools/3ds/builder/convert_assets.py` is removed, and `tools/3ds/configure.py` no longer needs the Wii build first.
-  - Wii SHA-1 unchanged; the Wii view of the files shows no difference.
+  - Wii SHA-1 unchanged. The Wii view of the files shows no difference.
 
 ## Why the streamed music stops for good (Nov 6 2026)
 
 - `src/JSystem/JAudio2/JASAramStream.cpp`: under `__3DS__`, `report3DSStreamStop` writes to the log, once per place, each of the nine places that set `UNK_BOOL_B`, with their values.
   - `UNK_BOOL_B` is shared by every stream and never cleared. Once it is set, `channelProc` pauses every stream, so the music stops for good while sound effects and voices go on.
   - **Why:** in the CIA 0.21.1 test the music stopped for good at a random moment of play, and the log could not say why.
-  - Logging only; behaviour unchanged. Wii SHA-1 unchanged; the Wii view of the file shows no code difference.
+  - Logging only. Behaviour unchanged. Wii SHA-1 unchanged. The Wii view of the file shows no code difference.
 
 ## A comment on every 3DS block (Nov 6 2026)
 
 - Every `#ifdef __3DS__` / `#ifndef __3DS__` block of `src/`, `include/` and `libs/` that had no comment got a one-line comment above it saying what the 3DS does there and why (703 blocks in 197 files). The comment sits above the directive, so both builds see only a comment.
 - 18 empty `#ifdef __3DS__ ... #endif` blocks (leftovers of earlier edits) were removed.
-- `src/Game/Screen/WipeFade.cpp`: a dead copy of `GXSetColorUpdate`/`GXSetBlendMode` under `#ifdef __3DS__` inside the Wii branch (never compiled by either build) was removed; the Wii's own calls stay above it, under `#ifndef __3DS__`.
-- Wii SHA-1 unchanged (full Wii rebuild); the Wii view of the 197 files (each file as the Wii compiler sees it) differs in comments only.
+- `src/Game/Screen/WipeFade.cpp`: a dead copy of `GXSetColorUpdate`/`GXSetBlendMode` under `#ifdef __3DS__` inside the Wii branch (never compiled by either build) was removed. The Wii's own calls stay above it, under `#ifndef __3DS__`.
+- Wii SHA-1 unchanged (full Wii rebuild). The Wii view of the 197 files (each file as the Wii compiler sees it) differs in comments only.
 
 ## Screen captures retried until they copy (Nov 7 2026)
 
 - `src/Game/Screen/CaptureScreenDirector.cpp` (`captureIfAllow`): under `__3DS__`, a requested capture (`_18`) is cleared only when `rvl3DSLastCaptureDone()` (`platform/3ds/rvl/jut_texture.cpp`) says the screen was really copied.
 - `src/Game/Screen/GalaxyMapController.cpp` (`draw`): under `__3DS__`, the map's capture of the `ReadyGame` nerve is retried each frame of that nerve until it copies.
   - **Why:** in a frame the renderer skips (`host/gfx.c`, `sSkipFrame`, more frequent when the game runs behind, as after a pause in the HOME Menu) `hostGfxCopyToTexture` copies nothing, but the game had already marked the one-time request as done. The capture texture then kept an old image: a tester entering a planetarium saw the closing wipe show Gateway's Pull Star tutorial, captured earlier by `CameraCover`.
-  - Wii SHA-1 unchanged (Wii rebuild); the Wii view of both files differs in comments only.
+  - Wii SHA-1 unchanged (Wii rebuild). The Wii view of both files differs in comments only.
 
 ## The Star Pointer's world position (Nov 7 2026)
 
-- `src/Game/Screen/StarPointerDirector.cpp` (`StarPointerPeekZ`): under `__3DS__`, `setDrawSyncToken` fills `mProjectionParameters` and `mViewportParameters` from `MR::getCameraProjectionMtx()` as `GXGetProjectionv` lays them out (the same mapping `TDDraw::project2D` uses on the Wii), with the whole frame buffer as viewport; `drawSyncCallback` ignores a depth of 0 (a frame the renderer skips) and keeps the last position.
-  - **Why:** the Wii fills both arrays here with `GXGetProjectionv`/`GXGetViewportv`; the 3DS branch only read the depth and left them at zero, so `TDDraw::invProject` made the pointer's world position NaN. A tester saw Star Bits shot with the pointer fly unseen (only their sound) and not follow the cursor, and the planetarium's hungry Luma eat Star Bits shot anywhere.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+- `src/Game/Screen/StarPointerDirector.cpp` (`StarPointerPeekZ`): under `__3DS__`, `setDrawSyncToken` fills `mProjectionParameters` and `mViewportParameters` from `MR::getCameraProjectionMtx()` as `GXGetProjectionv` lays them out (the same mapping `TDDraw::project2D` uses on the Wii), with the whole frame buffer as viewport. `drawSyncCallback` ignores a depth of 0 (a frame the renderer skips) and keeps the last position.
+  - **Why:** the Wii fills both arrays here with `GXGetProjectionv`/`GXGetViewportv`. The 3DS branch only read the depth and left them at zero, so `TDDraw::invProject` made the pointer's world position NaN. A tester saw Star Bits shot with the pointer fly unseen (only their sound) and not follow the cursor, and the planetarium's hungry Luma eat Star Bits shot anywhere.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## Star Bits shoot with R only (Nov 7 2026)
 
 - `src/Game/MapObj/StarPieceDirector.cpp` (`StarPieceShooter`, the shot and "no Star Bits" checks) and `src/Game/NPC/TicoFat.cpp` (feeding the hungry Luma): under `__3DS__`, the remote's B counts only when the 3DS R button is held (`rvl3DSStarBitKeyHeld`, `platform/3ds/include/Pad3DS.hpp`).
-  - **Why:** on the 3DS, A + B together is also the remote's B (`platform/3ds/rvl/kpad.cpp`), for the title screen and the menus' back; a tester shot Star Bits with A + B. The owner chose R as the only Star Bit button.
+  - **Why:** on the 3DS, A + B together is also the remote's B (`platform/3ds/rvl/kpad.cpp`), for the title screen and the menus' back. A tester shot Star Bits with A + B. The owner chose R as the only Star Bit button.
   - With it `kpad.cpp` gives R as the remote's B whenever the pointer shows (touch screen or C-Stick cursor), no longer Z with the C-Stick cursor.
-  - Wii SHA-1 unchanged; the Wii view of both files differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of both files differs in comments only.
 
 ## The first-transformation message of each form (Nov 7 2026)
 
 - `src/Game/Player/MarioActor.cpp` (`calcAnimInMovement`): under `__3DS__`, the switch that calls `MR::explain...MarioIfAtFirst` uses the `PlayerMode` cases of the original code (`jumptable_805A386C`): Invincible, Fire (`PlayerMode_2`), Ice, Bee, Hopper, Teresa, Foo (flying).
   - **Why:** the decomp's C++ (non-matching, so built only for the 3DS) had the forms in the wrong cases, for example mode 4 (Bee) called `explainFireMarioIfAtFirst`. A tester's first Bee Mario showed the Fire Mario message and fanfare, then `BGM_FIRE_B` started and never stopped, since only leaving Fire Mario stops it. Every other first transformation showed the wrong message too.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The ring of water follows the Wii's recipe (Nov 7 2026)
 
 - `src/Game/Map/OceanRingDrawer.cpp` (`OceanRingPartDrawer::drawDynamic`, `drawDynamicBloom`): the existing `__3DS__` branches now add the scrolls `OceanRingDrawer::update` moves (`_C`, `_10`, `_14`, `_18`, the texture matrices 0x1E and 0x21 of `loadMaterial`), and `drawDynamic` draws `loadMaterial's stages: the two wave samples averaged, then the screen capture (`MR::getScreenResTIMG`, projected per vertex as `MR::loadTexProjectionMtx` does) times `color2` added on top, alpha from the vertices, alpha test greater than 0.
   - **Why:** the branch multiplied the wave texture by itself and by `WaterIndirect.bti`, without the scrolls or the screen behind the water: in Loopdeeloop the water stood still and lacked its see-through look (a tester). The indirect warp and the compare stage have no 3DS equivalent and are left out.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The bowl of water follows the Wii's recipe (Nov 7 2026)
 
-- `src/Game/Map/OceanBowl.cpp` (`OceanBowl::draw`): the existing `__3DS__` branch draws `loadMaterial`'s stages through `WaterRender3DS::makeWaterState` (shared with `OceanRingDrawer.cpp`, which now uses it too): the waves at TEXCOORD0 and TEXCOORD1 (`mVtxTex1Array`, scrolls `mTexU1`, `mTexV1`) averaged, then, out of the water, the screen capture (`MR::getScreenResTIMG`, projected per vertex) times `sOceanBowlTevReg1` added; in the water, no capture and additive blending, as on the Wii. Alpha is the vertex alpha times `Mask.bti` at TEXCOORD4, sampled on the CPU at the vertices (the 3DS has three texture units, the recipe four).
+- `src/Game/Map/OceanBowl.cpp` (`OceanBowl::draw`): the existing `__3DS__` branch draws `loadMaterial`'s stages through `WaterRender3DS::makeWaterState` (shared with `OceanRingDrawer.cpp`, which now uses it too): the waves at TEXCOORD0 and TEXCOORD1 (`mVtxTex1Array`, scrolls `mTexU1`, `mTexV1`) averaged, then, out of the water, the screen capture (`MR::getScreenResTIMG`, projected per vertex) times `sOceanBowlTevReg1` added. In the water, no capture and additive blending, as on the Wii. Alpha is the vertex alpha times `Mask.bti` at TEXCOORD4, sampled on the CPU at the vertices (the 3DS has three texture units, the recipe four).
   - **Why:** the branch multiplied the waves by `WaterIndirect.bti` and the mask, with no screen behind the water and the second wave sample read from the indirect coordinates. The indirect warp and the compare stage have no 3DS equivalent and are left out.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The ring of water draws only the parts in view (Nov 7 2026)
 
-- `src/Game/Map/OceanRingDrawer.cpp` (`OceanRingPartDrawer::drawDynamic`, `__3DS__` branch): a part outside the view frustum (`MR::isJudgedToClipFrustum`, radius from its centre to its end rows plus `mWidthMax`) is skipped; the part's rows share their vertices in one indexed triangle draw instead of one strip per row pair; a part farther than `sDistancePartDL` from the camera keeps every other row and column.
+- `src/Game/Map/OceanRingDrawer.cpp` (`OceanRingPartDrawer::drawDynamic`, `__3DS__` branch): a part outside the view frustum (`MR::isJudgedToClipFrustum`, radius from its centre to its end rows plus `mWidthMax`) is skipped. The part's rows share their vertices in one indexed triangle draw instead of one strip per row pair. A part farther than `sDistancePartDL` from the camera keeps every other row and column.
   - **Why:** the 3DS sends every vertex each frame into 16384 transient vertices (`gfx.c`, `ARENA_TRANSIENT`). The whole Loopdeeloop track drawn as strips filled it and about 400 draws a frame were dropped (effects and HUD parts vanished, tester log 7 Nov). The Wii draws far parts from display lists.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The moving spider thread maps its texture across the ribbon (Nov 7 2026)
 
-- `src/Game/MapObj/SpiderThreadPart.cpp` (`appendThreadRibbonSegment`, `makeThreadRibbonVertex`, `__3DS__` block): s is 0 on a ribbon's edge 0 and 1 on edge 1, as the Wii's `sendPoints*`, not 0 at a segment's start and 1 at its end; the left lower ribbon's edge 0 goes 18 to the front, as `leftLowerPoint1`, not 15.
+- `src/Game/MapObj/SpiderThreadPart.cpp` (`appendThreadRibbonSegment`, `makeThreadRibbonVertex`, `__3DS__` block): s is 0 on a ribbon's edge 0 and 1 on edge 1, as the Wii's `sendPoints*`, not 0 at a segment's start and 1 at its end. The left lower ribbon's edge 0 goes 18 to the front, as `leftLowerPoint1`, not 15.
   - **Why:** a moving thread is drawn in many segments, and each showed the texture's transparent sides at its ends: the thread looked dashed after Mario had hung on it (owner, 7 Nov). A still thread is one segment, so it looked whole.
-  - Wii SHA-1 unchanged; the Wii view of the file is unchanged.
+  - Wii SHA-1 unchanged. The Wii view of the file is unchanged.
 
 ## Sound names in messages read in the 3DS byte order (Nov 7 2026)
 
 - `src/Game/Util/StringUtil.cpp` (`MR::convertUTF16ToASCII`, `__3DS__` branch): each character is read as a `u16` value, stopping at 0 or above 0xFF, instead of its two bytes in the Wii's order.
   - **Why:** the converter stores the game's text little-endian (`tools/3ds/builder/bmg.py`, sound tags of group 2 included), so the first byte was the character and the loop stopped at once: `CustomTagProcessor::exeSoundGroup` played an empty name. The Lumas' "TRANSFORM!" cry, and any sound a message names, was silent (owner, 7 Nov). The function's only caller.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The Observatory's map board shows the map from the start (Nov 7 2026)
 
-- `src/Game/Screen/GalaxyMapController.cpp` (constructor, `draw`, `__3DS__` branches): the constructor still clears the map texture and now sets `sInitialCapturePending`; `draw`, while the controller is dead, makes the Wii's first copy of the map (`capture`) at the scene's first drawn frame (first written for frames with `MR::isWipeBlank()`, which never came: the Observatory's fade opens from the first frame; changed the same day), retried until `rvl3DSLastCaptureDone()`, then `killAllLayout()` as the constructor's `kill()` after the Wii's copy.
+- `src/Game/Screen/GalaxyMapController.cpp` (constructor, `draw`, `__3DS__` branches): the constructor still clears the map texture and now sets `sInitialCapturePending`. `draw`, while the controller is dead, makes the Wii's first copy of the map (`capture`) at the scene's first drawn frame (first written for frames with `MR::isWipeBlank()`, which never came: the Observatory's fade opens from the first frame. Changed the same day), retried until `rvl3DSLastCaptureDone()`, then `killAllLayout()` as the constructor's `kill()` after the Wii's copy.
   - **Why:** the copy made in the constructor took the last 3D frame left in the render target, so it had been replaced by a black texture: the map board (`AstroMapBoard`) stayed black until the map was opened and closed once (owner, 7 Nov). Behind the closed wipe the map drawn for the copy is not seen.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## No still picture over a camera cut (Nov 7 2026)
 
 - `src/Game/Camera/CameraCover.cpp` (`movement`, `draw`, `__3DS__` branches): a camera cut no longer requests the "Camera" capture timing nor runs the capture (`DrawType_CaptureScreenCamera`), and `draw` shows nothing.
-  - **Why:** the Wii copies the screen in `movement`, outside the draw, while it still holds the last frame. On the 3DS the copy opens the new frame first (`platform/3ds/host/gfx.c`, `beginFrame`), which clears the screen, so the copy was empty; while the "Camera" timing held, the water that shows the screen behind it (OceanRing, Loopdeeloop) went dark (owner, 7 Nov). Without it the "Indirect" copy is made every frame and the cut is seen directly.
-  - Wii SHA-1 unchanged; the Wii view of the file differs in comments only.
+  - **Why:** the Wii copies the screen in `movement`, outside the draw, while it still holds the last frame. On the 3DS the copy opens the new frame first (`platform/3ds/host/gfx.c`, `beginFrame`), which clears the screen, so the copy was empty. While the "Camera" timing held, the water that shows the screen behind it (OceanRing, Loopdeeloop) went dark (owner, 7 Nov). Without it the "Indirect" copy is made every frame and the cut is seen directly.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments only.
 
 ## The manta steered with the circle pad (Nov 7 2026)
 
 - `src/Game/Ride/SurfRay.cpp` (`updateRotate`) and `src/Game/Ride/SurfRayTutorial.cpp` (`update`), `__3DS__` branches: the remote's acceleration comes from `rvl3DSSurfRayAcceleration` (`platform/3ds/include/Pad3DS.hpp`, `platform/3ds/rvl/kpad.cpp`) instead of `MR::getCorePadAcceleration`: the remote held upright and tilted by the circle pad across, fully over 90 degrees (x = sin, y = 0, z = -cos).
   - **Why:** on the Wii the manta is steered by tilting the upright remote. `kpad.cpp` reports a remote at rest, held level, so the manta did not steer and the penguin's lesson saw no tilt (owner's request, 7 Nov: steer with the circle pad).
-  - Wii SHA-1 unchanged; the Wii view of both files differs in comments only.
+  - Wii SHA-1 unchanged. The Wii view of both files differs in comments only.
+
+## The top screen is now 5:3 (Nov 17 2026)
+
+- `__3DS__` branches in `src/Game/Camera/CameraContext.cpp` (`getAspect`), `src/Game/Camera/CameraViewInterpolator.cpp` (`calcBinder`), `src/Game/Util/ScreenUtil.cpp` (`getScreenWidth`), `src/Game/Screen/LayoutManager.cpp` (`calcAnim`), `src/Game/Util/LayoutUtil.cpp` (`copyLayoutDrawInfoWithAspect`) and `src/Game/Screen/HomeButtonLayout.cpp` (`initHomeButtonInfo`): the wide path (`MR::isScreen16Per9`, which `SCGetAspectRatio` in `platform/3ds/rvl/sc.cpp` keeps on) uses the 5:3 values: aspect 5 / 3 instead of 16 / 9, wide screen width 760 (456 * 5 / 3) instead of 832, layout location adjust 0.8 (608 / 760) instead of 0.75, HOME Menu adjust 760 / 608. The blur aspect in the 3DS branches of `FallOutFieldDraw::draw`, `DepthOfFieldBlur::draw` and `ImageEffectLocalUtil::blurTexture` is 1.25 ((5 / 3) / (4 / 3)) instead of 1.333.
+  - **Why:** the top screen is 400x240, 5:3. With the 16:9 values the 3D view and the layouts were drawn for a wider screen and squeezed into it: the 3D view 6.25% too narrow ((5:3) / (16:9) = 15/16) and the layouts 8.7% (760 / 832), their positions spread for an 832-wide screen. On the title and file select screens, the logo, the text and the planets are 6 to 9% wider with the 5:3 values, at the same height.
+  - The Wii view of the files differs in comments and preprocessor lines only. The Wii build wasn't rebuilt to check its SHA-1.
+
+## Miis lit by the scene's light (Nov 17 2026)
+
+- `src/Game/NPC/MiiFacePartsHolder.cpp` (`drawExtra`, `__3DS__` branch): `MR::loadLight(1)` before the heads are drawn, as the Wii's branch does. `platform/3ds/rvl/rfl.cpp` (`drawHead`) lights the heads with that light (`rvlNativeLoadedLight`) the way `setTevOpa` and `setTevXlu` do: material 165 times ambient 128 plus lights 0 and 1, doubled, and for the opaque parts a rim from light 2 (the camera) that brightens what turns away from the camera.
+  - **Why:** the heads were lit by one fixed light from the front with a 55% floor, so they looked flat next to the Wii's, without its shading and the bright edges.
+  - The Wii view of the file differs in comments only.
+
+## The native renderer forgets the models of the scenes before (Nov 20 2026)
+
+- `src/Game/Scene/Scene.cpp` (`Scene::Scene`, `__3DS__` branch): calls `rvlNativeSceneStart` (`platform/3ds/gx/native.cpp`), which empties the native renderer's tables of lower detail models (`rvlNativeSyncMaterials`, from `MR::syncMaterialAnimation`) and of the colours kept for the models they follow.
+  - **Why:** those tables know models by their address and were never emptied. A model of a later scene at the address of an old lower detail model found that model's entry and read the model it followed, already gone: in Battlerock with the Daredevil comet its model data was a float (608.0) and the console stopped (public issue #2, Luma dump: data abort in `rvlNativePacket`, CIA 0.21.4).
+  - The Wii view of the file differs in comments and preprocessor lines only.
+
+## The star ball rolls with the circle pad (Nov 20 2026)
+
+- `src/Game/Ride/SphereAccelSensorController.cpp` (`clacXY`, `__3DS__` branch): the stick values of the base class (`SpherePadController::clacXY`, the game's own stick controller for spheres) instead of the remote's tilt.
+  - **Why:** `platform/3ds/rvl/kpad.cpp` reports a remote that is never tilted, so the star ball of Rolling Green and the other Tamakoro stages did not move (public issue #1). Owner's choice (20 Nov): the circle pad, not the gyroscope, as for the manta.
+  - The Wii view of the file differs in comments and preprocessor lines only.
+
+## The full screen blur draws the last frame's copy, as the Wii (Nov 20 2026)
+
+- `src/Game/Screen/FullScreenBlur.cpp` (`MR::drawFullScreenBlur`, `__3DS__` branches): the Wii's steps in a corner of the screen. The screen is copied whole, the screen capture drawn shrunk to 128x64 pixels in the top left corner and that corner copied (two static copies taking turns), then the whole copy drawn back (RGB only, as DirectDraw writes). The last frame's 128x64 copy is drawn larger by `param2`, linearly filtered, and both layers take their alpha from the constant alone (`param3`, `param4`), as the Wii's TEV stage `GXSetTevAlphaIn(ZERO, ZERO, ZERO, A0)`. The 74% black layer is gone. The 128x64 copies are RGB565 as the Wii's (`rvl3DSCaptureJUTTextureRegionRgb565`: an RGBA8 copy converted by two display transfers, host/gfx.c).
+  - **Why:** the Wii shrinks the screen to 128x64 below the visible frame buffer (`GXSetScissorBoxOffset`), copies it into MarioActor's texture (`nonFilteredCapture` at 0, 464) and stretches it over the next frame: soft trails outward. The 3DS drew the current screen again with black over it, an estimate from footage, so Dino Piranha's roar dimmed the scene instead of blurring it (AppleBerries, 9 Nov, Switch footage compared frame by frame).
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments and preprocessor lines only.
+
+## The lens flare reads the last result of the sun check (Nov 23 2026)
+
+- `include/Game/MapObj/BrightObj.hpp` (`BrightInfo::mLastIndex`, `__3DS__` only) and `src/Game/MapObj/BrightObj.cpp` (`BrightInfo::write` and `reset`, and `BrightObjBase::getCenter`, `getBrightCenter` and `getBright`, `__3DS__` branches): the readers take the slot written last.
+  - **Why:** the Wii writes one result a frame (GX draw sync callback) and the lens flare reads one, so the reader is always on the slot just written. The 3DS checks the sun only in drawn frames (a dropped frame runs no draw, `GameSystem::frameLoop`), one in three when the game runs behind, while the reads go on every frame: the two reads in between fell on the slot to be written next, a result about nine frames old. The flare jumped between the sun's place and brightness now and nine frames before, and went out whenever that old result had the sun hidden (the cutscene after the first Grand Star, LocalClownPeter, 8 Nov. Still there with CIA 0.22.0, owner, 23 Nov).
+- `src/Game/Screen/LensFlare.cpp` (`LensFlareDirector::setDrawSyncToken`, `__3DS__` branch): the `hostGfxFrameDropped` condition of 20 Nov and its `host.h` include are gone. That function runs in the draw, which a dropped frame never reaches, so the condition never changed anything.
+  - Wii SHA-1 unchanged. The Wii view of the files differs in comments and preprocessor lines only.
+## The map board's copy of the galaxy map has the layout projection (Nov 20 2026)
+
+- `src/Game/Screen/GalaxyMapController.cpp` (`GalaxyMapController::capture`, `__3DS__` branch): `MR::setupDrawForNW4RLayout(1.0f, false)` before `drawForCapture`, the same orthographic matrix the Wii sets there with `GXSetProjection`.
+  - **Why:** the map's layouts are drawn without a projection setup of their own. The copy the 3DS makes at the scene's first drawn frame (the Wii makes it while the scene loads) ran with the scene's 3D projection still set, so the map never reached the screen and the map board behind Rosalina showed that frame of the game: on loading a save, and after leaving the Terrace dome, which reloads the Observatory (owner, 9 Nov). The copy made when the map closes came after other layouts had set the projection, which is why opening the map once fixed the board.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments and preprocessor lines only.
+
+## Screen captures drawn by a J2DPicture are opaque, as the Wii's RGB565 (Nov 20 2026)
+
+- `src/Game/Util/DirectDraw.cpp` (`drawJ2DPictureTriangles`, inside the `__3DS__` block): when the first texture is a capture whose format has no alpha (`rvl3DSIsOpaqueCapture`, platform/3ds/rvl/jut_texture.cpp: RGB565, also through a JUTTexture made on its image), its stage takes alpha from a constant 255 instead of the texture.
+  - **Why:** a capture here copies the RGBA8 render target, alpha included (0 from the clear, and whatever the materials wrote). The Wii's copy into an RGB565 texture reads with alpha 255. The screen capture (`CaptureScreenDirector`, RGB565) that `SystemWipeHolder::drawGameScreenCapture` and `ScreenPreserver::draw` draw full screen was nearly transparent, so the clear colour (30, 30, 200) showed through with faint shapes of the scene: the closing ring wipe into the Terrace dome and the lives count after a fall were blue (owner, 8 Nov).
+  - Wii SHA-1 unchanged (the change is inside the 3DS-only part of the file).
+
+## Mario's joints in every loop (Nov 20 2026)
+
+- `src/Game/Player/MarioAnimator.cpp` (`MarioAnimator::calc`): the 3DS branch that skipped Mario's joints in a loop that will not be drawn (`gRvl3DSSkipJointCalc`, Oct 31 "Mario on undrawn frames") is gone, with its `extern`. A comment says why. The function is the Wii's again.
+  - **Why:** effects that follow Mario's joints are emitted in every loop. While the game was behind and drew one loop in three, the spin's trail, made from his hands' places, had them only every third loop and drew a zig-zag of straight pieces instead of an arc (owner, 8 Nov). His hit sensors on joints read them too. The other actors keep the skip (`LiveActor::calcAnmMtx`).
+  - Wii SHA-1 unchanged (the object is not linked in the Wii build). The Wii view of the file differs in comments only.
+
+## Joints of actors with a valid joint attack sensor in every loop (Nov 20 2026)
+
+- `src/Game/LiveActor/LiveActor.cpp` (`LiveActor::calcAnmMtx`, `__3DS__` branch, and the `HitSensorInfo.hpp` include): the skip of an undrawn loop's joints (`gRvl3DSSkipJointCalc`) also needs no enemy attack sensor that follows a joint to be valid (`hasValidJointAttackSensor3DS`).
+  - **Why:** such sensors are valid for a few loops only. With the joints of the last drawn frame the blow came from where the joint was before. The Octoombas of Good Egg (`Takobo`, sensor "attack" on the joint "Hear", valid for 5 loops) swung at Mario without hurting him while the game drew one loop in three (owner, 9 Nov). Not confirmed on console yet.
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments and preprocessor lines only.
+
+## The map board's copy made at the start of a frame (Nov 21 2026)
+
+- `src/Game/Screen/GalaxyMapController.cpp` (`__3DS__` blocks: the namespace's request state, constructor, `draw`, new `rvl3DSDrawGalaxyMapCapture`), `include/Game/Screen/GalaxyMapController.hpp` (its declaration, under `__3DS__`) and `src/Game/Scene/GameScene.cpp` (`GameScene::draw` calls it first, under `__3DS__`, with the header's include): `draw` no longer copies the map itself. It asks for the copy, and `GameScene::draw` makes it at the start of the next frame, before anything is drawn. The frame is then cleared again (`hostGfxClearAgain`, platform/3ds/host/gfx.c), as the Wii's `GXCopyTex` clears what it copied. A request older than 3 frames (a scene gone) is dropped.
+  - **Why:** with the layout projection (Nov 20 entry above) the map, drawn at the end of a frame for the copy, reached the screen. Where the copy could not be made it was retried every frame: after leaving the Terrace dome the Observatory showed the whole galaxy map in front of the game (owner, CIA 0.21.8. The log has GalaxyMapController at 13 ms a loop until the end). Made before the scene draws, a failed copy leaves nothing on the screen. gfx.c now logs why a screen copy is refused (GX queue full, or no linear memory for its texture), up to 4 times each.
+  - Wii SHA-1 unchanged. The Wii view of the files differs in comments and preprocessor lines only.
+
+## Stripe particles keep their rate at lowered detail (Nov 21 2026)
+
+- `src/JSystem/JParticle/JPADynamicsBlock.cpp` (`JPADynamicsBlock::create`, inside the `__3DS__` block, and the `JPABaseShape.hpp` include in the 3DS includes): the lowered emission rate while the game runs behind (`hostPerfDetail`, 40-100%) no longer applies to an emitter whose base shape is a stripe (types 5 and 6).
+  - **Why:** a stripe's particles are the points of one band. With 40% of them Mario's spin trail in Good Egg was a zig-zag of straight pieces. In light places (detail 100%) it was an arc (owner, CIA 0.21.8). Mario's joints in every loop (Nov 20 entry) was not the whole cause.
+  - Wii SHA-1 unchanged (the change is inside the 3DS-only part of the file).
+
+## The frame of a one-time screen capture is drawn (Nov 21 2026)
+
+- `src/Game/Screen/CaptureScreenDirector.cpp` (`requestCaptureTiming`, `__3DS__` block, plus the `host.h` include): after a capture timing is requested, `hostGfxDrawNextFrame()` (platform/3ds/host/gfx.c) makes the next frame drawn whatever the pacing, with its views calculated.
+  - **Why:** the game asks for the capture in its update and takes it in the next draw, while the scene still draws. Entering a Terrace dome (`AstroChangeStageCube`) it asks in the same update for the capture and the stage change. When the pacing skipped that frame the capture waited for the next drawn one, after the scene had stopped drawing, and copied only the clear colour: the closing ring wipe and the lives count after a fall were flat blue (owner, CIA 0.21.8. Before `387365f5b` the nearly transparent copy let the live frame's shadow spots show through).
+  - Wii SHA-1 unchanged.
+
+## The black screen between scenes is a clear of the render target (Nov 21 2026)
+
+- `src/Game/Scene/IntermissionScene.cpp` (`IntermissionScene::draw`, `__3DS__` branch with the Wii's `fillBox` under `#else`, plus the `host.h` include): in a drawn frame the render target is cleared to black (`hostGfxClearFrame(0x000000FF)`) instead of the full-screen black box. The first four drawn frames and every 120th are logged.
+  - **Why:** while a scene loads the Wii shows this opaque black box. On the 3DS it did not show and the clear colour (30, 30, 200) stayed, so loading, the time before the title and the lives count after a fall were blue (owner, CIA 0.21.9). The intermission scene is the first draw of a frame (`GameSystem::draw`), so the clear gives the same image. The log tells this case apart from frames that reach the screen without this draw.
+  - Wii SHA-1 unchanged.
+- `src/Game/Player/MarioShadow.cpp` (`CollisionShadow::drawAndCaptureTex`, `__3DS__` branch): the corner saved, cleared and put back around the shadow capture is 16 pixels wider than the shadow's square (left, right and below). The GPU copy takes whole 8x8 tiles, so the captured texture also held scene pixels past the square and repeated them over its unused part. Materials projecting Mario's shadow (ShadowProjDummy) sample past the square, where the Wii's clamp reads the cleared edge: they read the sky of the screen's corner instead, and the Mandibugs' (StinkBugSmall) shells turned dark orange near Mario (owner, CIA 0.21.10-0.21.14).
+- `src/Game/Boss/BossBegomanHead.cpp` and `include/Game/Boss/BossBegomanHead.hpp` (`calcJointEdge`, `__3DS__` branch, two members at the class end): the spike ring turns by the angle shown (`mShownAngle3DS`), which moves on by the loop's turn only in loops that are drawn (`hostGfxNextFrameDrawn`). The ring has 9 spikes, one every 40 degrees, and turns 13.2 degrees a loop: drawn one loop in three, each image showed it 39.5 degrees on and the spikes looked still (owner, Topmaniac, CIA 0.21.15). Only seen: the edge attack does not read the angle.
+- `src/Game/Util/FurCtrl.cpp` (`FurCtrl::drawFur`, `__3DS__` branch): the fur layers are lit by the light loaded just before (`rvlNativeLoadedLight`), as the Wii's GX keeps it: the actor's light, or the fur's own light type (`MR::loadLight`). Bee Mario's fur asks for the player's light (`MR::initFurPlayer`, type 0). Lit with the fur actor's own light control instead, his collar was grey where the Wii's is white (owner, CIA 0.22.0).
+
+## Early culling of whole materials (Nov 23 2026)
+
+- `src/Game/System/DrawBuffer.cpp` (`DrawBufferShapeDrawer::draw`, `__3DS__` branch, and the declarations of `rvlNativePacketInView` and `rvlNativeCountEarlyCulled` in the `__3DS__` block at the top): a material none of whose packets is in view is not begun. Its light loaders still run.
+  - **Why:** the native renderer culled a draw only after building its material and matrices, and a material whose packets were all off screen was begun first (`rvlNativeBegin`). The test is the late culling's (`rvlNativeOutsideView`, platform/3ds/gx), so what is drawn does not change. The loaders keep running because the next packets without one take the light loaded last. Part of the Comet Observatory block (owner, 23 Nov).
+  - Wii SHA-1 unchanged. The Wii view of the file differs in comments and preprocessor lines only.
+
+## Dome orbit bloom band (Nov 24 2026)
+
+- `src/Game/MapObj/AstroDomeOrbit.cpp` (`AstroDomeOrbit::drawBloom`, `__3DS__` block before the Wii draws):
+  - **Why:** the owner's Wii references of the galaxy selector show the orbits around the miniatures as wide glowing bands. On the 3DS only the thin visible band was left. The bloom band, seen almost edge-on, covers 1 to 2 pixels of the 400x240 target (2 to 3 of the Wii's 640x456), and after the bloom's 4x reduction it no longer passed the brightness threshold. Electric rails, drawn into the same bloom, glow as on the Wii.
+  - **Change:** on the 3DS the bloom band is drawn 1.6 times as wide and high (640 / 400), then the function returns. The visible orbit keeps the Wii's size and colour.
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## The outside of Loopdeeloop's water pipe in the Wii's colours (Nov 24 2026)
+
+- `src/Game/Map/OceanRingPipeOutside.cpp` (`OceanRingPipeOutside::draw`): the existing `__3DS__` branch now draws `loadMaterial`'s colours: the highlight (`WaterPipeHighLight.bti`, environment map from the normals through texture matrix 0x21, the view's rotation times `sEnvMapScale` times `qMtx2`) plus `sTevReg0`, then a white rim worked out at the vertices from the camera's light 2 as stage 0's alpha does. Normals are read with 14 fraction bits, as GX reads them.
+  - **Why:** the branch multiplied `WaterPipeIndirect.bti` by the highlight, a dark grey. Loopdeeloop's water shows the screen behind it, this pipe, so the track stayed grey instead of azure (owner, CIA 0.22.0 to 0.22.12). The indirect warp has no 3DS equivalent and is left out.
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## No GPU kicks inside a layout (Nov 24 2026)
+
+- `src/nw4r/lyt/lyt_layout.cpp` (`Layout::Draw`, new `__3DS__` block, and `host.h` included under `__3DS__`): the root pane is drawn between `hostGfxHoldKicks(1)` and `hostGfxHoldKicks(0)` (platform/3ds/host/gfx.c), so no mid-frame GPU kick falls among a layout's draws.
+  - **Why:** the CIA 0.22.15 log showed the GPU getting the same commands every frame for the first pause star and the map's Observatory silhouette, which flicker. Only the place of a kick among those draws changed from frame to frame. Owner approved the experiment. CIA 0.23.0 fixed the map silhouette, and with every layout draw sending the whole GPU state (gfx.c, CIA 0.23.1) the pause star too. The temporary lyt and gpu log lines are removed.
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## Mario's mirrored animations cull the right side (Nov 24 2026)
+
+- `src/Game/Player/MarioAnimator.cpp` (`MarioAnimator::switchMirrorMode`, two `__3DS__` blocks): the mirror flag is set and cleared as `1u << 31` instead of `1`.
+  - **Why:** the Wii sets bit 0 of the model's flags, the bit `J3DModelX::drawIn` reads for mode list 0 (cull front, for the mirrored model). Metrowerks allocates bitfields from the top bit and GCC from the bottom, so the 3DS `drawIn` reads list 0 at bit 31, and the mirror never turned the culling over. Sliding down a wall seen from the front (animations 壁すべり and 壁くっつき mirrored by the camera's side) then showed the inside of Mario's back: pale, pinkish Mario (owner, Honeyhive, 24 Nov. The log named Body1_v, Cap_v, Face_v... drawn with a determinant of -1).
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## B is the back while a menu's Back button shows (Nov 25 2026)
+
+- `src/Game/Screen/BackButton.cpp` (`BackButton::control`, new `__3DS__` block, `Pad3DS.hpp` included under `__3DS__`) and `src/Game/Screen/PictureBookCloseButton.cpp` (`PictureBookCloseButton::control`, same): while the button is not hidden, `rvl3DSNoteBackButtonShown()` (platform/3ds/rvl/kpad.cpp) is called every update.
+  - **Why:** on the Wii these buttons also answer the remote's B (scenario select, galaxy confirm, map, album). On the 3DS, B is the remote's A everywhere. The owner asked for B to be the back in those menus. kpad.cpp makes B alone the remote's B for two reads after a report.
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## The cursor's trail as dense and long as the Wii's (Nov 25 2026)
+
+- `src/Game/Screen/StarPointerBlur.cpp` (new `__3DS__` namespace after the constants. `StarPointerBlur::movement`, two `__3DS__` blocks): with one past position a frame, the trail adds before it the positions the Wii would have had, on a Catmull-Rom curve through the last positions (the next one extrapolated): 10 positions every 3 frames (3, 3, 4), per pad channel. The history restarts when the pointer has no past positions.
+  - **Why:** the Wii Remote reports its pointer 200 times a second, so the game gets about 3.3 past positions a frame and the 20 trail points span about 6 frames. The 3DS remote (rvl/kpad.cpp) gives one a frame: the trail spanned 20 frames of straight pieces, angular with fast moves (owner, Nov 25 2026). Done in the trail only: other readers of the remote's samples (the shake, the pointer) keep the real ones.
+  - Wii SHA-1 unchanged (the file is not linked from source in the Wii build). Wii view 0/0.
+
+## The loading screen closes before the first scene (Nov 25 2026)
+
+- `src/Game/System/GameSystemSceneController.cpp` (`GameSystemSceneController::startScene`, new `__3DS__` block. `hostLoadingFinish` declared in the file's existing `__3DS__` block): `hostLoadingFinish()` (platform/3ds/host/loading.c) before `mScene->start()`, except for the "Logo" scene (`MR::isEqualSceneName`), so the loading screen stays until the title (owner's 0.23.6 test).
+  - **Why:** the owner asked for a loading screen before the title (the game's saving window, drawn by the builder from the disc, shown by a thread of the port). The first scene's start is when loading is over: the window closes there, and the call returns once it is gone and a few black frames have passed, so the title does not start under it. Later calls do nothing.
+  - Wii SHA-1 unchanged (the file is not linked from source in the Wii build). Wii view 0/0.
+
+## No co-star (P2) button or manual on the file select (Nov 25 2026)
+
+- `src/Game/Screen/FileSelectButton.cpp` (`appear`, `disappear`, `control`, `createOthers`, `__3DS__` blocks): the P2 button (`mButtonCtrl[4]`, pane `P2ManualButton`) is forced to its Hidden nerve after the buttons appear or disappear, so it never shows, points or selects. The `2PGuidanceIcon` plate (`_48`, a GalaxyMapGalaxyPlain with its GalaxyNamePlate layout) is not created and not shown.
+- `src/Game/Map/FileSelector.cpp` (`createManual`, `__3DS__` block): `Manual2P` is not created (`mManual` stays null). Its only way in, `callbackManual`, is the hidden button.
+- `src/Game/NameObj/NameObjFactory.cpp` (FileSelector archive list, `__3DS__` block): the `P2Manual` archive is left out, so it is not loaded with the file select.
+  - **Why:** the 3DS has one player. The owner asked to remove the P2 button and to keep the layouts it opened out of memory (Nov 25 2026).
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## No Wii Message Board: the final Mailtoad thanks the player, no star list photo, no Luigi mails (Nov 25 2026)
+
+- `src/Game/System/MessageHolder.cpp` (new `__3DS__` block after the archive names. `MessageData::getMessage` and `MessageHolder::initGameData`, `__3DS__` blocks): when the game's text is loaded, the node of `PeachCastleFinalGalaxy_Kinopio060` (the Mailtoad's "there's a congratulations letter, do you want it?") becomes the last of its talk (`mNextIdx` = 0xFFFF, it led to the Yes/No branch), and `getMessage` returns a thank-you for that message in the game's language (English, French, Spanish): player name form 1 ("Mr. Maaario"), "Woo woo! You did it! ♪", page break, "Thank you for playing!" (the Spanish first page on two lines: one line is wider than the balloon's 480-unit text box, checked by drawing TalkBalloonEvent with messagefont26 on the PC). The text is in the converted little-endian message format (tools/3ds/builder/bmg.py).
+- `src/Game/NPC/KinopioAstro.cpp` (`makeArchiveList`, `init`, `branchFunc`, `eventFunc`, `__3DS__` blocks): in PeachCastleFinalGalaxy no staff letter mail task (`_198` null), no AllCompleteImage pictures, no letter icon. `branchFunc` and the SendLetter event are null-safe.
+- `src/Game/Screen/PowerStarList.cpp` (`init`, `resetButtonAll`, `exeAppear`, `exeWait`, `__3DS__` blocks): the camera button (pane `Capture`) is kept in its Hidden nerve and cannot be selected. The Message Board drawing adaptor and the ODH converter are not created. `exeAppear` also hides the pane itself, since the button's controller does not run during the Appear animation (owner's 0.23.5 test: the camera showed until it ended).
+- `src/Game/NWC24/LuigiMailDirector.cpp` (`sendMail`, `writeSendSize`, `__3DS__` blocks): the Mailtoad's letters about Luigi are not sent to the Message Board after a save, and their size is not counted.
+  - **Why:** the 3DS has no Wii Message Board. The owner asked to remove every way of saving to it and to hide its layout buttons, and for the final Mailtoad to thank the player instead of offering the letter (Nov 25 2026). The Luigi mails and the photo failed (silently, or with a Message Board error window).
+  - Wii SHA-1 unchanged. Wii view 0/0.
+- `include/Game/Effect/AstroEffectObj.hpp` (`isSyncClipping` override, `__3DS__` block): the Comet Observatory's effect objects (73 torches AstroTorchLightRed, the blue ones, EffectTicoS) delete their effect while clipped (out of view or past their far distance) and emit it again when back, with SimpleEffectObj's own startClipped/endClipped.
+  - **Why:** in the full Observatory all 73 torch flames were simulated behind the camera too (CIA 0.23.3 log: particles about 3% of the time). Owner's choice, 25 Nov 2026.
+  - Wii SHA-1 unchanged. Wii view 0/0.
+
+## Layout materials with one texture: no second C0/C1 lerp (Nov 25 2026)
+
+- `src/nw4r/lyt/lyt_material.cpp` (`Material::SetupNativeTev`, `__3DS__` block): the stage that lerps the result between C0 and C1 is added only when the material has two or more textures, as in the Wii branch of `SetupGX`, where it sits inside the `else` of the one-texture case. The 3DS description added it after one texture too, so the colour was lerped twice: the pointer star's centre (texture at full intensity, C0 white, C1 blue 10,110,250) came out pink 246,193,251, as in the testers' screenshots, and 448 other materials in 78 layouts (frames, name plates, icons, windows) were off as well. The U6 audit (tools/3ds/audit/u6_layouts.py) modelled the same structure and was corrected with it.
+  - **Why:** owner's report (25 Nov 2026): the hand and star pointers' inner star purple instead of the original blue.
+  - Wii SHA-1 unchanged. Wii view 0/0.

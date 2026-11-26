@@ -51,7 +51,11 @@ void KinopioAstro::makeArchiveList(NameObjArchiveListCollector* pCollector, cons
                 LuigiLetter::makeArchiveListForNPC(pCollector, rIter);
             }
         } else {
+#ifdef __3DS__
+            // No staff letter on 3DS (see init()): its pictures are not loaded.
+#else
             pCollector->addArchive("AllCompleteImage");
+#endif
         }
 
         MR::getNPCItemData(&item, 3);
@@ -119,6 +123,12 @@ bool KinopioAstro::sendLetter() {
 }
 
 bool KinopioAstro::branchFunc(u32) {
+#ifdef __3DS__
+    // No staff letter (init()): nothing can have failed.
+    if (_198 == nullptr) {
+        return true;
+    }
+#endif
     return !_198->isError();
 }
 
@@ -160,6 +170,12 @@ bool KinopioAstro::eventFunc(u32 letterEvent) {
     } else if (letterEvent == LetterEvent_3) {
         return true;
     } else if (letterEvent == LetterEvent_SendLetter) {
+#ifdef __3DS__
+        // No staff letter to send (init()).
+        if (_198 == nullptr) {
+            return true;
+        }
+#endif
         return sendLetter();
     }
 #if (VERSION == RMGK01)
@@ -193,9 +209,16 @@ void KinopioAstro::init(const JMapInfoIter& rIter) {
     }
 
     if (MR::isEqualStageName("PeachCastleFinalGalaxy")) {
+#ifdef __3DS__
+        // #### No staff letter (owner's request) ####
+        // The letter went to the Wii Message Board, which the 3DS does not have. The Mailtoad
+        // thanks the player instead (MessageHolder.cpp ends his talk there), so there is no mail
+        // task, no pictures and no letter icon: _198 stays null and isDispLetterIcon() is false.
+#else
         _198 = new ReceiverTagMail("StaffLetter", ::sStaffLetterID, ::sSenderID);
         _19C = MR::createAndAddResourceHolder("AllCompleteImage.arc");
         createLetterIcon(rIter);
+#endif
         return;
     }
 

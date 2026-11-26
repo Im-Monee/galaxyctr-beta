@@ -48,8 +48,16 @@
 #define ARENA_PERSISTENT_WINDOWS 2
 #define ARENA_WINDOWS (ARENA_PERSISTENT_WINDOWS + 1)
 // The current frame's vertices take the start of the last window (about 1700 a frame in Good
-// Egg); persistent vertices go on after them, to the end of the arena.
-#define ARENA_TRANSIENT 16384
+// Egg); persistent vertices go on after them, to the end of the arena. Talking to a penguin in
+// Loopdeeloop, the penguins near the camera (high detail, their vertices made each frame) took
+// all 16384: the rest of their draws and the dialogue's text, drawn last, were dropped (a
+// penguin losing parts, the balloon showing only the text's blue shadow; AppleBerries, 11 Nov,
+// 16380 of 16384 in the log). The persistent part, up to about 160000 there, keeps 172032.
+#define ARENA_TRANSIENT 24576
+// Of the frame's vertices, the last ARENA_2D_RESERVE are for the draws made on the CPU (layouts,
+// text, the HUD), not models' (HOST_GFX_ARENA_MODEL_FRAME): a dialogue page with its shadow
+// takes about 1200.
+#define ARENA_2D_RESERVE 2048
 #define ARENA_TRANSIENT_FIRST (ARENA_PERSISTENT_WINDOWS * ARENA_WINDOW)
 #define ARENA_PERSISTENT_END (ARENA_WINDOWS * ARENA_WINDOW)
 // With 96 MB the last window is cut after 20000 persistent vertices. Without them the castle's
@@ -57,6 +65,34 @@
 // its models uploaded again (CIA 0.16.0, 268 MHz). The smaller index buffers below pay for them.
 #define ARENA_LOW_MEMORY_END (ARENA_TRANSIENT_FIRST + ARENA_TRANSIENT + 20000)
 static u32 sArenaPersistentEnd;
+// ##############################################################################################
+// # Persistent windows of two sizes of vertex                                                  #
+// #                                                                                            #
+// # The arena's bytes are the same as above (sArenaPersistentEnd whole vertices). The frame's  #
+// # vertices take its start (window ARENA_TRANSIENT_WINDOW, whole vertices); the rest is a     #
+// # pool the persistent windows are cut from, ARENA_SLICE vertices or more each, as they are   #
+// # needed: a window of whole vertices (68 bytes) or of compact ones (HOST_GFX_COMPACT_VERTEX, #
+// # 44: vertices whose units 1 and 2 take no input, most of the game's), read with units 1 and #
+// # 2 as fixed attributes (bindWindow). The Comet Observatory filled the 172032 whole vertices #
+// # (CIA 0.23.9: emptied once there and once in a planetarium's zoom, the dome vanishing); in  #
+// # compact ones the same bytes hold about 265000. An arena index stays window * ARENA_WINDOW  #
+// # + vertex: indices are relative to the window.                                              #
+// ##############################################################################################
+#define ARENA_MAX_WINDOWS 48
+#define ARENA_TRANSIENT_WINDOW ARENA_MAX_WINDOWS
+#define ARENA_SLICE 16384
+typedef struct {
+    u8* base;
+    u32 capacity, used;  // vertices
+    u32 stride;          // bytes of a vertex
+} ArenaWindow;
+static ArenaWindow sWindows[ARENA_MAX_WINDOWS + 1];
+static u32 sWindowCount;               // persistent windows cut since the last emptying
+static int sOpenWindow[2] = {-1, -1};  // the window taking whole, compact vertices
+static u8* sArenaPool;                 // the persistent windows' bytes
+static u32 sArenaPoolBytes, sArenaPoolUsed;
+static u32 sCompactUsed;  // compact persistent vertices
+_Static_assert(offsetof(HostGfxModelVertex, tex[1]) == HOST_GFX_COMPACT_VERTEX, "compact vertex: the fields before tex[1]");
 // Indices of one frame, and indices kept across frames with the persistent vertices.
 #define INDEX_BUFFER_SIZE (512 * 1024)
 #define PERSISTENT_INDEX_SIZE (768 * 1024)
@@ -85,12 +121,13 @@ static DVLB_s* sShaderDvlb;
 static shaderProgram_s sShader;
 static HostGfxModelVertex* sArena;
 static u32 sPersistentUsed, sTransientUsed;
-static u32 sPersistentDirtyLo = ~0u, sPersistentDirtyHi;  // vertices to write back before the GPU reads them
+static u32 sPersistentDirtyLo = ~0u, sPersistentDirtyHi;  // bytes of the pool to write back before the GPU reads them
 static u32 sTransientFlushed;
 static bool sArenaResetPending;
 // Since the last log: persistent arena resets because the vertices or the indices were full,
 // and the most persistent vertices and indices in use before a reset.
 static unsigned long sArenaFullVertices, sArenaFullIndices, sArenaPeakVertices, sArenaPeakIndices;
+static unsigned long sArenaPeakCompact, sArenaPeakBytes;
 // Draws dropped since the last log, by reason.
 enum { DROP_SKIPPED_FRAME, DROP_INDEX_BUFFER, DROP_COMMAND_BUFFER, DROP_NATIVE_BUDGET, DROP_TRANSIENT_VERTICES, DROP_REASONS };
 static unsigned long sDropReasons[DROP_REASONS];
@@ -107,6 +144,8 @@ static float sLoopMs = 16.7f;   // the last loop, at most 100 ms
 static unsigned long sGpuBusyFrames;      // frames skipped because the previous Citro3D queue is still running
 static unsigned long sArenaEpoch;  // bumped when the persistent windows are emptied
 static int sBoundWindow = -1;
+static int sBoundLayout = -1;  // attribute layout in use (bindWindow): 0 whole vertices, 1 + swap compact
+static C3D_AttrInfo sAttrWhole, sAttrCompact[3];
 static u16* sIndices;
 static u32 sIndexCount, sIndicesFlushed;
 static u16* sPersistentIndices;
@@ -167,7 +206,15 @@ static u32 sDrawRecordCount, sSubmittedRecordCount, sDrawsSinceSplit;
 // The queue advances one entry per GPU completion event; an entry whose event never comes
 // stalls every later frame, so the stalled entry is the one at lastEntry.
 extern gxCmdQueue_s __C3D_Context;
-#define GX_QUEUE_ENTRIES 128  // entries of that queue (hostGfxInit; citro3d makes 32)
+// Entries of that queue (hostGfxInit; citro3d makes 32). The GPU kicks take up to GPU_KICK_LIMIT
+// of them; screen copies and EFB reads take the rest. With 128 the copies of heavy scenes were
+// refused ("screen copy refused, GX queue 107 of 128"): a refused copy keeps its texture's last
+// image, and Loopdeeloop's water, which adds the screen behind it in blue, stayed grey (owner,
+// CIA 0.22.0). 32 bytes an entry.
+#define GX_QUEUE_ENTRIES 256
+// Screen copies refused because the GX queue had no room (hostGfxCaptureToTexture), since the
+// last log line.
+static unsigned long sCopiesRefused;
 
 // Saves the command buffer of the frame the GPU never finished, the GX queue entries and the GPU
 // status and PPF transfer registers. (Reading the P3D registers through GSP blocked the program.)
@@ -228,11 +275,12 @@ static void reportGpuStall(void) {
                 }
                 // DRW2, draw number, command address, index count, window, first and last vertex,
                 // primitive, cpu, vertex size; then the indices and the vertices first..last.
-                u32 header[10] = {0x32575244, i, r->cmd, r->count, r->window, r->minIndex, r->maxIndex, r->primitive, r->cpu,
-                                  sizeof(HostGfxModelVertex)};
+                unsigned long stride;
+                const u8* first = hostGfxArenaBytes((unsigned long)r->window * ARENA_WINDOW + r->minIndex, &stride);
+                u32 header[10] = {0x32575244, i, r->cmd, r->count, r->window, r->minIndex, r->maxIndex, r->primitive, r->cpu, (u32)stride};
                 fwrite(header, sizeof(u32), 10, draws);
                 fwrite(r->indices, sizeof(u16), r->count, draws);
-                fwrite(&sArena[r->window * ARENA_WINDOW + r->minIndex], sizeof(HostGfxModelVertex), r->maxIndex - r->minIndex + 1u, draws);
+                fwrite(first, stride, r->maxIndex - r->minIndex + 1u, draws);
             }
             fclose(draws);
             hostLog("gfx: GPU stall draws saved to sdmc:/smg/c3d_stall_draw.bin\n");
@@ -334,6 +382,7 @@ static void flushPendingDraw(void);
 static char sShotPending[64];                  // screenshot to save once the frame is rendered
 static char sShotNextFrame[64];                // screenshot of the next frame (hostGfxRequestShot)
 static char sShotRequested[64];                // screenshot of the frame being drawn
+static bool sDrawNextFrame;                    // a one-time screen capture waits for the next frame (hostGfxDrawNextFrame)
 // Last state sent to the GPU this frame: unchanged parts are not sent again, which keeps the
 // command buffer small (citro3d re-emits every setting it is handed).
 static HostGfxState sLastState;
@@ -460,9 +509,33 @@ void hostGfxInit(void) {
     AttrInfo_AddLoader(attr, 4, GPU_FLOAT, 3);          // texture coordinate generation inputs
     AttrInfo_AddLoader(attr, 5, GPU_FLOAT, 3);
     AttrInfo_AddLoader(attr, 6, GPU_FLOAT, 3);
+    sAttrWhole = *attr;
+    // Compact vertices: unit 0's input from the buffer into the register the swap gives it
+    // (bindWindow's kOrders), the other two fixed (0, 0, 1, 1), what whole vertices hold there.
+    for (int swap = 0; swap < 3; swap++) {
+        static const int kUnit0Reg[3] = {4, 5, 6};
+        C3D_AttrInfo* c = &sAttrCompact[swap];
+        AttrInfo_Init(c);
+        AttrInfo_AddLoader(c, 0, GPU_FLOAT, 3);
+        AttrInfo_AddLoader(c, 1, GPU_FLOAT, 3);
+        AttrInfo_AddLoader(c, 2, GPU_UNSIGNED_BYTE, 4);
+        AttrInfo_AddLoader(c, 3, GPU_UNSIGNED_BYTE, 4);
+        AttrInfo_AddLoader(c, kUnit0Reg[swap], GPU_FLOAT, 3);
+        for (int reg = 4; reg <= 6; reg++) {
+            if (reg != kUnit0Reg[swap]) {
+                AttrInfo_AddFixed(c, reg);  // attributes 5 and 6
+            }
+        }
+    }
 
     sArenaPersistentEnd = hostLowMemory() ? ARENA_LOW_MEMORY_END : ARENA_PERSISTENT_END;
     sArena = linearAlloc(sArenaPersistentEnd * sizeof(HostGfxModelVertex));
+    // The frame's vertices first, then the pool of the persistent windows.
+    sWindows[ARENA_TRANSIENT_WINDOW].base = (u8*)sArena;
+    sWindows[ARENA_TRANSIENT_WINDOW].capacity = ARENA_TRANSIENT;
+    sWindows[ARENA_TRANSIENT_WINDOW].stride = sizeof(HostGfxModelVertex);
+    sArenaPool = (u8*)sArena + ARENA_TRANSIENT * sizeof(HostGfxModelVertex);
+    sArenaPoolBytes = (sArenaPersistentEnd - ARENA_TRANSIENT) * sizeof(HostGfxModelVertex);
     sIndexBufferSize = hostLowMemory() ? INDEX_BUFFER_LOW_SIZE : INDEX_BUFFER_SIZE;
     sPersistentIndexSize = hostLowMemory() ? PERSISTENT_INDEX_LOW_SIZE : PERSISTENT_INDEX_SIZE;
     sIndices = linearAlloc(sIndexBufferSize * sizeof(u16));
@@ -525,23 +598,13 @@ static GPU_TEXCOLOR textureFormat(const unsigned long* pPixels, unsigned count) 
     return opaque ? GPU_RGB565 : binaryAlpha ? GPU_RGBA5551 : GPU_RGBA8;
 }
 
-void* hostGfxTextureCreate(const unsigned long* pPixels, unsigned width, unsigned height, unsigned potWidth, unsigned potHeight,
-                           int wrapS, int wrapT, int linear, int minLinear) {
-    GPU_TEXCOLOR format = textureFormat(pPixels, width * height);
-    C3D_Tex* tex = malloc(sizeof(C3D_Tex));
-    if (tex == NULL || !C3D_TexInit(tex, potWidth, potHeight, format)) {
-        free(tex);
-        return NULL;
-    }
-    sFrameOps.textures++;
-
-    // Texels are stored in 8x8 tiles, Morton order inside a tile (RGBA8 as 0xRRGGBBAA
-    // little-endian words, the 16-bit formats as little-endian halfwords, LA8 with the alpha in
-    // the low byte). The GPU samples the first row in memory at t = 1 (images are stored
-    // bottom-up), while the Wii samples its top row at t = 0, so image row y goes to memory row
-    // (potHeight - 1 - y). Seen on the strap screen, a single large texture that was shown upside
-    // down and cut.
-    memset(tex->data, 0, tex->size);
+// Texels are stored in 8x8 tiles, Morton order inside a tile (RGBA8 as 0xRRGGBBAA little-endian
+// words, the 16-bit formats as little-endian halfwords, LA8 with the alpha in the low byte). The
+// GPU samples the first row in memory at t = 1 (images are stored bottom-up), while the Wii
+// samples its top row at t = 0, so image row y goes to memory row (potHeight - 1 - y). Seen on the
+// strap screen, a single large texture that was shown upside down and cut.
+static void storeTexels(void* data, GPU_TEXCOLOR format, const unsigned long* pPixels, unsigned width, unsigned height, unsigned potWidth,
+                        unsigned potHeight) {
     u32 tilesPerRow = potWidth / 8;
     for (u32 y = 0; y < height; y++) {
         u32 row = potHeight - 1 - y;
@@ -552,27 +615,77 @@ void* hostGfxTextureCreate(const unsigned long* pPixels, unsigned width, unsigne
             u32 r = p >> 24, g = (p >> 16) & 0xFF, b = (p >> 8) & 0xFF, a = p & 0xFF;
             switch (format) {
             case GPU_L8:
-                ((u8*)tex->data)[index] = (u8)r;
+                ((u8*)data)[index] = (u8)r;
                 break;
             case GPU_LA8:
-                ((u16*)tex->data)[index] = (u16)((r << 8) | a);
+                ((u16*)data)[index] = (u16)((r << 8) | a);
                 break;
             case GPU_RGB565:
-                ((u16*)tex->data)[index] = (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                ((u16*)data)[index] = (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
                 break;
             case GPU_RGBA5551:
-                ((u16*)tex->data)[index] = (u16)(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | (a >> 7));
+                ((u16*)data)[index] = (u16)(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | (a >> 7));
                 break;
             default:
-                ((u32*)tex->data)[index] = p;
+                ((u32*)data)[index] = p;
                 break;
             }
         }
+    }
+}
+
+void* hostGfxTextureCreate(const unsigned long* pPixels, unsigned width, unsigned height, unsigned potWidth, unsigned potHeight,
+                           int wrapS, int wrapT, int linear, int minLinear) {
+    GPU_TEXCOLOR format = textureFormat(pPixels, width * height);
+    C3D_Tex* tex = malloc(sizeof(C3D_Tex));
+    if (tex == NULL || !C3D_TexInit(tex, potWidth, potHeight, format)) {
+        free(tex);
+        return NULL;
+    }
+    sFrameOps.textures++;
+    memset(tex->data, 0, tex->size);
+    storeTexels(tex->data, format, pPixels, width, height, potWidth, potHeight);
+    GSPGPU_FlushDataCache(tex->data, tex->size);
+
+    C3D_TexSetWrap(tex, wrapMode(wrapS), wrapMode(wrapT));
+    C3D_TexSetFilter(tex, linear ? GPU_LINEAR : GPU_NEAREST, minLinear ? GPU_LINEAR : GPU_NEAREST);
+    return tex;
+}
+
+// ##############################################################################################
+// # Textures with their own mipmaps                                                            #
+// #                                                                                            #
+// # A few Wii textures draw differently by distance through their mipmaps: the small levels    #
+// # are not the large one halved (Beach Bowl's sea, TransparencyMM, is clear at level 0 and    #
+// # opaque from level 2). The converter keeps their levels (texreduce.MIPMAPPED) and they are  #
+// # uploaded here with all of them, the Wii's filter between levels and its LOD bias. pPixels  #
+// # holds the levels one after the other, each half the one before, all power-of-two sizes.    #
+// ##############################################################################################
+void* hostGfxTextureCreateMipmap(const unsigned long* pPixels, unsigned width, unsigned height, unsigned levels, int wrapS, int wrapT,
+                                 int linear, int minLinear, int mipLinear, float lodBias) {
+    unsigned total = 0;
+    for (unsigned l = 0; l < levels; l++) {
+        total += (width >> l) * (height >> l);
+    }
+    GPU_TEXCOLOR format = textureFormat(pPixels, total);
+    C3D_Tex* tex = malloc(sizeof(C3D_Tex));
+    if (tex == NULL || !C3D_TexInitWithParams(tex, NULL, (C3D_TexInitParams){(u16)width, (u16)height, (u8)(levels - 1), format, GPU_TEX_2D, false})) {
+        free(tex);
+        return NULL;
+    }
+    sFrameOps.textures++;
+    const unsigned long* level = pPixels;
+    for (unsigned l = 0; l < levels; l++) {
+        const unsigned w = width >> l, h = height >> l;
+        storeTexels(C3D_Tex2DGetImagePtr(tex, (int)l, NULL), format, level, w, h, w, h);
+        level += w * h;
     }
     GSPGPU_FlushDataCache(tex->data, tex->size);
 
     C3D_TexSetWrap(tex, wrapMode(wrapS), wrapMode(wrapT));
     C3D_TexSetFilter(tex, linear ? GPU_LINEAR : GPU_NEAREST, minLinear ? GPU_LINEAR : GPU_NEAREST);
+    C3D_TexSetFilterMipmap(tex, mipLinear ? GPU_LINEAR : GPU_NEAREST);
+    C3D_TexSetLodBias(tex, lodBias);
     return tex;
 }
 
@@ -629,6 +742,21 @@ int hostGfxNextFrameDrawn(void) {
     return sNextFrameDrawn;
 }
 
+// ##############################################################################################
+// # The frame of a one-time screen capture is drawn                                            #
+// #                                                                                            #
+// # The game asks for a capture in its update (CaptureScreenDirector::requestCaptureTiming)    #
+// # and takes it in the next draw, the scene still drawn. Entering a Terrace dome, it asks in  #
+// # the same update for the capture and the stage change. In a frame the pacing skips nothing  #
+// # is copied and the capture waits for the next drawn one, when the scene has stopped drawing:#
+// # the wipe's frozen frame, and the lives count after a fall, were the blue clear colour     #
+// # (owner, CIA 0.21.8). The next frame is drawn, as a debug screenshot's is.                  #
+// ##############################################################################################
+void hostGfxDrawNextFrame(void) {
+    sNextFrameDrawn = true;
+    sDrawNextFrame = true;
+}
+
 float hostPerfDetail(void) {
     return sPerfDetail;
 }
@@ -683,6 +811,9 @@ static void planNextFrame(void) {
     sDrawOneInThree = !hostLowMemory() && (sDrawOneInThree ? twoLoopsMs >= HOST_GFX_THIRD_LEAVE_MS : twoLoopsMs > HOST_GFX_THIRD_ENTER_MS);
     if (sDrawOneInThree) {
         sNextFrameDrawn = sUndrawnLoops >= 2;
+    }
+    if (sDrawNextFrame) {
+        sNextFrameDrawn = true;  // its views are calculated (GameScene::calcAnim)
     }
 
     if (sFrameMs > 19.0f) {
@@ -796,6 +927,11 @@ static void beginFrame(void) {
         sShotNextFrame[0] = '\0';
         sSkipFrame = hostDebugTurbo();
     }
+    if (sDrawNextFrame) {
+        // A one-time screen capture is taken in this frame (hostGfxDrawNextFrame).
+        sDrawNextFrame = false;
+        sSkipFrame = hostDebugTurbo();
+    }
     sInFrame = true;
     if (sSkipFrame) {
         return;
@@ -803,6 +939,16 @@ static void beginFrame(void) {
 
     sLastBeginVBlank = vblank;
     sTarget = sOutputTarget;
+    // The loading screen (loading.c) writes the top screen itself until the first scene starts:
+    // meanwhile the frames drawn here do not go there (linked again once it lets go).
+    {
+        static bool sTopUnlinked;
+        const bool loading = hostLoadingOwnsTop() != 0;
+        if (loading != sTopUnlinked) {
+            C3D_RenderTargetSetOutput(loading ? NULL : sOutputTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+            sTopUnlinked = loading;
+        }
+    }
     unsigned long long waitStart = hostGetTick();
     hostDebugTrace("Citro3D FrameBegin", sFrameNumber, hostVBlankCount(), 0);
     // Wait for the GPU to finish the previous frame (about 38 ms in Good Egg) rather than drop
@@ -872,8 +1018,14 @@ static void beginFrame(void) {
         // The GPU has finished the previous frame: the cached vertices can go.
         sArenaPeakVertices = sPersistentUsed > sArenaPeakVertices ? sPersistentUsed : sArenaPeakVertices;
         sArenaPeakIndices = sPersistentIndexUsed > sArenaPeakIndices ? sPersistentIndexUsed : sArenaPeakIndices;
+        sArenaPeakCompact = sCompactUsed > sArenaPeakCompact ? sCompactUsed : sArenaPeakCompact;
+        sArenaPeakBytes = sArenaPoolUsed > sArenaPeakBytes ? sArenaPoolUsed : sArenaPeakBytes;
         sArenaResetPending = false;
         sPersistentUsed = 0;
+        sCompactUsed = 0;
+        sWindowCount = 0;
+        sArenaPoolUsed = 0;
+        sOpenWindow[0] = sOpenWindow[1] = -1;
         sPersistentIndexUsed = 0;
         sArenaEpoch++;
     }
@@ -919,6 +1071,12 @@ static HostGfxStage effectiveStage(const HostGfxState* pState, u32 index) {
         stage.constant = (stage.constant & 0x00FFFFFF) | ((u32)pState->dstAlpha << 24);
     }
     return stage;
+}
+
+// The frame cleared again to its own clear colour, as at its start (beginFrame): after a copy
+// made before the scene draws, like GXCopyTex's clear after the Wii's copy.
+void hostGfxClearAgain(void) {
+    hostGfxClearFrame(sBlackScreen ? 0x000000FF : sClearColor);
 }
 
 void hostGfxClearFrame(unsigned long clearColor) {
@@ -1113,22 +1271,23 @@ static void drawElements(GPU_Primitive_t primitive, u32 count, const u16* indice
     if (SMG_DIAG_FIRST_DRAW_ONLY && sFrameNumber == 1 && sDiagnosticDrawInputCount++ == 0) {
         C3D_BufInfo* info = C3D_GetBufInfo();
         u32 indexPhys = osConvertVirtToPhys(indices);
-        u32 vertexPhys = sBoundWindow >= 0 && sBoundWindow < ARENA_WINDOWS
-                             ? osConvertVirtToPhys(&sArena[sBoundWindow * ARENA_WINDOW])
-                             : 0;
+        const bool bound = sBoundWindow >= 0 && sBoundWindow <= ARENA_TRANSIENT_WINDOW;
+        u32 vertexPhys = bound ? osConvertVirtToPhys(sWindows[sBoundWindow].base) : 0;
         hostLog("gfx: first draw inputs primitive %d count %lu window %d index %p phys %08lx base %08lx offset %08lx vertex %p phys %08lx stride %lu\n",
                 (int)primitive, (unsigned long)count, sBoundWindow, indices, (unsigned long)indexPhys,
                 info ? (unsigned long)info->base_paddr : 0, info ? (unsigned long)info->buffers[0].offset : 0,
-                sBoundWindow >= 0 && sBoundWindow < ARENA_WINDOWS ? &sArena[sBoundWindow * ARENA_WINDOW] : NULL,
-                (unsigned long)vertexPhys, (unsigned long)sizeof(HostGfxModelVertex));
+                bound ? (void*)sWindows[sBoundWindow].base : NULL, (unsigned long)vertexPhys,
+                bound ? (unsigned long)sWindows[sBoundWindow].stride : 0ul);
         u32 n = count < 12 ? count : 12;
         for (u32 i = 0; i < n; i++) {
             u16 index = indices[i];
-            if (sBoundWindow < 0 || sBoundWindow >= ARENA_WINDOWS) {
+            if (!bound) {
                 hostLog("gfx: first draw index %lu = %u (no bound arena window)\n", (unsigned long)i, index);
                 continue;
             }
-            const HostGfxModelVertex* v = &sArena[sBoundWindow * ARENA_WINDOW + index];
+            HostGfxModelVertex whole;
+            hostGfxArenaReadVertex((unsigned long)sBoundWindow * ARENA_WINDOW + index, &whole);
+            const HostGfxModelVertex* v = &whole;
             hostLog("gfx: first draw index %lu = %u vertex %08lx %08lx %08lx normal %08lx %08lx %08lx rgba %02x%02x%02x%02x matrix %u texrow %u,%u,%u tex0 %08lx %08lx %08lx\n",
                     (unsigned long)i, index, (unsigned long)diagnosticFloatBits(&v->x), (unsigned long)diagnosticFloatBits(&v->y),
                     (unsigned long)diagnosticFloatBits(&v->z), (unsigned long)diagnosticFloatBits(&v->nx),
@@ -1138,7 +1297,7 @@ static void drawElements(GPU_Primitive_t primitive, u32 count, const u16* indice
                     (unsigned long)diagnosticFloatBits(&v->tex[0][2]));
         }
     }
-    if (STALL_DRAW_DIAG && !sStallReported && sDrawRecordCount < DIAG_RECORDS && sBoundWindow >= 0 && sBoundWindow < ARENA_WINDOWS) {
+    if (STALL_DRAW_DIAG && !sStallReported && sDrawRecordCount < DIAG_RECORDS && sBoundWindow >= 0 && sBoundWindow <= ARENA_TRANSIENT_WINDOW) {
         DrawRecord* r = &sDrawRecords[sDrawRecordCount++];
         memset(r, 0, sizeof(*r));
         r->cmd = (u32)(gpuCmdBuf + gpuCmdBufOffset);  // virtual, as the GX queue entries hold it
@@ -1155,7 +1314,9 @@ static void drawElements(GPU_Primitive_t primitive, u32 count, const u16* indice
             r->maxIndex = index > r->maxIndex ? index : r->maxIndex;
         }
         for (u32 index = r->minIndex; index <= r->maxIndex && r->minIndex <= r->maxIndex; index++) {
-            const HostGfxModelVertex* v = &sArena[sBoundWindow * ARENA_WINDOW + index];
+            HostGfxModelVertex whole;
+            hostGfxArenaReadVertex((unsigned long)sBoundWindow * ARENA_WINDOW + index, &whole);
+            const HostGfxModelVertex* v = &whole;
             if (!isfinite(v->x) || !isfinite(v->y) || !isfinite(v->z) || (sMode == MODE_PRETRANSFORMED && !isfinite(v->nx))) {
                 r->bad++;
                 continue;
@@ -1217,15 +1378,90 @@ void hostGfxSetStencilAmbient(int enable, int func, int ref, int mask, int write
 // # Transient vertices fail while the frame is dropped: the GPU may still read the last        #
 // # frame's.                                                                                   #
 // ##############################################################################################
-static void bindWindow(int window) {
-    if (window == sBoundWindow) {
+// The vertex buffer of an arena window. inputSwap (HostGfxTransform) sends the texture inputs of
+// unit 1 or 2 to the shader's unit 0 input and unit 0's to theirs: the buffer's components 4-6
+// (tex[0..2]) go to attributes v4-v6 in another order, all three being float x 3.
+static int sBoundSwap;
+
+static void bindWindow(int window, int swap) {
+    if (window == sBoundWindow && swap == sBoundSwap) {
         return;
     }
     flushPendingDraw();
+    static const u64 kOrders[3] = {0x6543210, 0x6453210, 0x4563210};
+    const int order = swap >= 0 && swap < 3 ? swap : 0;
+    const ArenaWindow* w = &sWindows[window >= 0 && window <= ARENA_TRANSIENT_WINDOW ? window : ARENA_TRANSIENT_WINDOW];
+    const bool compact = w->stride != sizeof(HostGfxModelVertex);
+    // The attribute layout: whole vertices, or compact ones with units 1 and 2 fixed. Set again,
+    // with the fixed values, after a split or a frame start (sBoundWindow -1).
+    const int layout = compact ? 1 + order : 0;
+    if (layout != sBoundLayout || sBoundWindow < 0) {
+        *C3D_GetAttrInfo() = compact ? sAttrCompact[order] : sAttrWhole;
+        if (compact) {
+            C3D_FixedAttribSet(5, 0.0f, 0.0f, 1.0f, 1.0f);
+            C3D_FixedAttribSet(6, 0.0f, 0.0f, 1.0f, 1.0f);
+        }
+        sBoundLayout = layout;
+    }
     C3D_BufInfo* buf = C3D_GetBufInfo();
     BufInfo_Init(buf);
-    BufInfo_Add(buf, &sArena[window * ARENA_WINDOW], sizeof(HostGfxModelVertex), 7, 0x6543210);
+    if (compact) {
+        BufInfo_Add(buf, w->base, HOST_GFX_COMPACT_VERTEX, 5, 0x43210);
+    } else {
+        BufInfo_Add(buf, w->base, sizeof(HostGfxModelVertex), 7, kOrders[order]);
+    }
     sBoundWindow = window;
+    sBoundSwap = swap;
+}
+
+// A persistent allocation of count vertices of stride bytes: in the open window of that size, or
+// in a new one cut from the pool. Sets *ppOut to the first's bytes.
+static unsigned long allocPersistent(unsigned long count, u32 stride, u8** ppOut) {
+    const int form = stride == sizeof(HostGfxModelVertex) ? 0 : 1;
+    int w = sOpenWindow[form];
+    if (w < 0 || sWindows[w].used + count > sWindows[w].capacity) {
+        u32 capacity = count > ARENA_SLICE ? count : ARENA_SLICE;
+        const u32 room = (sArenaPoolBytes - sArenaPoolUsed) / stride;
+        if (capacity > room) {
+            capacity = room;  // the last window takes what is left
+        }
+        if (sWindowCount >= ARENA_MAX_WINDOWS || capacity < count) {
+            // Full: emptied at the start of the next drawn frame (the GPU has finished with it then).
+            if (!sArenaResetPending) {
+                sArenaFullVertices++;
+            }
+            sArenaResetPending = true;
+            return HOST_GFX_NO_ARENA;
+        }
+        w = (int)sWindowCount++;
+        sWindows[w].base = sArenaPool + sArenaPoolUsed;
+        sWindows[w].capacity = capacity;
+        sWindows[w].used = 0;
+        sWindows[w].stride = stride;
+        sArenaPoolUsed += capacity * stride;
+        sOpenWindow[form] = w;
+    }
+    ArenaWindow* win = &sWindows[w];
+    const u32 first = win->used;
+    win->used += count;
+    u8* bytes = win->base + first * stride;
+    const u32 lo = (u32)(bytes - sArenaPool), hi = lo + count * stride;
+    sPersistentDirtyLo = lo < sPersistentDirtyLo ? lo : sPersistentDirtyLo;
+    sPersistentDirtyHi = hi > sPersistentDirtyHi ? hi : sPersistentDirtyHi;
+    sPersistentUsed += count;
+    if (form != 0) {
+        sCompactUsed += count;
+    }
+    *ppOut = bytes;
+    return (unsigned long)w * ARENA_WINDOW + first;
+}
+
+unsigned long hostGfxArenaAllocCompact(unsigned long count, unsigned char** ppOut) {
+    beginFrame();
+    if (count == 0 || count > ARENA_WINDOW) {
+        return HOST_GFX_NO_ARENA;
+    }
+    return allocPersistent(count, HOST_GFX_COMPACT_VERTEX, ppOut);
 }
 
 unsigned long hostGfxArenaAlloc(unsigned long count, int persistent, HostGfxModelVertex** ppOut) {
@@ -1234,35 +1470,17 @@ unsigned long hostGfxArenaAlloc(unsigned long count, int persistent, HostGfxMode
         return HOST_GFX_NO_ARENA;
     }
     unsigned long first;
-    if (persistent) {
-        // Bump allocation that never straddles a window; when full, the cache is emptied at
-        // the start of the next drawn frame (the GPU has finished with it then).
-        u32 used = sPersistentUsed;
-        if (used % ARENA_WINDOW + count > ARENA_WINDOW) {
-            used = (used / ARENA_WINDOW + 1) * ARENA_WINDOW;
+    if (persistent == HOST_GFX_ARENA_KEEP) {
+        u8* bytes;
+        first = allocPersistent(count, sizeof(HostGfxModelVertex), &bytes);
+        if (first != HOST_GFX_NO_ARENA) {
+            *ppOut = (HostGfxModelVertex*)bytes;
         }
-        if (used >= ARENA_TRANSIENT_FIRST && used < ARENA_TRANSIENT_FIRST + ARENA_TRANSIENT) {
-            used = ARENA_TRANSIENT_FIRST + ARENA_TRANSIENT;
-        }
-        if (used + count > sArenaPersistentEnd) {
-            if (!sArenaResetPending) {
-                sArenaFullVertices++;
-            }
-            sArenaResetPending = true;
-            return HOST_GFX_NO_ARENA;
-        }
-        first = used;
-        sPersistentUsed = used + count;
-        if (first < sPersistentDirtyLo) {
-            sPersistentDirtyLo = first;
-        }
-        if (first + count > sPersistentDirtyHi) {
-            sPersistentDirtyHi = first + count;
-        }
+        return first;
     } else {
         // This frame's vertices: nothing while the frame is dropped (the GPU may still read the
         // previous frame's).
-        u32 limit = ARENA_TRANSIENT;
+        u32 limit = persistent == HOST_GFX_ARENA_MODEL_FRAME ? ARENA_TRANSIENT - ARENA_2D_RESERVE : ARENA_TRANSIENT;
         if (sSkipFrame || sTransientUsed + count > limit) {
             if (!sSkipFrame) {
                 static int sReports;
@@ -1273,10 +1491,10 @@ unsigned long hostGfxArenaAlloc(unsigned long count, int persistent, HostGfxMode
             }
             return HOST_GFX_NO_ARENA;
         }
-        first = ARENA_PERSISTENT_WINDOWS * ARENA_WINDOW + sTransientUsed;
+        *ppOut = &sArena[sTransientUsed];
+        first = (unsigned long)ARENA_TRANSIENT_WINDOW * ARENA_WINDOW + sTransientUsed;
         sTransientUsed += count;
     }
-    *ppOut = &sArena[first];
     return first;
 }
 
@@ -1310,8 +1528,21 @@ unsigned short* hostGfxIndexAllocTransient(unsigned long count) {
     return first;
 }
 
-HostGfxModelVertex* hostGfxArenaVertex(unsigned long index) {
-    return &sArena[index];
+const unsigned char* hostGfxArenaBytes(unsigned long index, unsigned long* pStride) {
+    const unsigned long window = index / ARENA_WINDOW;
+    const ArenaWindow* w = &sWindows[window <= ARENA_TRANSIENT_WINDOW ? window : ARENA_TRANSIENT_WINDOW];
+    *pStride = w->stride;
+    return w->base + (index % ARENA_WINDOW) * w->stride;
+}
+
+void hostGfxArenaReadVertex(unsigned long index, HostGfxModelVertex* pOut) {
+    unsigned long stride;
+    const unsigned char* bytes = hostGfxArenaBytes(index, &stride);
+    memcpy(pOut, bytes, stride);
+    for (u32 u = stride == sizeof(HostGfxModelVertex) ? 3u : 1u; u < 3; u++) {
+        pOut->tex[u][0] = pOut->tex[u][1] = 0.0f;
+        pOut->tex[u][2] = 1.0f;
+    }
 }
 
 void hostGfxArenaReset(void) {
@@ -1336,7 +1567,7 @@ unsigned long hostGfxArenaEpoch(void) {
 // time: new arena vertices and this frame's indices.
 static void flushWrittenData(void) {
     if (sPersistentDirtyHi > sPersistentDirtyLo) {
-        GSPGPU_FlushDataCache(&sArena[sPersistentDirtyLo], (sPersistentDirtyHi - sPersistentDirtyLo) * sizeof(HostGfxModelVertex));
+        GSPGPU_FlushDataCache(sArenaPool + sPersistentDirtyLo, sPersistentDirtyHi - sPersistentDirtyLo);
     }
     sPersistentDirtyLo = ~0u;
     sPersistentDirtyHi = 0;
@@ -1347,7 +1578,7 @@ static void flushWrittenData(void) {
     sPersistentIndexDirtyLo = ~0u;
     sPersistentIndexDirtyHi = 0;
     if (sTransientUsed > sTransientFlushed) {
-        GSPGPU_FlushDataCache(&sArena[ARENA_PERSISTENT_WINDOWS * ARENA_WINDOW + sTransientFlushed],
+        GSPGPU_FlushDataCache(&sArena[sTransientFlushed],
                               (sTransientUsed - sTransientFlushed) * sizeof(HostGfxModelVertex));
         sTransientFlushed = sTransientUsed;
     }
@@ -1370,9 +1601,10 @@ static void flushWrittenData(void) {
 // before C3D_FrameEnd flushes the linear heap: every split sends its list flushed
 // (GX_CMDLIST_FLUSH), after the vertices and indices (flushWrittenData).
 #define GPU_KICK_MS 2
-// Kicks stop with this many queue entries still free for the rest of the frame (EFB copies,
-// the final list, the EFB read copy, the screen transfer).
-#define GPU_KICK_RESERVE 48
+// Kicks stop once this many queue entries are taken, the rest kept for the frame (EFB copies,
+// the final list, the EFB read copy, the screen transfer): as many kicks as with the 128-entry
+// queue (80 entries), the larger queue left to the copies.
+#define GPU_KICK_LIMIT 80
 
 // After a split the shader configuration and the state are sent again in full.
 static void forgetStateAfterSplit(void) {
@@ -1381,6 +1613,24 @@ static void forgetStateAfterSplit(void) {
     sMode = MODE_NONE;
     sTransformValid = false;
     sBoundWindow = -1;
+}
+
+// ##############################################################################################
+// # No kicks inside a layout                                                                   #
+// #                                                                                            #
+// # A 2D layout is drawn without a kick between its draws (hostGfxHoldKicks, around            #
+// # nw4r::lyt::Layout::Draw). The first pause star and the Observatory silhouette behind the   #
+// # Universe map flickered while the GPU got the same commands every frame (CIA 0.22.15 log):  #
+// # the one thing that changed from frame to frame was where a kick fell among them. Layouts   #
+// # come at the end of the frame and are cheap, so holding the kicks there costs little.       #
+// ##############################################################################################
+static int sKickHolds;
+
+void hostGfxHoldKicks(int hold) {
+    sKickHolds += hold ? 1 : -1;
+    if (sKickHolds < 0) {
+        sKickHolds = 0;
+    }
 }
 
 static void kickGpu(void) {
@@ -1585,7 +1835,17 @@ static bool beginDraw(unsigned long indexCount, int primitive, int window, const
         return false;
     }
 
-    bool sameTransform = mode == sMode && (mode == MODE_PRETRANSFORMED || (sTransformValid && version == sTransformVersion));
+    // Inside a layout (hostGfxHoldKicks) every draw sends the whole state, as after a kick: the
+    // first pause star still vanished in the fades with the same commands as the others (CIA 0.23.0
+    // video and log), right after the title's text, as if the GPU kept a stage of an earlier draw.
+    // Layout draws are few, so sending all of it costs little.
+    if (sKickHolds > 0) {
+        flushPendingDraw();
+        forgetStateAfterSplit();
+    }
+
+    bool sameTransform = mode == sMode && (mode == MODE_PRETRANSFORMED || (sTransformValid && version == sTransformVersion)) &&
+                         (mode != MODE_MODEL || pTransform == NULL || pTransform->inputSwap == sBoundSwap);
     if (sPendingDraw && primitive == HOST_GFX_TRIANGLES && hostDebugMerge() && sLastStateValid && sameTransform && window == sBoundWindow &&
         sPendingFirstIndex + sPendingIndexCount == sIndexCount && memcmp(pState, &sLastState, sizeof(HostGfxState)) == 0) {
         *pMerge = true;
@@ -1615,12 +1875,12 @@ static bool beginDraw(unsigned long indexCount, int primitive, int window, const
         sDrawsSinceSplit = 0;
         forgetStateAfterSplit();
     }
-    if (hostDebugGpuKick() && hostGetTick() - sLastKickTick >= hostGetTickFrequency() / 1000 * GPU_KICK_MS &&
-        __C3D_Context.numEntries + GPU_KICK_RESERVE < __C3D_Context.maxEntries) {
+    if (hostDebugGpuKick() && sKickHolds == 0 && hostGetTick() - sLastKickTick >= hostGetTickFrequency() / 1000 * GPU_KICK_MS &&
+        __C3D_Context.numEntries < GPU_KICK_LIMIT) {
         kickGpu();
     }
 
-    bindWindow(window);
+    bindWindow(window, mode == MODE_MODEL && pTransform != NULL ? pTransform->inputSwap : 0);
     if (mode != sMode) {
         C3D_BoolUnifSet(GPU_VERTEX_SHADER, sLocPretransformed, mode == MODE_PRETRANSFORMED);
         sMode = mode;
@@ -1633,7 +1893,9 @@ static bool beginDraw(unsigned long indexCount, int primitive, int window, const
     // A projective coordinate on unit 0 (GX's s/q, t/q): the shader sends q as texcoord0w and
     // unit 0, the only one able to, divides per pixel in projection mode. A copy of the texture
     // carries that mode, so the shared one keeps 2D for other draws.
-    const bool projection = mode == MODE_MODEL && pTransform != NULL && pTransform->divide[0];
+    // Pretransformed draws ask for it in their state (projectUnit0, q0 in texcoord0w).
+    const bool projection = (mode == MODE_MODEL && pTransform != NULL && pTransform->divide[0]) ||
+                            (mode == MODE_PRETRANSFORMED && pState->projectUnit0);
     static C3D_Tex sProjectionTexture;
     static bool sBoundProjection;
     for (int unit = 0; unit < 3; unit++) {
@@ -1842,7 +2104,7 @@ int hostGfxDrawNativeIndexed(unsigned long first, const unsigned short* pIndices
 static unsigned long drawPretransformed(const HostGfxVertex* pVertices, unsigned long count, const unsigned short* pIndices,
                                         unsigned long indexCount, int primitive, const HostGfxState* pState) {
     HostGfxModelVertex* out;
-    unsigned long first = hostGfxArenaAlloc(count, 0, &out);
+    unsigned long first = hostGfxArenaAlloc(count, HOST_GFX_ARENA_FRAME, &out);
     if (first == HOST_GFX_NO_ARENA) {
         sDroppedDrawsThisFrame++;
         sDropReasons[DROP_TRANSIENT_VERTICES]++;
@@ -1861,6 +2123,7 @@ static unsigned long drawPretransformed(const HostGfxVertex* pVertices, unsigned
         memcpy(o->rgba, v->rgba, 4);
         o->tex[0][0] = v->s0;
         o->tex[0][1] = v->t0;
+        o->tex[0][2] = v->q0;  // texcoord0w: unit 0's q in projection mode (projectUnit0)
         o->tex[1][0] = v->s1;
         o->tex[1][1] = v->t1;
         o->tex[2][0] = v->s2;
@@ -1886,6 +2149,7 @@ static void lerpVertex(void* pOut, const void* pA, const void* pB, float t) {
     for (int i = 0; i < 6; i++) {
         fo[i] = fa[i] + (fb[i] - fa[i]) * t;
     }
+    o->q0 = a->q0 + (b->q0 - a->q0) * t;  // homogeneous, so linear in clip space as s0 and t0
     for (int i = 0; i < 4; i++) {
         o->rgba[i] = (unsigned char)(a->rgba[i] + (b->rgba[i] - a->rgba[i]) * t + 0.5f);
     }
@@ -2113,14 +2377,20 @@ void hostGfxEndFrame(unsigned long clearColor) {
         sGpuKicks = 0;
         u32 peakVertices = sPersistentUsed > sArenaPeakVertices ? sPersistentUsed : sArenaPeakVertices;
         u32 peakIndices = sPersistentIndexUsed > sArenaPeakIndices ? sPersistentIndexUsed : sArenaPeakIndices;
-        hostLog("gfx: persistent arena emptied %lu times when full (%lu for vertices, %lu for indices), arena position up to %lu of %lu "
-                "and %lu of %lu indices in use\n",
+        u32 peakCompact = sCompactUsed > sArenaPeakCompact ? sCompactUsed : sArenaPeakCompact;
+        u32 peakBytes = sArenaPoolUsed > sArenaPeakBytes ? sArenaPoolUsed : sArenaPeakBytes;
+        hostLog("gfx: persistent arena emptied %lu times when full (%lu for vertices, %lu for indices), up to %lu vertices (%lu compact) "
+                "in windows of %lu of %lu KB, and %lu of %lu indices in use\n",
                 sArenaFullVertices + sArenaFullIndices, sArenaFullVertices, sArenaFullIndices, (unsigned long)peakVertices,
-                (unsigned long)sArenaPersistentEnd, (unsigned long)peakIndices, (unsigned long)sPersistentIndexSize);
-        hostLog("gfx: draws dropped: skipped frame %lu, index buffer %lu, command buffer %lu, native budget %lu, transient vertices %lu\n",
+                (unsigned long)peakCompact, (unsigned long)(peakBytes / 1024), (unsigned long)(sArenaPoolBytes / 1024),
+                (unsigned long)peakIndices, (unsigned long)sPersistentIndexSize);
+        hostLog("gfx: draws dropped: skipped frame %lu, index buffer %lu, command buffer %lu, native budget %lu, transient vertices %lu; "
+                "screen copies refused for a full GX queue %lu\n",
                 sDropReasons[DROP_SKIPPED_FRAME], sDropReasons[DROP_INDEX_BUFFER], sDropReasons[DROP_COMMAND_BUFFER],
-                sDropReasons[DROP_NATIVE_BUDGET], sDropReasons[DROP_TRANSIENT_VERTICES]);
+                sDropReasons[DROP_NATIVE_BUDGET], sDropReasons[DROP_TRANSIENT_VERTICES], sCopiesRefused);
+        sCopiesRefused = 0;
         sArenaFullVertices = sArenaFullIndices = sArenaPeakVertices = sArenaPeakIndices = 0;
+        sArenaPeakCompact = sArenaPeakBytes = 0;
         memset(sDropReasons, 0, sizeof(sDropReasons));
         if (sClippedDraws != 0) {
             hostLog("gfx: %lu clip-space draws clipped before the GPU (%lu triangles, %lu dropped for NaN or infinite vertices)\n",
@@ -2244,6 +2514,13 @@ void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y
     // the frame end four more: with no room the texture keeps its last image (null: no copy, and
     // the caller keeps the texture and mapping it had).
     if (__C3D_Context.numEntries + 24 > __C3D_Context.maxEntries) {
+        static int sQueueReports;
+        sCopiesRefused++;
+        if (sQueueReports < 4) {
+            sQueueReports++;
+            hostLog("gfx: screen copy refused, GX queue %u of %u entries (frame %lu)\n", __C3D_Context.numEntries,
+                    __C3D_Context.maxEntries, sFrameNumber);
+        }
         return NULL;
     }
 
@@ -2283,6 +2560,12 @@ void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y
         C3D_Tex* made = malloc(sizeof(C3D_Tex));
         if (made == NULL || !C3D_TexInit(made, potW, potH, GPU_RGBA8)) {
             free(made);
+            static int sMemoryReports;
+            if (sMemoryReports < 4) {
+                sMemoryReports++;
+                hostLog("gfx: screen copy refused, no linear memory for a %lux%lu texture (%lu KB free, frame %lu)\n", (unsigned long)potW,
+                        (unsigned long)potH, (unsigned long)(linearSpaceFree() / 1024), sFrameNumber);
+            }
             return NULL;
         }
         C3D_TexSetFilter(made, GPU_LINEAR, GPU_LINEAR);
@@ -2368,6 +2651,65 @@ void* hostGfxCaptureToTexture(void* reuse, float x0, float y0, float x1, float y
 void* hostGfxCopyToTexture(void* reuse, float x0, float y0, float x1, float y1, float* coeffs) {
     void* copy = hostGfxCaptureToTexture(reuse, x0, y0, x1, y1, coeffs);
     return copy != NULL ? copy : reuse;
+}
+
+// ##############################################################################################
+// # Copies into an RGB565 texture                                                              #
+// #                                                                                            #
+// # The Wii's GXCopyTex converts the frame buffer to the texture's format (the full screen     #
+// # blur's 128x64 copy is RGB565). The texture copy here moves bytes only: the region goes     #
+// # into an RGBA8 staging texture, a display transfer converts that to RGB565 into a linear    #
+// # buffer, and a second one tiles it into the texture (the transfers that send the screen to  #
+// # the display and load textures). The queue runs them in order after the copy. The staging  #
+// # texture and the linear buffer serve every such copy: each copy's transfers are done before #
+// # the next copy's start.                                                                     #
+// ##############################################################################################
+void* hostGfxCaptureToTextureRgb565(void* reuse, float x0, float y0, float x1, float y1, float* coeffs) {
+    static C3D_Tex* sStaging;
+    static void* sLinear;
+    static u32 sLinearBytes;
+    C3D_Tex* staging = (C3D_Tex*)hostGfxCaptureToTexture(sStaging, x0, y0, x1, y1, coeffs);
+    if (staging == NULL) {
+        return NULL;
+    }
+    sStaging = staging;
+    if (__C3D_Context.numEntries + 4 > __C3D_Context.maxEntries) {
+        return NULL;
+    }
+    const u32 width = staging->width, height = staging->height, bytes = width * height * 2;
+    if (sLinearBytes < bytes) {
+        // Grown only (the blur's copies are all 128x64): the old buffer is left, as a queued
+        // transfer may still read it.
+        void* grown = linearAlloc(bytes);
+        if (grown == NULL) {
+            return NULL;
+        }
+        sLinear = grown;
+        sLinearBytes = bytes;
+    }
+    C3D_Tex* tex = (C3D_Tex*)reuse;
+    if (tex == NULL || tex->width != width || tex->height != height || tex->fmt != GPU_RGB565) {
+        C3D_Tex* made = malloc(sizeof(C3D_Tex));
+        if (made == NULL || !C3D_TexInit(made, width, height, GPU_RGB565)) {
+            free(made);
+            return NULL;
+        }
+        C3D_TexSetFilter(made, GPU_LINEAR, GPU_LINEAR);
+        C3D_TexSetWrap(made, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        if (tex != NULL) {
+            hostGfxTextureDestroy(tex);
+        }
+        tex = made;
+    }
+    GX_DisplayTransfer((u32*)staging->data, GX_BUFFER_DIM(width, height), (u32*)sLinear, GX_BUFFER_DIM(width, height),
+                       GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+                           GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
+                           GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+    GX_DisplayTransfer((u32*)sLinear, GX_BUFFER_DIM(width, height), (u32*)tex->data, GX_BUFFER_DIM(width, height),
+                       GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+                           GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
+                           GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+    return tex;
 }
 
 int hostGfxReadRgb565(unsigned x, unsigned y, unsigned width, unsigned height, unsigned short* pixels) {

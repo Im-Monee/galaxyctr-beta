@@ -76,6 +76,14 @@ void SphereAccelSensorController::update(const TVec3f&) {
 }
 
 void SphereAccelSensorController::clacXY(f32* pX, f32* pY) {
+#ifdef __3DS__
+    // 3DS: the star ball (Tamakoro) rolls with the circle pad, as the game's own stick controller
+    // does (SpherePadController::clacXY, the base class): the remote platform/3ds/rvl/kpad.cpp
+    // reports is never tilted, so the ball did not move (public issue #1, owner's choice 20 Nov:
+    // the stick, not the gyroscope).
+    SpherePadController::clacXY(pX, pY);
+    return;
+#endif
     f32 accelMargine = isCorePad() ? MR::toRadian(::sCoreAccelDegreMargine) : MR::toRadian(::sSubAccelDegreMargine);
     f32 accelRange = isCorePad() ? MR::toRadian(::sCoreAccelDegreeRange) : MR::toRadian(::sSubAccelDegreeRange);
     f32 accelRangeY = isCorePad() ? MR::toRadian(::sCoreAccelDegreeRangeY) : MR::toRadian(::sSubAccelDegreeRangeY);

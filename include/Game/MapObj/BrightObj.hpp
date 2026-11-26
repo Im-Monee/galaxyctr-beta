@@ -19,6 +19,13 @@ public:
     /* 0x08 */ TVec2f mBrightnessCenter[3];
     /* 0x20 */ TVec2f mRealCenter[3];
     /* 0x38 */ f32 mBright[3];
+#ifdef __3DS__
+    // The slot written last. The Wii writes one result a frame (GX draw sync) and reads one,
+    // so the reader is always on the slot just written; the 3DS checks only in drawn frames (one
+    // in three when the game runs behind) and its reads in between fell on the slot to be written
+    // next, a result nine frames old: the flare jumped back and forth and went out (BrightObj.cpp).
+    u32 mLastIndex;
+#endif
 };
 
 class BrightDrawInfo {

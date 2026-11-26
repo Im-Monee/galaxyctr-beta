@@ -12,6 +12,10 @@
 #include "nw4r/lyt/window.h"
 #include "nw4r/ut/Rect.h"
 #include <revolution/mem/allocator.h>
+#ifdef __3DS__
+// host.h: hostGfxHoldKicks, around Layout::Draw.
+#include "host.h"
+#endif
 
 namespace {
     using namespace nw4r;
@@ -301,6 +305,15 @@ namespace nw4r {
                 return;
             }
 
+#ifdef __3DS__
+            // The layout's draws reach the GPU without a kick between them (host/gfx.c,
+            // hostGfxHoldKicks): where a kick fell among them changed from frame to frame, and the
+            // first pause star and the map's Observatory silhouette flickered (CIA 0.22.15 log).
+            hostGfxHoldKicks(1);
+            mpRootPane->Draw(rInfo);
+            hostGfxHoldKicks(0);
+            return;
+#endif
             mpRootPane->Draw(rInfo);
         }
 

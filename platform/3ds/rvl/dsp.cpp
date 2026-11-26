@@ -17,14 +17,14 @@
 // # The mixing: AFC ADPCM (9-byte blocks, coefficients of JASDsp::DSPADPCM_FILTER) and         #
 // # big-endian PCM16 waves, square and saw oscillators, linear resampling by the channel pitch #
 // # (4096 = one source sample per output sample), loops, end and forced stop (mIsFinished),    #
-// # volume ramps per subframe on the front left and right buses. Reverb sends and filters are  #
-// # silent. The mixing runs on the game's core; with the 96 MB of an Old 3DS on the second     #
-// # core (below).                                                                              #
+// # volume ramps per subframe on the front left and right buses, the reverb sends and the four #
+// # reverb lines of JASDsp::FX_BUF (below). Filters are not applied. The mixing runs on the    #
+// # game's core; with the 96 MB of an Old 3DS on the second core (below).                      #
 // ##############################################################################################
 
 #include <revolution/dsp.h>
 
-#include "JSystem/JAudio2/JASDspInterface.hpp"
+#include "JSystem/JAudio2/JASDSPInterface.hpp"
 #include "host.h"
 #include "rvl_internal.h"
 
@@ -56,8 +56,38 @@ static const s16 kAfcCoefs[16][2] = {
     {1024, -1024},   {-1024, 1024}, {-1024, 0},    {-2048, 0},
 };
 
-// Bus ids written by TChannel::setBusConnect; the others (reverb sends...) are not mixed yet.
-static const u16 kBusFrontLeft = 0x0D00, kBusFrontRight = 0x0D60, kBusBackLeft = 0x0DC0, kBusBackRight = 0x0E20;
+// The mixing buffers, by the ids the game writes (TChannel::setBusConnect, JASDsp::SEND_TABLE),
+// mapped as Dolphin's renderer for this DSP program maps them (Zelda.cpp, BufferForID): 0D00 and
+// 0D60 are the front left and right, played; 0DC0, 0E20, 0E80 and 0EE0 are the inputs of the
+// four reverb lines (below); 0F40 and 0CA0, the back left and right, are not played (Dolphin
+// neither: the stereo output is the front buffers). Until CIA 0.23.7 0DC0 and 0E20 were taken for
+// the back buses and played dry, and no reverb was mixed.
+enum MixBuffer { BUF_FRONT_LEFT, BUF_FRONT_RIGHT, BUF_REVERB0, BUF_REVERB1, BUF_REVERB_LEFT, BUF_REVERB_RIGHT, BUF_COUNT };
+static const int kBufferBack = -2;  // a back buffer, or no id: not played
+static const int kBufferNone = -1;  // an id this DSP program has no buffer for
+
+static int bufferForId(u16 id) {
+    switch (id) {
+    case 0x0D00:
+        return BUF_FRONT_LEFT;
+    case 0x0D60:
+        return BUF_FRONT_RIGHT;
+    case 0x0DC0:
+        return BUF_REVERB0;
+    case 0x0E20:
+        return BUF_REVERB1;
+    case 0x0E80:
+        return BUF_REVERB_LEFT;
+    case 0x0EE0:
+        return BUF_REVERB_RIGHT;
+    case 0x0000:
+    case 0x0F40:
+    case 0x0CA0:
+        return kBufferBack;
+    default:
+        return kBufferNone;
+    }
+}
 
 enum Format { FORMAT_AFC4, FORMAT_PCM16, FORMAT_OTHER, FORMAT_OSC };
 
@@ -217,7 +247,7 @@ static void startVoice(JASDsp::TChannel& ch, Voice& v) {
     }
 }
 
-static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, int samples, u32 level) {
+static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32 (*buffers)[kSubframeSamples], int samples) {
     if (ch._8 != 0) {
         ch._8 = 0;
         startVoice(ch, v);
@@ -230,8 +260,8 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
         return;
     }
 
-    // Volumes (1.15, ramped from the current to the target value over this frame).
-    s32 startL = 0, startR = 0, endL = 0, endR = 0;
+    // Volumes (1.15, ramped from the current to the target value over this frame), per buffer.
+    s32 start[BUF_COUNT] = {}, end[BUF_COUNT] = {};
     if (ch._58 != 0) {
         // Auto mixer (JASChannel::updateAutoMixer, sounds whose mix config is 0xFFFF): volume
         // _56 (current _54) and pan in the top byte of _50 (0 left .. 127 right), gains in 1.15.
@@ -245,28 +275,46 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
         s32 gainL = sPanCos[pan], gainR = sPanCos[127 - pan];
         s32 target = static_cast< s16 >(ch._56), current = static_cast< s16 >(ch._54);
         ch._54 = ch._56;
-        startL = (current * gainL) >> 15, endL = (target * gainL) >> 15;
-        startR = (current * gainR) >> 15, endR = (target * gainR) >> 15;
+        start[BUF_FRONT_LEFT] = (current * gainL) >> 15, end[BUF_FRONT_LEFT] = (target * gainL) >> 15;
+        start[BUF_FRONT_RIGHT] = (current * gainR) >> 15, end[BUF_FRONT_RIGHT] = (target * gainR) >> 15;
+        // The reverb send, _52 (1.15, from the sound's fxmix): the same volumes times it, into the
+        // front reverb lines (Dolphin, Zelda.cpp, RenderVoice: reverb_volumes).
+        const s32 reverb = static_cast< s16 >(ch._52);
+        if (reverb != 0) {
+            start[BUF_REVERB_LEFT] = (start[BUF_FRONT_LEFT] * reverb) >> 15;
+            end[BUF_REVERB_LEFT] = (end[BUF_FRONT_LEFT] * reverb) >> 15;
+            start[BUF_REVERB_RIGHT] = (start[BUF_FRONT_RIGHT] * reverb) >> 15;
+            end[BUF_REVERB_RIGHT] = (end[BUF_FRONT_RIGHT] * reverb) >> 15;
+        }
     }
     for (int bus = 0; bus < 6 && ch._58 == 0; bus++) {
         u16* mixer = &ch._10[0][0] + bus * 4;
         u16 id = mixer[0];
         s32 target = static_cast< s16 >(mixer[1]), current = static_cast< s16 >(mixer[2]);
         mixer[2] = mixer[1];
-        if (id == kBusFrontLeft || id == kBusBackLeft) {
-            startL += current, endL += target;
-        } else if (id == kBusFrontRight || id == kBusBackRight) {
-            startR += current, endR += target;
-        } else if (id != 0 && target != 0 && !(sReportedBuses & (1u << (bus + 8)))) {
+        const int buffer = bufferForId(id);
+        if (buffer >= 0) {
+            start[buffer] += current, end[buffer] += target;
+        } else if (buffer == kBufferNone && target != 0 && !(sReportedBuses & (1u << (bus + 8)))) {
             sReportedBuses |= 1u << (bus + 8);
             hostLog("dsp: bus %04X (mixer %d) not mixed yet\n", id, bus);
         }
     }
     u32 step = static_cast< u32 >(ch.mPitch) << 4;
     // The ramps advance by addition, in 16.8: the ARM11 has no divide instruction, and a division
-    // per sample of each voice was most of the mixing's cost at 268 MHz.
-    s32 volL = startL << 8, volR = startR << 8;
-    const s32 rampL = ((endL - startL) << 8) / samples, rampR = ((endR - startR) << 8) / samples;
+    // per sample of each voice was most of the mixing's cost at 268 MHz. Only the buffers the
+    // voice is heard in are mixed (most voices: the front two).
+    s32* out[BUF_COUNT];
+    s32 vol[BUF_COUNT], ramp[BUF_COUNT];
+    int outs = 0;
+    for (int b = 0; b < BUF_COUNT; b++) {
+        if (start[b] != 0 || end[b] != 0) {
+            out[outs] = buffers[b];
+            vol[outs] = start[b] << 8;
+            ramp[outs] = ((end[b] - start[b]) << 8) / samples;
+            outs++;
+        }
+    }
     s32 s0 = v.s0, s1 = v.s1;
     u32 frac = v.frac;
     // A voice is added at volume / 0x10000, as the DSP program does (Dolphin, Zelda.h,
@@ -276,10 +324,10 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
     // video: the black Luma's "mmh" at the start of a talk, CIA 0.21.3).
     for (int i = 0; i < samples; i++) {
         s32 sample = s0 + (((s1 - s0) * static_cast< s32 >(frac >> 1)) >> 15);
-        left[i] += (sample * (volL >> 8)) >> 16;
-        right[i] += (sample * (volR >> 8)) >> 16;
-        volL += rampL;
-        volR += rampR;
+        for (int o = 0; o < outs; o++) {
+            out[o][i] += (sample * (vol[o] >> 8)) >> 16;
+            vol[o] += ramp[o];
+        }
         frac += step;
         while (frac >= 0x10000) {
             frac -= 0x10000;
@@ -298,7 +346,104 @@ static void mixChannel(JASDsp::TChannel& ch, Voice& v, s32* left, s32* right, in
     if (v.ended) {
         ch.mIsFinished = 1;
     }
-    (void)level;
+}
+
+// ##############################################################################################
+// # The reverb lines                                                                           #
+// #                                                                                            #
+// # Four lines, set by the game in JASDsp::FX_BUF (setFXLine; SMG's values in AudEffector.cpp: #
+// # a ring of 64 subframes, 160 ms at 32 kHz, an 8-tap filter, 0x7000 into the front left for  #
+// # lines 0 and 2, into the front right for 1 and 3). As Dolphin's renderer does it (Zelda.cpp, #
+// # PrepareFrame, ApplyReverb, FinalizeFrame), each subframe:                                  #
+// #   before the voices  the line's subframe of 160 ms ago, filtered, is added to its front    #
+// #                      buffer and becomes the start of the line's input buffer               #
+// #   the voices         add their reverb sends on top (mixChannel)                            #
+// #   after the voices   the input buffer goes into the ring, for 160 ms later                  #
+// # So a sound with a reverb send repeats every 160 ms, softer each time: the echo the game's  #
+// # sounds have on the Wii, missing on the 3DS until CIA 0.23.7.                               #
+// ##############################################################################################
+static const int kReverbLines = 4;
+static const int kReverbBuffer[kReverbLines] = {BUF_REVERB0, BUF_REVERB1, BUF_REVERB_LEFT, BUF_REVERB_RIGHT};
+static s16 sReverbLast8[kReverbLines][8];  // the last 8 samples read of each line, for the filter
+static u16 sReverbFrame[kReverbLines];     // the ring's subframe being read and written
+
+static bool reverbLineOn(const JASDsp::FxBuf& line) {
+    return line._0 != 0 && line._4 != nullptr && line._2 != 0;
+}
+
+// samples: the 8 older ones, then the subframe; the filtered subframe goes from samples[0] on.
+static void filterReverb(s16* samples, const JASDsp::FxBuf& line) {
+    for (int i = 0; i < kSubframeSamples; i++) {
+        s32 sum = 0;
+        for (int j = 0; j < 8; j++) {
+            sum += static_cast< s32 >(samples[i + j]) * static_cast< s16 >(line._10[j]);
+        }
+        samples[i] = clamp16(sum >> 15);
+    }
+}
+
+static void reverbBeforeVoices(s32 (*buffers)[kSubframeSamples]) {
+    if (JASDsp::FX_BUF == nullptr) {
+        return;
+    }
+    for (int r = 0; r < kReverbLines; r++) {
+        const JASDsp::FxBuf& line = JASDsp::FX_BUF[r];
+        if (!reverbLineOn(line)) {
+            continue;
+        }
+        if (sReverbFrame[r] >= line._2) {
+            sReverbFrame[r] = 0;
+        }
+        s16 samples[8 + kSubframeSamples];
+        const s16* ring = line._4 + sReverbFrame[r] * kSubframeSamples;
+        for (int i = 0; i < 8; i++) {
+            samples[i] = sReverbLast8[r][i];
+        }
+        for (int i = 0; i < kSubframeSamples; i++) {
+            samples[8 + i] = ring[i];
+        }
+        for (int i = 0; i < 8; i++) {
+            sReverbLast8[r][i] = samples[kSubframeSamples + i];
+        }
+        // Bit 0: filtered before going to the front buffers; else bit 1: after.
+        if (line._0 & 1) {
+            filterReverb(samples, line);
+        }
+        const u16 ids[2] = {line._8, line._C};
+        const s16 volumes[2] = {line._A, line._E};
+        for (int d = 0; d < 2; d++) {
+            const int buffer = bufferForId(ids[d]);
+            if (buffer < 0 || volumes[d] == 0) {
+                continue;
+            }
+            for (int i = 0; i < kSubframeSamples; i++) {
+                buffers[buffer][i] += clamp16((static_cast< s32 >(samples[i]) * static_cast< u16 >(volumes[d])) >> 15);
+            }
+        }
+        if ((line._0 & 1) == 0 && (line._0 & 2) != 0) {
+            filterReverb(samples, line);
+        }
+        for (int i = 0; i < kSubframeSamples; i++) {
+            buffers[kReverbBuffer[r]][i] = samples[i];
+        }
+    }
+}
+
+static void reverbAfterVoices(s32 (*buffers)[kSubframeSamples]) {
+    if (JASDsp::FX_BUF == nullptr) {
+        return;
+    }
+    for (int r = 0; r < kReverbLines; r++) {
+        const JASDsp::FxBuf& line = JASDsp::FX_BUF[r];
+        if (!reverbLineOn(line)) {
+            continue;
+        }
+        s16* ring = line._4 + sReverbFrame[r] * kSubframeSamples;
+        for (int i = 0; i < kSubframeSamples; i++) {
+            ring[i] = clamp16(buffers[kReverbBuffer[r]][i]);
+        }
+        sReverbFrame[r] = static_cast< u16 >((sReverbFrame[r] + 1) % line._2);
+    }
 }
 
 // ##############################################################################################
@@ -334,17 +479,22 @@ static void mixSubframe(u32 index) {
     // their 1.15 volume (mixChannel).
     u32 level = sFrameLevel;
 
-    static s32 sLeft[kSubframeSamples], sRight[kSubframeSamples];
-    for (int i = 0; i < samples; i++) {
-        sLeft[i] = sRight[i] = 0;
+    static s32 sBuffers[BUF_COUNT][kSubframeSamples];
+    for (int b = 0; b < BUF_COUNT; b++) {
+        for (int i = 0; i < samples; i++) {
+            sBuffers[b][i] = 0;
+        }
     }
+    s32* const sLeft = sBuffers[BUF_FRONT_LEFT];
+    s32* const sRight = sBuffers[BUF_FRONT_RIGHT];
+    reverbBeforeVoices(sBuffers);
     int active = 0;
     if (JASDsp::CH_BUF != nullptr && sVaramBase != 0) {
         for (int c = 0; c < kChannels; c++) {
             JASDsp::TChannel& ch = JASDsp::CH_BUF[c];
             if (ch.mIsActive != 0 && ch.mIsFinished == 0) {
                 active++;
-                mixChannel(ch, sVoices[c], sLeft, sRight, samples, level);
+                mixChannel(ch, sVoices[c], sBuffers, samples);
             }
         }
     }
@@ -369,6 +519,7 @@ static void mixSubframe(u32 index) {
         outL[i] = clamp16(static_cast< s32 >((static_cast< s64 >(sLeft[i]) * level) >> 12));
         outR[i] = clamp16(static_cast< s32 >((static_cast< s64 >(sRight[i]) * level) >> 12));
     }
+    reverbAfterVoices(sBuffers);
 }
 
 // ##############################################################################################
