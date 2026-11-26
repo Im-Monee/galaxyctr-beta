@@ -612,7 +612,9 @@ def make(files, out, report=None):
     return manifest
 
 
-CARD_LAYOUTS = ("SysInfoWindow", "IconSave")  # the small window's system window and its star
+# The small window's system window, its save star, and the pause menu's Power Star: the program's
+# icon (builder_window.game_icon) from the first start's small window on (owner, 26 Nov 2026).
+CARD_LAYOUTS = ("SysInfoWindow", "IconSave", "PauseMenu")
 
 
 def card_ready(files):

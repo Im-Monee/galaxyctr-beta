@@ -354,6 +354,12 @@ class FirstStart(QWidget):
                 builder_window.pick_fonts()
                 builder_window.use_game_font()
                 self.galaxy = self.card_skin = True
+                if skin.has("star"):
+                    # The game's star as the program's icon from here on: the dock, and on Linux
+                    # the desktop's entry (follow_disc_icon), not only once the builder opens.
+                    from PySide6.QtWidgets import QApplication
+                    QApplication.instance().setWindowIcon(builder_window.game_icon())
+                    builder_window.follow_disc_icon()
         except Exception as error:  # noqa: BLE001 - the plain window
             self.B.log(f"First start: the small window keeps its plain look ({error!r}).")
         finally:
@@ -474,6 +480,10 @@ def prepare(app, builder):
     no kept files) and getting ready. True when the graphics are there afterwards. Closing the
     dialog leaves it for later: the builder's window then does not ask again this time."""
     import os
+    # No OpenGL: a popup on how to install it, and the builder ends here
+    # (galaxyctr_builder.require_graphics; an older builder's file does not have it).
+    if hasattr(builder, "require_graphics"):
+        builder.require_graphics(app)
     if not needed(builder):
         return True
     settings = builder.Settings()

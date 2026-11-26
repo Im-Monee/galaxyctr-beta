@@ -22,7 +22,7 @@ from PySide6.QtOpenGL import (QOpenGLBuffer, QOpenGLShader, QOpenGLShaderProgram
                               QOpenGLVertexArrayObject)
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-import builder_game  # the window's frame rate (follow_frame_rate)
+import builder_game  # the window's frame rate (frame_timer)
 
 GL_FLOAT, GL_TRIANGLES = 0x1406, 0x0004
 GL_COLOR_BUFFER_BIT, GL_DEPTH_TEST, GL_CULL_FACE, GL_BLEND = 0x4000, 0x0B71, 0x0B44, 0x0BE2
@@ -235,7 +235,7 @@ class SkyView(QOpenGLWidget):
         self.renderer = SkyRenderer(folder, name)
         self.moving = moving
         self.started = None
-        self.timer = builder_game.follow_frame_rate(QTimer(self))  # Settings > Graphics: the frame rate
+        self.timer = builder_game.frame_timer(self)  # Settings > Graphics: the frame rate
         self.timer.timeout.connect(self.update)
 
     def initializeGL(self):
@@ -665,7 +665,7 @@ class TitleSkyView(QOpenGLWidget):
                 self.effects.emit(self.EFFECT, scale=self.EFFECT_SCALE)
         except Exception:  # noqa: BLE001 - the sky shows without its shooting stars
             self.effects = None
-        self.timer = builder_game.follow_frame_rate(QTimer(self))  # Settings > Graphics: the frame rate
+        self.timer = builder_game.frame_timer(self)  # Settings > Graphics: the frame rate
         self.timer.timeout.connect(self.update)
 
     def initializeGL(self):

@@ -42,7 +42,7 @@ from PySide6.QtGui import (QColor, QCursor, QDesktopServices, QFont, QFontDataba
                            QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
                            QRadialGradient)
 from PySide6.QtWidgets import (QApplication, QFileDialog, QGraphicsOpacityEffect,
-                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QSlider, QStackedLayout,
                                QVBoxLayout, QWidget)
 
@@ -115,6 +115,13 @@ def use_game_font():
 GAME_CHAR_SPACE = 1.0 / 29.7  # charSpace over the font height, SysInfoWindow TxtConfirm
 
 
+# The smallest text's pixel size. The game's font has round and pointed letters (c, e, o, s, v,
+# w) a little past the line, as type often does; at 11 and 12 pixels that became a whole pixel and
+# the letters stood at different heights (owner, 26 Nov 2026). From 13 the system's hinting lines
+# them up (only x still differs), from 15 all of them.
+SMALL_TEXT = 13
+
+
 def font(size, weight=400, kind="text", spacing=0.0):
     result = QFont(FAMILIES.get(kind) or QApplication.font().family())
     result.setPixelSize(size)
@@ -165,7 +172,7 @@ def reduce_motion():
         else:
             import subprocess
             answer = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "enable-animations"],
-                                    capture_output=True, text=True, timeout=5)
+                                    capture_output=True, text=True, timeout=5, env=system_environment())
             return answer.stdout.strip() == "false"
     except Exception:  # noqa: BLE001 - no answer means the usual motion
         pass
@@ -259,12 +266,22 @@ def graphics_cards():
                 index += 1
         elif sys.platform.startswith("linux"):
             import subprocess
-            out = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5).stdout
+            out = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5, env=system_environment()).stdout
             names = [line.split(": ", 1)[1] for line in out.splitlines()
                      if ("VGA" in line or "3D controller" in line or "Display controller" in line) and ": " in line]
     except Exception:  # noqa: BLE001 - the list is only shown
         pass
     return names
+
+
+def short_card_name(name):
+    """A graphics card's name without what makes it long and says nothing to the user: the maker's
+    company words and lspci's revision ("NVIDIA Corporation AD107M [GeForce RTX 4050] (rev a1)"
+    becomes "NVIDIA AD107M [GeForce RTX 4050]")."""
+    import re
+    name = re.sub(r"\s*\(rev [0-9a-f]+\)$", "", name.strip())
+    name = re.sub(r"\b(Corporation|Corp\.|Inc\.|Co\., Ltd\.|\[AMD/ATI\]|Advanced Micro Devices, Inc\.)\s*", "", name)
+    return re.sub(r"\s{2,}", " ", name).strip()
 
 
 def graphics_card_in_use():
@@ -341,7 +358,7 @@ QLabel { color: #ecf3ff; background: transparent; }
 QLineEdit { color: #ecf3ff; background: rgba(255,255,255,16); border: 1px solid rgba(120,190,255,80);
             border-radius: 12px; padding: 10px 14px; selection-background-color: #2f7bff; }
 QLineEdit:focus { border: 2px solid #a0e1ff; background: rgba(63,216,255,24); }
-QPlainTextEdit { color: #b4c2e6; background: transparent; border: none;
+QPlainTextEdit, QTextEdit { color: #b4c2e6; background: transparent; border: none;
                  border-top: 1px solid rgba(120,190,255,45); padding: 10px 0 0 0;
                  selection-background-color: #2f7bff; }
 QScrollArea { background: transparent; border: none; }
@@ -358,7 +375,7 @@ QSlider::sub-page:horizontal { border-radius: 3px;
 QSlider::handle:horizontal { width: 18px; height: 18px; margin: -7px 0; border-radius: 9px;
     background: #ecf3ff; border: 3px solid #3fd8ff; }
 QSlider:focus { border: 2px solid #a0e1ff; border-radius: 10px; }
-QPlainTextEdit:focus { border: none; }
+QPlainTextEdit:focus, QTextEdit:focus { border: none; }
 QComboBox { color: #ecf3ff; background: rgba(255,255,255,16); border: 1px solid rgba(120,190,255,80);
             border-radius: 12px; padding: 9px 14px; }
 QComboBox::drop-down { border: none; width: 26px; }
@@ -384,6 +401,23 @@ class Text(QLabel):
         """Never wrapped by width (owner, 25 Nov 2026): lines break only after a sentence
         (sentence_lines), and the layout gives the label the width of its longest one."""
         super().setWordWrap(False)
+
+    def ink_room(self):
+        """The room the words' ink takes past their box: the game's letters reach a little past
+        their advance, and the sky shadow lies a tenth of the font's height down and right. Without
+        it the last character was cut, as the % of the build's percentage (owner, 26 Nov 2026)."""
+        size = self.font().pixelSize()
+        if size <= 0:
+            size = round(self.font().pointSizeF() * 4 / 3) or 14
+        return math.ceil(size * 0.15) + 1
+
+    def sizeHint(self):
+        room = self.ink_room()
+        return super().sizeHint() + QSize(room, room)
+
+    def minimumSizeHint(self):
+        room = self.ink_room()
+        return super().minimumSizeHint() + QSize(room, room)
 
     def recolor(self):
         c = tone(self, self.color)
@@ -449,7 +483,7 @@ def style_sheet():
     return STYLE + f"""
 QLineEdit, QLineEdit:focus {{ color: rgb({on_plate}); background: transparent; border: none; padding: 6px 18px;
     selection-background-color: rgb({ink}); selection-color: rgb({plate_fill.red()},{plate_fill.green()},{plate_fill.blue()}); }}
-QPlainTextEdit, QPlainTextEdit:focus {{ color: rgb({ink}); background: transparent; border: none; padding: 0; }}
+QPlainTextEdit, QPlainTextEdit:focus, QTextEdit, QTextEdit:focus {{ color: rgb({ink}); background: transparent; border: none; padding: 0; }}
 QScrollBar:vertical {{ width: 0px; }}
 QScrollBar:horizontal {{ height: 0px; }}
 """
@@ -466,11 +500,6 @@ def game_icon():
     return QIcon(pixmap)
 
 
-def make_icon():
-    """The window's icon (icon_image)."""
-    return QIcon(QPixmap.fromImage(icon_image()))
-
-
 # ##############################################################################################
 # # The program's icon on Linux                                                               #
 # #                                                                                            #
@@ -482,6 +511,7 @@ def make_icon():
 # # they change (the program moved, the star came). Not from the repository: the entry would   #
 # # start Python, not the builder.                                                             #
 # ##############################################################################################
+GENERIC_ICON = "application-x-executable"  # the icon theme's program icon (freedesktop name)
 DESKTOP_ID = "galaxyctr-builder"  # the app id (QGuiApplication.setDesktopFileName) and the files' names
 
 
@@ -509,7 +539,20 @@ def follow_disc_icon():
     if not sys.platform.startswith("linux"):
         return
     star = SKIN is not None and SKIN.has("star") and disc_present()
-    register_linux_desktop(game_icon() if star else make_icon())
+    # GNOME's list of applications reads an entry once and keeps it until the next login (the
+    # dock follows at once). So the first entry is written only with the game's star, after the
+    # first start made it: the plain icon, written first, stayed in that list (owner, 26 Nov
+    # 2026). Until then the dock shows the desktop's generic icon. Without the star (the disc
+    # image missing) the entry names the desktop's generic program icon: the builder's own blue
+    # star is never shown (owner, 26 Nov 2026).
+    if not star and not linux_desktop_entry().is_file():
+        return
+    register_linux_desktop(game_icon() if star else None)
+
+
+def linux_desktop_entry():
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return data / "applications" / f"{DESKTOP_ID}.desktop"
 
 
 def register_linux_desktop(icon):
@@ -521,18 +564,22 @@ def register_linux_desktop(icon):
         data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
         icons = data / "icons" / "hicolor" / "256x256" / "apps"
         desktop = data / "applications" / f"{DESKTOP_ID}.desktop"
-        buffer = QBuffer()
-        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        icon.pixmap(256, 256).save(buffer, "PNG")
-        picture = bytes(buffer.data())
-        # The picture's name carries its content's fingerprint: a new icon (the star after the
-        # plain one) is a new path in the .desktop file, which the desktop then reloads at once;
-        # the same path with a new picture stayed the old one in its cache (owner, 25 Nov 2026).
-        png = icons / f"{DESKTOP_ID}-{hashlib.sha1(picture).hexdigest()[:10]}.png"
         old = sorted(icons.glob(f"{DESKTOP_ID}*.png")) if icons.is_dir() else []
-        if not png.is_file():
-            write_whole(png, picture)
-            B.log(f"Registered with the desktop: {png}")
+        if icon is None:  # the desktop's own generic program icon, from its icon theme
+            png, name = None, GENERIC_ICON
+        else:
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            icon.pixmap(256, 256).save(buffer, "PNG")
+            picture = bytes(buffer.data())
+            # The picture's name carries its content's fingerprint: a new icon is a new path in
+            # the .desktop file, which the dock then reloads at once; the same path with a new
+            # picture stayed the old one in its cache (owner, 25 Nov 2026).
+            png = icons / f"{DESKTOP_ID}-{hashlib.sha1(picture).hexdigest()[:10]}.png"
+            name = str(png)
+            if not png.is_file():
+                write_whole(png, picture)
+                B.log(f"Registered with the desktop: {png}")
         entry = ("[Desktop Entry]\n"
                  "Type=Application\n"
                  "Name=GalaxyCTR Builder\n"
@@ -540,7 +587,7 @@ def register_linux_desktop(icon):
                  f"Exec={desktop_exec(Path(sys.executable).resolve())}\n"
                  # The picture's own path: by its name alone (the icon theme's lookup) GNOME
                  # showed the gear, in the dock and among the applications (owner, 25 Nov 2026).
-                 f"Icon={png}\n"
+                 f"Icon={name}\n"
                  "Terminal=false\n"
                  "Categories=Game;Utility;\n"
                  f"StartupWMClass={DESKTOP_ID}\n").encode("utf-8")
@@ -560,31 +607,6 @@ def write_whole(path, content):
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_bytes(content)
     os.replace(temporary, path)
-
-
-def icon_image():
-    """The builder's icon, 256 x 256: a four-pointed star like the logo's, on a night-blue tile.
-    The window shows it until the game's graphics are there (game_icon)."""
-    pixmap = QImage(256, 256, QImage.Format.Format_ARGB32_Premultiplied)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pixmap)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    tile = QLinearGradient(0, 0, 256, 256)
-    tile.setColorAt(0, QColor(18, 30, 86))
-    tile.setColorAt(1, QColor(6, 8, 28))
-    p.setBrush(tile)
-    p.setPen(QPen(alpha(CYAN, 200), 6))
-    p.drawRoundedRect(QRectF(8, 8, 240, 240), 56, 56)
-    glow = QRadialGradient(QPointF(128, 128), 110)
-    glow.setColorAt(0, alpha(CYAN, 150))
-    glow.setColorAt(1, alpha(CYAN, 0))
-    p.setBrush(glow)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(QPointF(128, 128), 110, 110)
-    p.setBrush(QColor(245, 250, 255))
-    p.drawPath(star_path(QPointF(128, 128), 92, 20))
-    p.end()
-    return pixmap
 
 
 # ##############################################################################################
@@ -679,7 +701,7 @@ class Space(QWidget):
         self.frames_drawn = 0
         self.nebula = self.frost = None
         self.comet = None
-        self.timer = builder_game.follow_frame_rate(QTimer(self))  # Settings > Video: the frame rate
+        self.timer = builder_game.frame_timer(self)  # Settings > Video: the frame rate
         self.timer.timeout.connect(self.tick)
         self.timer.start()
 
@@ -687,7 +709,18 @@ class Space(QWidget):
         """True when one of the game's skies covers the window, so this painted space is unseen."""
         return any(sky is not None and sky.isVisible() for sky in (getattr(self, "sky", None), getattr(self, "title_sky", None)))
 
+    def moving_sky_shows(self):
+        """True when a game sky covers the window and moves on the beat: its redraw is a frame
+        of the whole window already."""
+        return any(sky is not None and sky.isVisible() and sky.timer.isActive()
+                   for sky in (getattr(self, "sky", None), getattr(self, "title_sky", None)))
+
     def tick(self):
+        if self.moving_sky_shows():
+            # The sky's own redraw repaints the window with everything on it. Asked here too, Qt
+            # painted the window twice in that one frame (measured on Wayland: 120 paints a
+            # second at 60).
+            return
         if REDUCED or self.game_sky_shows():
             # The space stands still (or does not show); the window is still redrawn, for the
             # progress indicators and everything else that moves on it.
@@ -730,9 +763,15 @@ class Space(QWidget):
         self.frost = image.scaled(max(4, small_w // 3), max(4, small_h // 3), Qt.AspectRatioMode.IgnoreAspectRatio,
                                   Qt.TransformationMode.SmoothTransformation)
 
+    def event(self, event):
+        if event.type() == QEvent.Type.UpdateRequest:
+            # The frame rate counter (FrameCounter): one frame for each time Qt draws the window
+            # and shows it, whatever part of it changed (a game sky in OpenGL covers this
+            # painted space, which then is not drawn at all).
+            self.frames_drawn += 1
+        return super().event(event)
+
     def paintEvent(self, event):
-        if event.rect() == self.rect():
-            self.frames_drawn += 1  # the frame rate counter (FrameCounter)
         if self.game_sky_shows():
             return  # the game's sky covers the window: nothing of this painted space shows
         if self.nebula is None:
@@ -1162,6 +1201,11 @@ class Segmented(KeyboardFocus, QWidget):
             return QSize(max(metrics.horizontalAdvance(c) for c in self.choices) + 56, 44)
         return QSize(sum(metrics.horizontalAdvance(c) + 40 for c in self.choices), 44)
 
+    def minimumSizeHint(self):
+        # Never narrower than its longest choice: without it the grid squeezed the plate between
+        # the arrows to nothing in a narrower window (owner, 26 Nov 2026).
+        return self.sizeHint()
+
     def set_index(self, index, notify=False):
         index = max(0, min(len(self.choices) - 1, index))
         if index == self.index and not notify:
@@ -1238,6 +1282,9 @@ class ArrowChoice(QWidget):
                 self.right.clicked.connect(lambda: self.step(1))
                 self.choices.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 self.choices.setCursor(Qt.CursorShape.ArrowCursor)
+                # The game's counter keeps one size, as wide as its longest choice, whatever the
+                # window's width (owner, 26 Nov 2026).
+                self.choices.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             else:
                 self.left = self.right = None
         if self.left is not None:
@@ -1496,7 +1543,7 @@ class StepRow(QWidget):
         title_color = {"run": INK, "done": mix(INK, CYAN, 0.25), "fail": mix(BAD, INK, 0.3),
                        "skip": alpha(MUTED, 110)}.get(self.state, MUTED)
         p.setPen(tone(self, title_color))
-        title_font, detail_font = font(15, 600 if self.state == "run" else 500), font(12)
+        title_font, detail_font = font(15, 600 if self.state == "run" else 500), font(SMALL_TEXT)
         title_metrics, detail_metrics = QFontMetrics(title_font), QFontMetrics(detail_font)
         text_width = self.width() - 54
         # The words in the middle of the icon's height: the title alone, or the title and the
@@ -1583,7 +1630,7 @@ class Logo(QWidget):
         self.scaled = None
         self.setMinimumHeight(150)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.timer = builder_game.follow_frame_rate(QTimer(self))
+        self.timer = builder_game.frame_timer(self)
         self.timer.timeout.connect(self.tick)
 
     def sizeHint(self):
@@ -1655,7 +1702,9 @@ class Badge(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.good, self.since = True, now()
-        self.setFixedSize(170, 150)
+        # Smaller than it was (170 x 150, the star 130 pixels): the install guide below gets the
+        # height, to show more of its steps in a small window (owner, 26 Nov 2026).
+        self.setFixedSize(130, 106)
 
     def show_result(self, good):
         """good: the Power Star with SE_SY_STAR_GET (as PowerStar plays when it is collected);
@@ -1675,7 +1724,7 @@ class Badge(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        center, radius = QPointF(self.width() / 2, self.height() / 2), 48.0
+        center, radius = QPointF(self.width() / 2, self.height() / 2), 38.0
         age = 10.0 if REDUCED else now() - self.since
         grow = ease_out(age / 0.5)
         if self.good and skin_icon("star"):  # the pause menu's collected star, as it is
@@ -1881,16 +1930,47 @@ class EdgeFade(QObject):
         height = max(1, self.viewport.height())
         edge = min(0.5, self.FADE / height)
         mask = QLinearGradient(0, 0, 0, height)
-        mask.setColorAt(0.0, QColor(0, 0, 0, 0))
-        mask.setColorAt(edge, QColor(0, 0, 0, 255))
-        mask.setColorAt(1.0 - edge, QColor(0, 0, 0, 255))
-        mask.setColorAt(1.0, QColor(0, 0, 0, 0))
+        # Eased (the square of the way in), not straight: near the edge almost nothing shows, so a
+        # panel's dark shadow passing there no longer stood out as a thin black line (owner, 26
+        # Nov 2026); the same 28 pixels to full.
+        steps = 8
+        for step in range(steps + 1):
+            t = step / steps
+            opacity = round(255 * t * t)
+            mask.setColorAt(edge * t, QColor(0, 0, 0, opacity))
+            mask.setColorAt(1.0 - edge * t, QColor(0, 0, 0, opacity))
         self.effect.setOpacityMask(mask)
 
 
+# ##############################################################################################
+# # The system's own programs                                                                  #
+# #                                                                                            #
+# # The Linux program runs with its own libraries first (LD_LIBRARY_PATH, PyInstaller), and   #
+# # the system's programs then fail to load theirs: xdg-open opened nothing ("file ''"), so the #
+# # result page's Open the log and Open the files folder did nothing (owner, 26 Nov 2026).    #
+# # They run with the system's own environment (galaxyctr_builder.program_environment).        #
+# ##############################################################################################
+def system_environment():
+    """The environment for the system's own programs: the desktop's, without this program's
+    libraries. None (this process's) when not the frozen Linux or macOS program."""
+    if not getattr(sys, "frozen", False) or os.name == "nt" or B is None:
+        return None
+    return B.program_environment()
+
+
 def open_path(path):
-    if path:
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+    """Opens a file or folder in the system's program for it."""
+    if not path:
+        return
+    if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+        import subprocess
+        try:
+            subprocess.Popen(["xdg-open", str(path)], env=system_environment(), stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            return
+        except OSError as error:
+            B.log(f"Could not open {path} ({error!r}).")
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 # ##############################################################################################
@@ -2903,7 +2983,7 @@ class TitlePage(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.nerve, self.step, self.clock = "bgm", 0, None
         self.ahead = 0.0  # the share of the next game frame the layouts are drawn at
-        self.timer = builder_game.follow_frame_rate(QTimer(self))  # drawn at the window's frame rate
+        self.timer = builder_game.frame_timer(self)  # drawn at the window's frame rate
         self.timer.timeout.connect(self.tick)
 
     def showEvent(self, event):
@@ -3340,16 +3420,6 @@ class SettingsPage(QWidget):
         folder_row.addWidget(browse)
         self.ftp = GameLineEdit()
         self.ftp.setPlaceholderText("Asked at the first copy over Wi-Fi, for example 192.168.1.10:5000")
-        self.connections = make_slider()
-        self.connections.setRange(1, B.FTP_MAX_CONNECTIONS)
-        self.connections.setMinimumHeight(30)
-        self.connections_shown = label("5", 18, 700, CYAN, "heading")
-        self.connections_shown.setMinimumWidth(30)
-        self.connections.valueChanged.connect(lambda value: self.connections_shown.setText(str(value)))
-        connections_row = QHBoxLayout()
-        connections_row.addWidget(self.connections, 1)
-        connections_row.addWidget(self.connections_shown)
-        self.connections_shown.setVisible(isinstance(self.connections, QSlider))  # the counter shows it
         self.letter = GameLineEdit()
         self.letter.setMaxLength(1)
         self.letter.setMaximumWidth(90)
@@ -3358,15 +3428,16 @@ class SettingsPage(QWidget):
         rows = [("Keep the game files", "About 9 GB kept between builds. Updates convert only what changed, without the disc.", self.keep),
                 ("Window position and screen", "Restore the window where you left it when you reopen the builder.", self.remember_window),
                 ("Folder of the kept files", "Where the kept game files are.", folder_row),
-                ("3DS FTP address", "The address the FTP app on the 3DS shows, as ip:port.", self.ftp),
-                ("FTP connections at once", f"1 to {B.FTP_MAX_CONNECTIONS}. More is faster. Lower it if the FTP app refuses them.", connections_row)]
+                ("3DS FTP address", "The address the FTP app on the 3DS shows, as ip:port.", self.ftp)]
+        # The number of FTP connections is chosen in the copy's own window, each time (owner, 26
+        # Nov 2026), which keeps the last one in settings.txt (ftp_connections).
         if os.name == "nt":
             rows.append(("SD card drive letter", "The letter offered first when copying to the SD card.", self.letter))
         for index, (name, help_text, control) in enumerate(rows):
             words = QVBoxLayout()
             words.setSpacing(3)
             words.addWidget(label(name, 15, 600, INK))
-            hint = label(help_text, 12, 400, MUTED, wrap=True)
+            hint = label(help_text, SMALL_TEXT, 400, MUTED, wrap=True)
             words.addWidget(hint)
             # The name and its hint together, in the middle of the row: the game's controls are
             # taller, and the extra height was split between the two (owner, 25 Nov 2026).
@@ -3382,7 +3453,7 @@ class SettingsPage(QWidget):
         self.gpu = ArrowChoice(tuple(name for name, _ in self.gpu_choices))
         self.motion = ArrowChoice(tuple(name for name, _ in MOTION_CHOICES))
         self.counter = ArrowChoice(("Hidden", "Shown"))
-        self.gpu_hint = label("", 12, 400, MUTED, wrap=True)
+        self.gpu_hint = label("", SMALL_TEXT, 400, MUTED, wrap=True)
         graphics_panel = Glass(radius=24)
         graphics_grid = QGridLayout(graphics_panel)
         graphics_grid.setContentsMargins(30, 26, 30, 26)
@@ -3406,12 +3477,21 @@ class SettingsPage(QWidget):
             if help_text is None:
                 words.addWidget(self.gpu_hint)
             else:
-                hint = label(help_text, 12, 400, MUTED, wrap=True)
+                hint = label(help_text, SMALL_TEXT, 400, MUTED, wrap=True)
                 words.addWidget(hint)
             graphics_grid.addLayout(words, index, 0, Qt.AlignmentFlag.AlignVCenter)  # as in the grid above
             graphics_grid.addWidget(control, index, 1)
         self.grids = (grid, graphics_grid)
         even_rows(*self.grids)
+        # Every choice between the game's arrows as wide as the longest of them all: the arrows
+        # stand in one column, whatever the window's width (owner, 26 Nov 2026).
+        plates = [c.choices for c in (self.keep, self.remember_window, self.fps, self.vsync, self.gpu,
+                                      self.motion, self.counter)
+                  if isinstance(c, ArrowChoice) and c.left is not None]
+        if plates:
+            width = max(plate.sizeHint().width() for plate in plates)
+            for plate in plates:
+                plate.setFixedWidth(width)
         sections = QWidget()
         column = QVBoxLayout(sections)
         column.setContentsMargins(0, 0, 0, 0)
@@ -3442,7 +3522,6 @@ class SettingsPage(QWidget):
         self.remember_window.set_index(1 if settings.get("remember_window") == "yes" else 0)
         self.folder.setText(settings.get("work_folder") or "")
         self.ftp.setText(settings.get("ftp_address") or "")
-        self.connections.setValue(B.ftp_connections(settings))
         self.letter.setText(settings.get("last_sd_letter") or "")
         values = [value for _, value in FRAME_RATES]
         fps = graphics(settings, "graphics_fps")
@@ -3460,10 +3539,13 @@ class SettingsPage(QWidget):
         hint = ("On computers with two cards, which one draws the window. Changes when the builder starts again."
                 if os.name == "nt" else
                 "Draw on the second card of a computer with two (PRIME). Changes when the builder starts again.")
-        if cards:
-            hint += " Cards: " + ", ".join(cards) + "."
+        # A sentence each, with the makers' plain names: the window never breaks a sentence (25
+        # Nov 2026), and the cards in one sentence made a line wider than the narrow window, which
+        # pushed the choices' arrows out of the panel (owner, 26 Nov 2026).
+        for number, card in zip(("First", "Second", "Third", "Fourth"), cards):
+            hint += f" {number} card: {short_card_name(card)}."
         if in_use:
-            hint += " Drawing now on " + in_use + "."
+            hint += " Drawing now on " + short_card_name(in_use) + "."
         self.gpu_hint.setText(hint)
         self.gpu_hint.setVisible(bool(hint))  # no empty line under the name
         even_rows(*self.grids)  # the card's hint can make its row the tallest
@@ -3486,7 +3568,6 @@ class SettingsPage(QWidget):
         settings = B.Settings()
         wanted = {"keep_files": self.KEEP_VALUES[self.keep.index], "work_folder": self.folder.text().strip() or None,
                   "ftp_address": B.parse_ftp_address(address) and "%s:%d" % B.parse_ftp_address(address) or None,
-                  "ftp_connections": str(self.connections.value()),
                   "remember_window": "yes" if self.remember_window.index else None}
         if os.name == "nt":
             wanted["last_sd_letter"] = letter or None
@@ -3606,7 +3687,7 @@ class BuildPage(QWidget):
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(4000)
-        self.log.setFont(font(12, kind="mono"))
+        self.log.setFont(font(SMALL_TEXT, kind="mono"))
         log_column.addWidget(self.log, 1)
         right.addWidget(log_panel, 1)
         layout.addLayout(right, 1)
@@ -3696,20 +3777,30 @@ class DonePage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addStretch(1)
         row = QHBoxLayout()
-        row.addStretch(1)
+        row.addStretch(0)  # the card takes the width first, up to its maximum
+        # The install guide shows whole, never scrolled (owner, 26 Nov 2026), so the page gives
+        # it the room: the card as wide as the window allows (the guide's lines wrap less), the
+        # star beside the title instead of above it, and the three buttons on one row.
         self.card = Glass(radius=28, tint=120)
-        self.card.setMinimumWidth(640)  # no maximum: as wide as its longest sentence
+        self.card.setMinimumWidth(640)
+        self.card.setMaximumWidth(900)
         column = QVBoxLayout(self.card)
-        column.setContentsMargins(40, 30, 40, 30)
-        column.setSpacing(12)
+        column.setContentsMargins(40, 18, 40, 20)
+        column.setSpacing(10)
+        top = QHBoxLayout()
+        top.setSpacing(18)
         self.badge = Badge()
-        column.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignHCenter)
+        top.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        words = QVBoxLayout()
+        words.setSpacing(4)
+        words.addStretch(1)
         self.title = label("", 30, 700, INK, "heading")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        column.addWidget(self.title)
+        words.addWidget(self.title)
         self.message = label("", 15, 400, MUTED, wrap=True)
-        self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        column.addWidget(self.message)
+        words.addWidget(self.message)
+        words.addStretch(1)
+        top.addLayout(words, 1)
+        column.addLayout(top)
         self.guide_panel = GuidePanel()
         self.guide = self.guide_panel.text
         column.addWidget(self.guide_panel)
@@ -3720,11 +3811,9 @@ class DonePage(QWidget):
         again = Button("Main menu", "back", icon="back")
         again.clicked.connect(window.show_start)
         self.again = again
-        column.addSpacing(6)
-        column.addLayout(button_row([self.open_log, self.open_folder], "center"))
-        column.addLayout(button_row([again], "center"))
-        row.addWidget(self.card, 3)
-        row.addStretch(1)
+        column.addLayout(button_row([self.open_log, self.open_folder, again], "center"))
+        row.addWidget(self.card, 1)
+        row.addStretch(0)
         outer.addLayout(row)
         outer.addStretch(1)
 
@@ -3758,9 +3847,24 @@ class DonePage(QWidget):
                 guide_text = Path(result.get("guide")).read_text(encoding="utf-8") if result.get("guide") else ""
             except OSError:
                 guide_text = ""
-        self.guide.setPlainText(guide_text)
+        self.guide.setPlainText(guide_text.rstrip())
         self.guide_panel.setVisible(bool(guide_text))
         self.open_folder.setVisible(bool(result.get("work")) and Path(str(result.get("work"))).exists())
+
+
+GUIDE_MARGIN = 31  # above and below the guide's text, inside its panel
+
+
+class GuideText(QTextEdit):
+    """The guide's text, asking for the height of all its lines (GuidePanel.fit)."""
+
+    def __init__(self):
+        super().__init__()
+        self.needed = 0
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        return QSize(hint.width(), self.needed or hint.height())
 
 
 class GuidePanel(QWidget):
@@ -3770,12 +3874,30 @@ class GuidePanel(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 18, 14, 20)
-        self.text = QPlainTextEdit()
+        # The same space above the first line as below the last (owner, 26 Nov 2026): the guide's
+        # closing line break is left out (show_result), so no empty line widens the bottom.
+        layout.setContentsMargins(22, GUIDE_MARGIN, 14, GUIDE_MARGIN + 4)  # +4: the last line's ink ends lower in its line
+        # Whole and fixed, never scrolled (owner, 26 Nov 2026): the text asks to be exactly as
+        # high as its wrapped lines at the panel's width (fit), and the window's smallest height
+        # gives it that (Window.fit_minimum_size). Only on a screen too low for that window
+        # does it get less, and then it scrolls rather than being cut.
+        self.text = GuideText()
+        self.text.setAcceptRichText(False)
         self.text.setReadOnly(True)
-        self.text.setFont(font(12, kind="mono"))
-        self.text.setMinimumHeight(170)
+        self.text.setFont(font(SMALL_TEXT, kind="mono"))
+        self.text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.text.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.text.setMinimumHeight(64)
+        self.text.document().documentLayout().documentSizeChanged.connect(self.fit)
         layout.addWidget(self.text)
+
+    def fit(self, size=None):
+        height = int(math.ceil(self.text.document().size().height())) + 2 * self.text.frameWidth()
+        if self.text.needed != height:
+            self.text.needed = height
+            self.text.setMaximumHeight(height)
+            self.text.updateGeometry()
 
     def paintEvent(self, event):
         if SKIN is not None and SKIN.has("page"):
@@ -3855,7 +3977,7 @@ class Window(Space):
         super().__init__()
         self.setObjectName("Space")
         self.setWindowTitle("GalaxyCTR Builder")
-        self.setMinimumSize(900, 640)
+        self.fit_minimum_size()
         self.resize(1120, 740)
         self.watch_geometry()
         self.setStyleSheet(style_sheet())
@@ -3938,8 +4060,25 @@ class Window(Space):
         if getattr(self, "geometry_ready", False):
             self.geometry_timer.start()
 
+    # ##################################################################################
+    # # The window's smallest size                                                     #
+    # #                                                                                #
+    # # 960 wide: the result page's three game buttons on one row, inside its card.    #
+    # # 750 high: the result page's install guide whole (owner, 26 Nov 2026: at 640  #
+    # # it was cut at step 6 on Windows at 125 percent, the game's font a little       #
+    # # taller there). Never taller than the screen it is on (a 1080p laptop at 150    #
+    # # percent has about 680): there the guide scrolls (GuidePanel).                  #
+    # ##################################################################################
+    MIN_WIDTH, MIN_HEIGHT = 960, 750
+
+    def fit_minimum_size(self):
+        screen = self.screen()
+        room = screen.availableGeometry().height() - 40 if screen is not None else self.MIN_HEIGHT  # 40: the title bar
+        self.setMinimumSize(self.MIN_WIDTH, max(640, min(self.MIN_HEIGHT, room)))  # 640: the smallest before
+
     def moveEvent(self, event):
         super().moveEvent(event)
+        self.fit_minimum_size()  # it may be on another screen now
         self.geometry_changed()
 
     def changeEvent(self, event):
@@ -4485,7 +4624,9 @@ def run(builder):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("GalaxyCTR Builder")
     app.setDesktopFileName(DESKTOP_ID)  # Linux: the app id the desktop finds the icon by
-    app.setWindowIcon(make_icon())
+    # No icon of the builder's own until the game's star is there (below): the system's (the
+    # program's file on Windows, the desktop's generic one on Linux). The blue star is never
+    # shown (owner, 26 Nov 2026).
     pick_fonts()
     global REDUCED, MOTION
     MOTION = graphics(settings, "graphics_motion")
@@ -4495,9 +4636,10 @@ def run(builder):
     follow_disc_icon()  # before any dialog asks for a missing disc image
     if (SKIN is None and builder_firststart.needed(B) and builder_game.L.Renderer.get() is not None
             and not os.environ.get("GALAXYCTR_DISC_LATER")):
-        # The first start (or a builder that changed the game files it keeps): the disc is asked
-        # in a small window before this one opens (builder_firststart).
-        if builder_firststart.run(app, B):
+        # The first start (or a builder that changed the game files it keeps), as the launcher's:
+        # the disc in the system's own file dialog (no window before the game's graphics are
+        # out), then the small window gets ready from it (builder_firststart.prepare).
+        if builder_firststart.prepare(app, B):
             SKIN = load_skin()
     use_game_font()
     use_game_cursor()

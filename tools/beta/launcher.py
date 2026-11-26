@@ -379,6 +379,10 @@ def choose_copy():
         tag = release["tag_name"]
         if current and current.tag == tag:
             say(f"  Up to date ({tag}).", "Everything is up to date!")
+        elif FROZEN and version_key(builtin.tag) > version_key(tag):
+            # A test build newer than the release: its own copy goes into the folder below, so
+            # downloading the release first (about 120 MB) was thrown away at every start.
+            say(f"  This builder's own version ({builtin.tag}) is newer than {tag}.", "Everything is up to date!")
         elif folder is None:
             say(f"  Version {tag} is out, but there is no folder to download it to.",
                 f"Version {tag} is out, but it cannot be saved on this computer.")
@@ -531,7 +535,12 @@ def first_start(app):
         builder_window.B = builder
         builder_window.pick_fonts()
         builder_firststart.prepare(app, builder)
-        return builder_window.splash_painter()
+        card = builder_window.splash_painter()
+        # Linux: the desktop's icon (the .desktop entry) before the update check's window shows.
+        # GNOME takes the icon when the program's first window appears; written later, the old
+        # icon stayed in the dock until the next start (owner, 26 Nov 2026).
+        builder_window.follow_disc_icon()
+        return card
     except Exception as error:  # noqa: BLE001 - the plain update window, the builder asks later
         note(f"  The first start could not run before the update check ({error!r}).")
         return None
@@ -653,7 +662,10 @@ def load_builder(copy):
     os.environ["GALAXYCTR_ELF"] = str(copy.elf)
     os.environ["GALAXYCTR_RELEASE"] = copy.tag or "?"
     old = LOADED.get("source")
-    if old is not None and old == copy.source and "galaxyctr_builder" in sys.modules:
+    # The same folder holds a new version after an update (install, place_builtin): its tag tells
+    # them apart. Kept by the folder alone, the first start's modules (the version from before the
+    # update) ran the whole build after it (owner's Ubuntu test, 26 Nov 2026).
+    if old is not None and old == copy.source and LOADED.get("tag") == copy.tag and "galaxyctr_builder" in sys.modules:
         return sys.modules["galaxyctr_builder"]
     if old is not None:
         root = str(old.resolve())
@@ -665,7 +677,9 @@ def load_builder(copy):
     for name in [n for n in sys.modules if n in ("galaxyctr_builder", "texreduce", "yaz0", "convert_smg_files")]:
         del sys.modules[name]  # a failed first try must not leave half-imported modules behind
     sys.path.insert(0, str(copy.source / "tools" / "beta"))
-    LOADED["source"] = copy.source
+    LOADED["source"], LOADED["tag"] = copy.source, copy.tag
+    import importlib
+    importlib.invalidate_caches()  # the folder's files may have changed since the first import
     import galaxyctr_builder
     return galaxyctr_builder
 

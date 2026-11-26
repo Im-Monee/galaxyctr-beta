@@ -7,6 +7,7 @@ on Windows). Without --elf, the public beta's program is built first (build_rele
 --release-tag names the release the executable is built for (default "local"): the launcher
 compares it with GitHub's latest release. The executable lands in build/beta/dist/. Run it
 once per system (Windows, Linux, macOS): PyInstaller only builds for the system it runs on.
+On macOS, --app packs "GalaxyCTR Builder.app" into build/beta/dist-app/<system>/ instead (pack_app).
 
 What goes inside, and nothing else (no game data, see docs/DETAILS.md):
   launcher.py                  the program that starts: updates, then runs the builder
@@ -151,6 +152,8 @@ def main():
     parser.add_argument("--elf", help="the port's program; by default the public beta's, built now")
     parser.add_argument("--tools", help="folder with this system's helper programs")
     parser.add_argument("--release-tag", default="local", help="the release this executable is built for")
+    parser.add_argument("--app", action="store_true",
+                        help="macOS: pack GalaxyCTR Builder.app instead of the one-file program (pack_app)")
     parser.add_argument("--elf-only", action="store_true",
                         help="only build the public beta's program, for a release (see .github/workflows/builder.yml)")
     args = parser.parse_args()
@@ -207,12 +210,54 @@ def main():
               "--hidden-import", "PySide6.QtMultimedia"]  # the game's music (builder_music.py)
     except ImportError:
         print("Note: PySide6 is not installed (pip install PySide6-Essentials): the builder will have no window.")
+    if qt:
+        # Qt Multimedia is in PySide6-Addons, not in PySide6-Essentials. Without it the builder has
+        # no music, and the v0.24.0 builders, packed without it, stopped on their title screen.
+        try:
+            import PySide6.QtMultimedia  # noqa: F401 - only checked for
+        except ImportError as error:
+            sys.exit(f"PySide6.QtMultimedia does not load ({error}): pip install PySide6-Addons (the same version "
+                     "as PySide6-Essentials), and on Linux the system libraries it names.")
+    if args.app:
+        return pack_app(added, qt, key)
     terminal = "--windowed" if os.name == "nt" and qt else "--console"
     command = [sys.executable, "-m", "PyInstaller", "--onefile", terminal, "--clean", "--noconfirm",
                "--name", f"GalaxyCTR-Builder-{key}",
                "--distpath", str(REPO / "build" / "beta" / "dist"),
                "--workpath", str(REPO / "build" / "beta" / "pyinstaller"),
                "--specpath", str(REPO / "build" / "beta")]
+    return pyinstaller(command, added, qt)
+
+
+# ##############################################################################################
+# # The macOS app                                                                              #
+# #                                                                                            #
+# # A program downloaded on its own loses its permission to run, and macOS opens it in TextEdit. #
+# # So macOS users get "GalaxyCTR Builder.app" in a zip (the zip keeps the permission): opened   #
+# # with a double click like any app, after one "Open Anyway" the first time (the app is not    #
+# # signed by an Apple developer account). PyInstaller makes it as a folder program (--onedir), #
+# # the form an app bundle takes. The workflow signs it ad hoc as a whole and zips it            #
+# # (.github/workflows/builder.yml). The bare one-file program is still built and published: the #
+# # first builders replace themselves with it (galaxyctr_builder.replace_program).              #
+# ##############################################################################################
+APP_NAME = "GalaxyCTR Builder"
+
+
+def pack_app(added, qt, key):
+    if sys.platform != "darwin":
+        sys.exit("--app is for macOS only")
+    if not qt:
+        sys.exit("--app needs PySide6: an app without a window could not be used")
+    command = [sys.executable, "-m", "PyInstaller", "--onedir", "--windowed", "--clean", "--noconfirm",
+               "--name", APP_NAME, "--osx-bundle-identifier", "io.github.im-monee.galaxyctr-builder",
+               "--distpath", str(REPO / "build" / "beta" / "dist-app" / key),
+               "--workpath", str(REPO / "build" / "beta" / "pyinstaller-app"),
+               "--specpath", str(REPO / "build" / "beta" / "app-spec")]
+    return pyinstaller(command, added, qt)
+
+
+def pyinstaller(command, added, qt):
+    """Runs PyInstaller with the modules and files every builder program carries."""
     for module in stdlib_imports():
         command += ["--hidden-import", module]
     command += qt

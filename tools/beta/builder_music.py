@@ -179,12 +179,14 @@ class Music:
     def fade_out(self, frames, then=None):
         """Lowers the music to silence over frames (60 a second), stops it and forgets its place
         (the game's stopStageBGM), then calls then."""
-        _QIODevice, _QObject, QTimer, *_rest = _qt()
         sink, name = self.sink, self.current
+        # No music playing (none started, or a program without Qt Multimedia, where _qt()
+        # fails): nothing to fade. Asked for Qt first, the title screen's Space bar stopped here.
         if sink is None:
             if then:
                 then()
             return
+        _QIODevice, _QObject, QTimer, *_rest = _qt()
         # Timed by the clock, not by the timer's ticks: while the window draws a busy frame
         # (the title's flash) ticks are lost, and a fade counted in ticks was still loud when
         # the next piece cut it off.

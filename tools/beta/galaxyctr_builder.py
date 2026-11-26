@@ -310,8 +310,21 @@ SETTINGS_NAME = "settings.txt"
 GUIDE_NAME = "install_guide.txt"
 
 
+def program_folder():
+    """The folder the user keeps the builder program in. For the macOS app
+    (GalaxyCTR Builder.app/Contents/MacOS/<program>, build_builder.pack_app) that is the folder
+    the app is in: nothing is written inside the app, which would break its signature."""
+    exe = Path(sys.executable).resolve()
+    if sys.platform == "darwin" and len(exe.parents) > 3 and exe.parent.name == "MacOS" \
+            and exe.parents[1].name == "Contents" and exe.parents[2].suffix == ".app":
+        return exe.parents[3]
+    return exe.parent
+
+
 def builder_home():
-    here = Path(sys.executable).resolve().parent if FROZEN else REPO / "build" / "beta" / "launcher-test"
+    # A macOS app started from Downloads before it was moved runs from a read-only copy (App
+    # Translocation): the write test below then falls back to the home folder.
+    here = program_folder() if FROZEN else REPO / "build" / "beta" / "launcher-test"
     for base in (here, Path.home()):
         try:
             base.mkdir(parents=True, exist_ok=True)
@@ -998,11 +1011,26 @@ def copy_to_sd(disc, cia, card):
                          f"it has {free_space(card) >> 20} MB.")
     smg = card / "smg"
     smg.mkdir(exist_ok=True)
-    copied, started = 0, time.monotonic()
+    # An update removes the old converted files first (saves are in smg/nand and stay), with its
+    # progress; a first copy says so instead (owner, 26 Nov 2026).
+    (smg / SENT_LIST).unlink(missing_ok=True)  # written again at the end (SENT_LIST)
+    old_folders = [smg / item for item in SD_ITEMS[:-1] if (smg / item).is_dir()]
+    if old_folders:
+        say("  Updating the game on the SD card: its old files are removed first. Your saves stay.")
+        old_files = [f for folder in old_folders for f in folder.rglob("*") if f.is_file()]
+        for number, path in enumerate(old_files, 1):
+            path.unlink(missing_ok=True)
+            if number % 25 == 0 or number == len(old_files):
+                progress("Deleting the old files", 100 * number / len(old_files), f"{number}/{len(old_files)} files")
+        for folder in old_folders:
+            shutil.rmtree(folder, ignore_errors=True)
+        end_progress()
+    else:
+        say("  First copy to this SD card.")
+    files = sum(1 for item in SD_ITEMS if (disc / item).is_dir() for f in (disc / item).rglob("*") if f.is_file())
+    copied, sent, started = 0, 0, time.monotonic()
     for item in SD_ITEMS:
         source, target = disc / item, smg / item
-        if target.is_dir():
-            shutil.rmtree(target)  # the old converted files; saves are in smg/nand and stay
         if source.is_file():
             shutil.copyfile(source, target)
             continue
@@ -1014,10 +1042,15 @@ def copy_to_sd(disc, cia, card):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
             copied += path.stat().st_size
-            progress("Copying", 100 * copied / needed, speed_text(copied, time.monotonic() - started, needed))
+            sent += 1
+            progress("Copying", 100 * copied / needed,
+                     ", ".join(filter(None, (f"{sent}/{files} files", speed_text(copied, time.monotonic() - started, needed)))))
     end_progress()
     (card / "cias").mkdir(exist_ok=True)
     shutil.copyfile(cia, card / "cias" / CIA_NAME)
+    sent_files = {"/smg/" + path.relative_to(disc).as_posix(): path.stat().st_size for item in SD_ITEMS
+                  for path in ([disc / item] if (disc / item).is_file() else (disc / item).rglob("*")) if path.is_file()}
+    (smg / SENT_LIST).write_text(sent_list_text(sent_files), encoding="utf-8")
     say(f"  Copied in {duration(time.monotonic() - started)}. The game files are in {smg}.")
     say(f"  The CIA is in {card / 'cias' / CIA_NAME}.")
 
@@ -1139,18 +1172,182 @@ def ftp_list(ftp, ftplib, path):
     return [(name, folder) for name, folder in entries if name not in (".", "..")]
 
 
-def ftp_walk(ftp, ftplib, path, files, folders):
+def ftp_walk(ftp, ftplib, path, files, folders, looked=None):
     """Adds every file under a folder on the 3DS to files, and the folders to folders, each one
-    before what it holds."""
+    before what it holds. looked(): called after each folder is listed (the progress)."""
     entries = ftp_list(ftp, ftplib, path)
     if entries is None:
         return
     folders.append(path)
+    if looked is not None:
+        looked()
     for name, is_folder in entries:
         if is_folder:
-            ftp_walk(ftp, ftplib, f"{path}/{name}", files, folders)
+            ftp_walk(ftp, ftplib, f"{path}/{name}", files, folders, looked)
         else:
             files.append(f"{path}/{name}")
+
+
+# ############################################################################
+# # The list of the files sent (smg/galaxyctr_files.txt)                   #
+# #                                                                         #
+# # Written on the card at the end of every copy (FTP or SD card): each    #
+# # game file sent and its size, signed. The next update reads it instead #
+# # of looking through the 3DS's 1834 folders one by one, which took       #
+# # minutes over FTP (owner, 26 Nov 2026). It is never trusted blindly: a  #
+# # list edited by hand fails its signature, and twenty of its files,      #
+# # picked at random, must be on the card with their sizes; a list that    #
+# # fails, or is gone, means the folders are looked through as before. It  #
+# # is deleted when an update starts and written again when it ends, so a  #
+# # copy cut short never leaves a list of what is not there.               #
+# ############################################################################
+SENT_LIST = "galaxyctr_files.txt"
+SENT_KEY = b"GalaxyCTR: the game files the builder sent to this card"
+SENT_HEADER = "GalaxyCTR builder: the game files sent to this card. Written by the builder, do not edit."
+
+
+def sent_list_text(entries):
+    """The list's text for {path on the card: size}, the paths as /smg/..."""
+    import hmac
+    body = SENT_HEADER + "\n" + "".join(f"{size} {path}\n" for path, size in sorted(entries.items()))
+    seal = hmac.new(SENT_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
+    return body + f"seal {seal}\n"
+
+
+def read_sent_list(text):
+    """{path: size} from the list's text, or None when it is not one the builder wrote."""
+    import hmac
+    if not text or not text.startswith(SENT_HEADER + "\n"):
+        return None
+    body, _, last = text.rstrip("\n").rpartition("\n")
+    if not last.startswith("seal "):
+        return None
+    body += "\n"
+    seal = hmac.new(SENT_KEY, body.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(seal, last[5:].strip()):
+        return None
+    entries = {}
+    for line in body.splitlines()[1:]:
+        size, _, path = line.partition(" ")
+        if not size.isdigit() or not path.startswith("/smg/"):
+            return None
+        entries[path] = int(size)
+    return entries
+
+
+def sent_folders(paths):
+    """The folders under smg's game folders that hold paths, each before what it holds."""
+    folders = set()
+    for path in paths:
+        parts = path.strip("/").split("/")
+        for depth in range(3, len(parts)):  # /smg/<item> and deeper
+            folders.add("/" + "/".join(parts[:depth]))
+    return sorted(folders, key=lambda folder: (folder.count("/"), folder))
+
+
+def ftp_sent_list(ftp, ftplib):
+    """The list on the 3DS when it is the builder's and still true there, else None. Deleted
+    either way: it is written again when this copy ends."""
+    import io
+    import random
+    data = io.BytesIO()
+    try:
+        ftp.retrbinary(f"RETR /smg/{SENT_LIST}", data.write)
+    except ftplib.all_errors:
+        return None
+    try:
+        ftp.delete(f"/smg/{SENT_LIST}")
+    except ftplib.all_errors:
+        pass
+    entries = read_sent_list(data.getvalue().decode("utf-8", "replace"))
+    if not entries:
+        if data.getvalue():
+            log("  The list of the files sent last time is not the builder's: the 3DS's folders are looked through.")
+        return None
+    try:
+        ftp.voidcmd("TYPE I")
+        for path in random.sample(sorted(entries), min(20, len(entries))):
+            if ftp.size(path) != entries[path]:
+                log(f"  {path} differs from the list of the files sent last time: the 3DS's folders are looked through.")
+                return None
+    except ftplib.all_errors as error:
+        log(f"  A file of the list of the files sent last time is not on the 3DS ({error}): its folders are looked through.")
+        return None
+    return entries
+
+
+def ftp_walk_parallel(ftplib, address, count, roots, files, folders, looked=None):
+    """ftp_walk on up to count connections at once (chosen in the copy's window, as the copy
+    itself): the 3DS lists a folder at a time per connection, and one connection took over
+    13 minutes for a whole game (owner, 26 Nov 2026). Each folder is still added before what it
+    holds: its subfolders are only queued once it is listed."""
+    waiting = queue.Queue()
+    for root in roots:
+        waiting.put(root)
+    lock = threading.Lock()
+    state = {"left": len(roots), "workers": 0}
+    errors = []
+
+    def worker():
+        ftp = None
+        try:
+            while True:
+                with lock:
+                    if state["left"] == 0 or errors:
+                        return
+                try:
+                    path = waiting.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                for attempt in range(1, FTP_TRIES + 1):
+                    try:
+                        if ftp is None:
+                            ftp = ftp_connect(ftplib, address)
+                        entries = ftp_list(ftp, ftplib, path)
+                        break
+                    except (OSError, EOFError, ftplib.Error) as error:
+                        ftp_close(ftp) if ftp is not None else None
+                        ftp = None
+                        with lock:
+                            others = state["workers"] - 1
+                        if attempt == FTP_TRIES or (others > 0 and attempt > 1):
+                            waiting.put(path)  # another connection lists it, or the walk fails
+                            if others <= 0:
+                                errors.append(error)
+                            return
+                        time.sleep(attempt)
+                with lock:
+                    if entries is not None:
+                        folders.append(path)
+                        for name, is_folder in entries:
+                            if is_folder:
+                                waiting.put(f"{path}/{name}")
+                                state["left"] += 1
+                            else:
+                                files.append(f"{path}/{name}")
+                    state["left"] -= 1
+                if entries is not None and looked is not None:
+                    looked()
+        finally:
+            if ftp is not None:
+                ftp_close(ftp)
+            with lock:
+                state["workers"] -= 1
+
+    threads = []
+    for _ in range(max(1, count)):
+        with lock:
+            state["workers"] += 1
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        threads.append(thread)
+        time.sleep(0.05)  # servers on the 3DS take kindly to connections a moment apart
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
+    if state["left"]:
+        raise OSError("the FTP server stopped answering")
 
 
 def ftp_make_folder(ftp, ftplib, path):
@@ -1158,6 +1355,11 @@ def ftp_make_folder(ftp, ftplib, path):
         ftp.mkd(path)
     except ftplib.error_perm:
         pass  # already there
+
+
+def plural(count, word):
+    """'1 connection', '5 connections'."""
+    return f"{count} {word}" + ("" if count == 1 else "s")
 
 
 def speed_text(done, seconds, total):
@@ -1170,7 +1372,7 @@ def speed_text(done, seconds, total):
     return f"{speed / (1 << 20):.1f} MB/s, about {eta} left"
 
 
-def ftp_parallel(ftplib, address, count, jobs, work, label, sizes=None):
+def ftp_parallel(ftplib, address, count, jobs, work, label, sizes=None, unit="files"):
     """Runs work(ftp, job, sent) for every job on up to count connections at once. sent(n) counts n
     bytes sent; with sizes (one per job) progress is in bytes, otherwise in jobs. Raises BuildError
     when a job still fails after FTP_TRIES tries, or no connection could be opened."""
@@ -1263,7 +1465,7 @@ def ftp_parallel(ftplib, address, count, jobs, work, label, sizes=None):
     while any(thread.is_alive() for thread in threads):
         time.sleep(0.25)
         with lock:
-            done, connections = state["done"], state["open"]
+            done, connections, files = state["done"], state["open"], state["jobs_done"]
         now = time.monotonic()
         samples.append((now, done))
         while len(samples) > 2 and now - samples[0][0] > 6:
@@ -1273,9 +1475,10 @@ def ftp_parallel(ftplib, address, count, jobs, work, label, sizes=None):
             speed = (done - before) / max(now - then, 0.001)
             left = (total - done) / speed if speed > 0 else 0
             eta = "" if speed <= 0 else (f", about {int(left)} s left" if left < 90 else f", about {round(left / 60)} min left")
-            detail = f"{speed / (1 << 20):.1f} MB/s, {connections} connections{eta}"
+            # The files sent too, as the copy to the SD card says (owner, 26 Nov 2026).
+            detail = f"{files}/{len(jobs)} files, {speed / (1 << 20):.1f} MB/s, {plural(connections, 'connection')}{eta}"
         else:
-            detail = f"{done} of {total} files, {connections} connections"
+            detail = f"{done}/{total} {unit}, {plural(connections, 'connection')}"
         progress(label, 100 * done / total if total else 100.0, detail)
     end_progress()
     for thread in threads:
@@ -1305,14 +1508,54 @@ def copy_over_ftp(disc, cia, address, connections=FTP_DEFAULT_CONNECTIONS):
     started = time.monotonic()
     try:
         ftp = ftp_connect(ftplib, address)
-        say(f"  Connected. Copying with up to {connections} connections at once. Over Wi-Fi this can take a "
+        say(f"  Connected. Copying with up to {plural(connections, 'connection')} at once. Over Wi-Fi this can take a "
             "while. Keep the 3DS on and near the router.")
 
         # The old converted files (saves are in smg/nand): listed here, deleted by every connection.
+        # Only for an update: on a first copy smg holds none of them (or is not there), and this
+        # step is not shown (owner, 26 Nov 2026). Listing them is long on the 3DS (a folder at a
+        # time), so it shows its progress: the folders looked at, of about as many as this build has.
         old_files, old_folders = [], []
-        for item in SD_ITEMS[:-1]:
-            ftp_walk(ftp, ftplib, f"/smg/{item}", old_files, old_folders)
-        if old_files:
+        there = {name for name, _ in (ftp_list(ftp, ftplib, "/smg") or [])}
+        update = [item for item in SD_ITEMS[:-1] if item in there]
+        if update:
+            expected = max(1, sum(1 for item in SD_ITEMS[:-1] if (disc / item).is_dir()
+                                  for f in [disc / item, *(disc / item).rglob("*")] if f.is_dir()))
+            looked = [0]
+
+            def count_folder():
+                looked[0] += 1
+                progress("Looking at the old files on the 3DS", min(99.0, 100 * looked[0] / expected),
+                         f"{looked[0]}/{max(expected, looked[0])}")
+
+            say("  Updating the game on the 3DS. Your saves stay.")
+            lock = threading.Lock()
+
+            def count_safely():
+                with lock:
+                    count_folder()
+
+            listed = ftp_sent_list(ftp, ftplib)
+            if listed is not None:
+                old_files = [path for path in listed if any(path.startswith(f"/smg/{item}/") for item in update)]
+                old_folders = [folder for folder in sent_folders(old_files)]
+                log(f"  The list of the files sent last time: {len(old_files)} files, no need to look through the folders.")
+            else:
+                ftp_close(ftp)  # the walk's own connections, no more than the user chose
+                ftp_walk_parallel(ftplib, address, connections, [f"/smg/{item}" for item in update],
+                                  old_files, old_folders, count_safely)
+                end_progress()
+                ftp = ftp_connect(ftplib, address)
+        else:
+            say("  First copy to this 3DS.")
+        # Only what this build no longer has is deleted: every other file is written over when
+        # sent. Deleting all of them first took as long as the copy (owner, 26 Nov 2026).
+        sent_paths = {remote for _, remote in files}
+        needed = {"/smg", "/cias"} | {"/" + "/".join(remote.strip("/").split("/")[:depth])
+                                     for remote in sent_paths
+                                     for depth in range(1, remote.strip("/").count("/") + 1)}
+        unused = [remote for remote in old_files if remote not in sent_paths]
+        if unused:
             ftp_close(ftp)
 
             def delete(connection, remote, sent):
@@ -1321,24 +1564,26 @@ def copy_over_ftp(disc, cia, address, connections=FTP_DEFAULT_CONNECTIONS):
                 except ftplib.error_perm:
                     pass  # already gone
 
-            ftp_parallel(ftplib, address, connections, old_files, delete, "Deleting the old files")
+            ftp_parallel(ftplib, address, connections, unused, delete, "Deleting the files no longer used")
             ftp = ftp_connect(ftplib, address)
         for folder in reversed(old_folders):  # each folder after what it holds
-            try:
-                ftp.rmd(folder)
-            except ftplib.error_perm:
-                pass
-
-        folders = sorted({remote.rsplit("/", 1)[0] for _, remote in files})
-        made = set()
-        for folder in folders:
-            parts = folder.strip("/").split("/")
-            for depth in range(1, len(parts) + 1):
-                sub = "/" + "/".join(parts[:depth])
-                if sub not in made:
-                    ftp_make_folder(ftp, ftplib, sub)
-                    made.add(sub)
+            if folder not in needed:
+                try:
+                    ftp.rmd(folder)
+                except ftplib.error_perm:
+                    pass
         ftp_close(ftp)
+
+        # The folders still missing, a level at a time (each after the one that holds it), on all
+        # the chosen connections; one at a time over one connection took minutes on the 3DS.
+        missing = sorted(needed - set(old_folders) - {"/"})
+        for depth in sorted({folder.count("/") for folder in missing}):
+            level = [folder for folder in missing if folder.count("/") == depth]
+
+            def make(connection, folder, sent):
+                ftp_make_folder(connection, ftplib, folder)
+
+            ftp_parallel(ftplib, address, connections, level, make, "Making the folders", unit="folders")
 
         def upload(connection, job, sent):
             path, remote = job
@@ -1348,6 +1593,9 @@ def copy_over_ftp(disc, cia, address, connections=FTP_DEFAULT_CONNECTIONS):
         ftp_parallel(ftplib, address, connections, files, upload, "Copying", [f.stat().st_size for f, _ in files])
 
         ftp = ftp_connect(ftplib, address)
+        import io
+        listing = sent_list_text({remote: path.stat().st_size for path, remote in files if remote.startswith("/smg/")})
+        ftp.storbinary(f"STOR /smg/{SENT_LIST}", io.BytesIO(listing.encode("utf-8")))
         try:
             ftp.size("/3ds/dspfirm.cdc")
             sound = True
@@ -1395,7 +1643,9 @@ def write_install_guide(disc, cia, work, keep):
         f"7. Put the SD card back into the 3DS. Install cias/{CIA_NAME} with FBI or another CIA installer.",
     ]
     if keep:
-        lines.append(f"8. Keep the folder {work}: the next build updates it and is much faster.")
+        # The folder's name only: its whole path is in "Game files" above (the folder that holds
+        # game), and with it the step wrapped on the result page (owner, 26 Nov 2026).
+        lines.append(f"8. Keep the folder {Path(work).name}: the next build updates it and is much faster.")
     else:
         lines.append(f"8. When everything is copied, delete the folder {work} to free the space.")
     say()
@@ -1784,6 +2034,7 @@ def make_loading_screen(files, disc):
     try:
         import builder_loading
         if builder_loading.is_current(out):
+            say("  The loading screen is already made (an earlier build).")
             return
         from PySide6.QtGui import QGuiApplication
         app = QGuiApplication.instance() or QGuiApplication(["galaxyctr-builder"])  # noqa: F841 - OpenGL needs one
@@ -2025,6 +2276,161 @@ def open_console():
     return True
 
 
+# ############################################################################
+# # No OpenGL: a message, and the builder does not start                   #
+# #                                                                         #
+# # The window's game look, its skies and the 3DS loading screen are drawn #
+# # with OpenGL (2.1, the shaders' GLSL 1.20). Without it the builder used #
+# # to go on in a plain look and leave the loading screen out (the owner's #
+# # choice, 26 Nov 2026: it now stops). A popup says how to install it on  #
+# # this system and the program ends. The popup is Qt's when Qt loads, and #
+# # the system's own otherwise (on Linux a Qt that cannot load its OpenGL  #
+# # libraries cannot show anything): MessageBoxW on Windows, osascript on  #
+# # macOS, zenity, kdialog or xmessage on Linux, and the terminal and the  #
+# # log always. Checked by builder_firststart.prepare (before the update   #
+# # check) and main() (a builder program updated from an older release).   #
+# # The first builders, without Qt, are not stopped: they replace          #
+# # themselves (replace_program).                                          #
+# ############################################################################
+GRAPHICS_TITLE = "GalaxyCTR Builder: OpenGL is missing"
+GRAPHICS_HELP = {
+    "windows": ("The builder needs OpenGL 2.1 or newer to draw its window and the 3DS loading screen.\n\n"
+                "Install or update your graphics card's driver: from NVIDIA, AMD or Intel's website, or "
+                "with Windows Update (Settings, Windows Update, Advanced options, Optional updates).\n\n"
+                "In a virtual machine, turn on 3D acceleration in its display settings.\n\n"
+                "Then start the builder again."),
+    "macos": ("The builder needs OpenGL 2.1 or newer to draw its window and the 3DS loading screen. "
+              "Every Mac has it, so this Mac's graphics did not answer.\n\n"
+              "Update macOS (System Settings, General, Software Update) and restart the Mac.\n\n"
+              "In a virtual machine, turn on 3D acceleration in its display settings.\n\n"
+              "Then start the builder again."),
+    "linux": ("The builder needs OpenGL 2.1 or newer to draw its window and the 3DS loading screen.\n\n"
+              "Install Mesa's OpenGL libraries, which also draw without a graphics card.\n\n"
+              "Ubuntu, Debian, Mint:\n"
+              "    sudo apt install libgl1 libegl1 libgl1-mesa-dri\n"
+              "Fedora:\n"
+              "    sudo dnf install mesa-libGL mesa-libEGL mesa-dri-drivers\n"
+              "Arch:\n"
+              "    sudo pacman -S mesa\n"
+              "openSUSE:\n"
+              "    sudo zypper install Mesa-libGL1 Mesa-libEGL1 Mesa-dri\n\n"
+              "With an NVIDIA card, its own driver works too.\n\n"
+              "Then start the builder again."),
+}
+GL_LIBRARIES = ("libGL.so", "libEGL.so", "libOpenGL.so", "libGLX.so")  # in Qt's error when it cannot load
+
+
+def graphics_help():
+    return GRAPHICS_HELP[{"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")]
+
+
+def opengl_problem():
+    """Why OpenGL cannot draw the builder's look here, or "" when it can. Needs a Qt application
+    (one is made when there is none: the window takes it over)."""
+    from PySide6.QtGui import QOffscreenSurface, QOpenGLContext
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        QApplication(sys.argv[:1])
+    context = QOpenGLContext()
+    if not context.create():
+        return "no OpenGL context could be made"
+    surface = QOffscreenSurface()
+    surface.create()
+    try:
+        if not context.makeCurrent(surface):
+            return "the OpenGL context could not be used"
+        version = (context.format().majorVersion(), context.format().minorVersion())
+        if context.isOpenGLES():
+            return f"only OpenGL ES {version[0]}.{version[1]}"
+        if version < (2, 1):
+            return f"OpenGL {version[0]}.{version[1]} is older than 2.1"
+        return ""
+    finally:
+        context.doneCurrent()
+
+
+def stop_for_graphics(reason, qt=True):
+    """Shows the popup, logs why and ends the program (SystemExit). qt: Qt can show the popup."""
+    text = graphics_help()
+    try:
+        log(f"OpenGL is missing ({reason}): the builder does not start.")
+    except Exception:  # noqa: BLE001 - the log may not be open yet (the launcher's first start)
+        pass
+    print(f"\n{GRAPHICS_TITLE}\n{text}\n", flush=True)
+    shown = False
+    if qt:
+        try:
+            from PySide6.QtCore import Qt
+            from PySide6.QtWidgets import QApplication, QMessageBox
+            if QApplication.instance() is None:
+                QApplication(sys.argv[:1])
+            box = QMessageBox(QMessageBox.Icon.Critical, GRAPHICS_TITLE, popup_html(text))
+            box.setTextFormat(Qt.TextFormat.RichText)
+            box.setTextInteractionFlags(selectable_text())  # the commands can be copied
+            box.exec()
+            shown = True
+        except Exception:  # noqa: BLE001 - the system's own popup below
+            shown = False
+    if not shown:
+        system_popup(text)
+    raise SystemExit(1)
+
+
+def popup_html(text):
+    """The popup's text for Qt: paragraphs wrap, the indented command lines never do (a wrapped
+    command cannot be copied whole)."""
+    import html
+    lines = []
+    for line in text.split("\n"):
+        if line.startswith("    "):
+            lines.append(f'<pre style="margin:0 0 0 16px">{html.escape(line.strip())}</pre>')
+        elif line:
+            lines.append(f"<div>{html.escape(line)}</div>")
+        else:
+            lines.append("<div>&nbsp;</div>")
+    return "".join(lines)
+
+
+def selectable_text():
+    from PySide6.QtCore import Qt
+    return Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
+
+
+def system_popup(text):
+    """The system's own message window, for when Qt cannot show one."""
+    import shutil
+    try:
+        if os.name == "nt":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, text, GRAPHICS_TITLE, 0x10)  # MB_ICONERROR
+            return
+        if sys.platform == "darwin":
+            quoted = text.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(["osascript", "-e", f'display dialog "{quoted}" with title "{GRAPHICS_TITLE}" '
+                            'buttons {"OK"} default button "OK" with icon stop'], timeout=600)
+            return
+        for command in (["zenity", "--error", "--no-markup", "--width", "620", "--title", GRAPHICS_TITLE, "--text", text],
+                        ["kdialog", "--title", GRAPHICS_TITLE, "--error", text],
+                        ["xmessage", "-center", text]):
+            if shutil.which(command[0]):
+                subprocess.run(command, timeout=600, env=program_environment())
+                return
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def require_graphics(app=None):
+    """Ends the program with the popup when OpenGL cannot draw here (see above)."""
+    if os.environ.get("GALAXYCTR_SKIP_GL_CHECK"):  # the developer's tests only
+        return
+    try:
+        reason = opengl_problem()
+    except Exception as error:  # noqa: BLE001 - Qt's OpenGL modules do not load
+        reason = repr(error)
+    if reason:
+        stop_for_graphics(reason)
+
+
 def main():
     global LOG, UI
     LOG_PATH.open("w", encoding="utf-8").close()
@@ -2048,7 +2454,14 @@ def main():
                 log(f"No window ({builder_gui.UNAVAILABLE}); terminal mode.")
         except Exception as error:  # noqa: BLE001 - the terminal always works
             log(f"No window ({error!r}); terminal mode.")
+        # A Qt that is in the program but cannot load the system's OpenGL libraries (Linux): the
+        # builder stops with the system's own popup, as it does below when OpenGL cannot draw.
+        missing = getattr(sys.modules.get("builder_gui"), "UNAVAILABLE", "")
+        if gui is None and any(name in missing for name in GL_LIBRARIES):
+            LOG.flush()
+            stop_for_graphics(missing, qt=False)
     if gui is not None:
+        require_graphics()
         code = gui.run(sys.modules[__name__])
         LOG.close()
         return code

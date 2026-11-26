@@ -28,8 +28,8 @@ page is at the top left on the same plate as the main menu's notes, with Mario's
 is: the game's sky behind every page, the font of its messages, the Mii screen's page counter
 for short words, fields and choices. The panels and the questions are the
 game's system window, the one that asks to create a new save file: its frame and shadow, its
-text colour, and the striped dimming behind it. The choice of keeping the game files and the
-number of FTP connections move with the Mii screen's blue arrows, one step a press, with their
+text colour, and the striped dimming behind it. The choice of keeping the game files, and the
+number of FTP connections in the copy's window, move with the Mii screen's blue arrows, one step a press, with their
 animations and page sound. A
 finished build shows the Power Star with the sound of a star collected. A stopped one shows
 the camera's red "no" sign with the sound of the file select's refused choice. Both pages lead back to the main menu with the same
@@ -60,7 +60,7 @@ drawn in between, so the title screen and the buttons move smoothly at any rate.
 computer only. Nothing of the game is in the builder or this repository. Every file of it is
 checked at each start: if one was changed (a texture drawn over, for example) or deleted, the
 builder makes the whole set again from your disc. Changed graphics are not used. You can choose *Later* and build straight away. The build reads the
-disc anyway and makes them too. Without OpenGL the window keeps its own drawn look. The build runs in a
+disc anyway and makes them too. The builder needs OpenGL 2.1 or newer, for the window and for the 3DS loading screen. Without it a message says how to install it on your system (the graphics driver on Windows, Mesa on Linux, 3D acceleration in a virtual machine) and the builder does not start. The build runs in a
 process of its own, below normal priority, so the window, its sky and its music stay smooth
 while the game files are converted.
 
@@ -128,7 +128,7 @@ On the computer:
 
 | File | |
 |---|---|
-| `settings.txt` | your answers: `keep_files` (yes or no), `work_folder` (where the kept files are), `ftp_address`, `ftp_connections` (1 to 10, 5 when missing), `last_sd_letter`, and `remember_window` (yes or no) with `window_geometry` (where the window was left: its position, its size as you dragged its borders, whether it was maximized, and the screen). Change them in *Settings*, edit the file, or delete it to be asked again. |
+| `settings.txt` | your answers: `keep_files` (yes or no), `work_folder` (where the kept files are), `ftp_address`, `ftp_connections` (1 to 10, 5 when missing, the last number chosen in the FTP copy's window), `last_sd_letter`, and `remember_window` (yes or no) with `window_geometry` (where the window was left: its position, its size as you dragged its borders, whether it was maximized, and the screen). Change them in *Settings* (the FTP connections in the copy's window), edit the file, or delete it to be asked again. |
 | `install_guide.txt` | the steps to copy the files by hand, when you chose to copy later. It is the only file made next to the builder. |
 
 Everything else the builder keeps is in your user settings folder (`%APPDATA%\GalaxyCTR` on
@@ -156,11 +156,23 @@ the free space on its drive before it starts.
 
 ## Running It on macOS
 
-The program is not signed. Right-click it and choose *Open*, or run this in Terminal:
+Download `GalaxyCTR-Builder-macos-arm64.zip` (Apple silicon) or `GalaxyCTR-Builder-macos-x86_64.zip`
+(Intel) and open it: it holds the app *GalaxyCTR Builder*. You can move the app to *Applications*
+or keep it in a folder of its own. The install guide is saved next to it.
+
+The app is not signed with an Apple developer account, so macOS stops it the first time. Open
+*System Settings*, then *Privacy & Security*, and choose *Open Anyway* (on macOS 14 and older,
+right-click the app and choose *Open*). After that it opens with a double click. You can also run
+this in Terminal instead:
 
 ```sh
-xattr -d com.apple.quarantine GalaxyCTR-Builder-macos-*
+xattr -dr com.apple.quarantine "GalaxyCTR Builder.app"
 ```
+
+The release also holds the bare program (`GalaxyCTR-Builder-macos-arm64` or `-x86_64`), for
+the first builders, which replace themselves with it. Downloaded on its own it loses its
+permission to run and macOS opens it in TextEdit: use the zip, or run
+`chmod +x GalaxyCTR-Builder-macos-*` in Terminal first.
 
 ## Updates
 

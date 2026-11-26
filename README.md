@@ -30,7 +30,7 @@ The game is a **public beta**. It targets 30 FPS, and the busiest areas still ru
 |---|---|
 | **Console** | New 3DS, New 3DS XL or New 2DS XL with [Luma3DS](https://github.com/LumaTeam/Luma3DS) and a CIA installer such as FBI. The original 3DS and 2DS are not supported ([why](docs/DETAILS.md#11-new-3ds-only)). |
 | **Game** | your own disc image of *Super Mario Galaxy*, USA release (`RMGE01`): ISO, WBFS, RVZ or another common format |
-| **Computer** | Windows, Linux or macOS, with about 9 GB free |
+| **Computer** | Windows, Linux or macOS, with about 9 GB free and OpenGL 2.1 or newer |
 | **SD card** | about 2 GB free |
 | **Sound** | the file `sdmc:/3ds/dspfirm.cdc`. Run the homebrew app DSP1 once to create it. |
 
@@ -39,7 +39,7 @@ The game is a **public beta**. It targets 30 FPS, and the busiest areas still ru
 1. Download the builder for your system from [Releases](../../releases/latest).
 2. Put it in a folder of its own and run it.
    - **Windows:** if SmartScreen stops it, choose *More info*, then *Run anyway*.
-   - **macOS:** right-click it and choose *Open*.
+   - **macOS:** download the `.zip` (`arm64` for Apple silicon, `x86_64` for Intel) and open *GalaxyCTR Builder*. The first time macOS stops it: in *System Settings*, *Privacy & Security*, choose *Open Anyway*.
    - **Linux:** run `chmod +x GalaxyCTR-Builder-linux-x86_64` first.
 3. The first time, a small window asks for your disc image and reads it once. Then the builder's
    window opens. Choose *Start the build*. The conversion takes a while.

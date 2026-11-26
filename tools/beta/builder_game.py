@@ -872,14 +872,13 @@ class GameButton:
 # # The game thinks at 60 frames a second: its nerves, its button controllers and its          #
 # # animations count whole frames. The window draws as often as the chosen frame rate asks    #
 # # (FRAME_RATE: a number, 0 for no limit, None for the screen's own rate): every timer that    #
-# # draws runs at frame_interval(), the game's frames are counted against the clock            #
+# # draws runs on one beat (Beat), the game's frames are counted against the clock            #
 # # (GameClock: whole frames to think, and the share of the next one), and a layout is drawn   #
 # # that share of a frame further on (Scene.apply(ahead)), so its animations move smoothly    #
 # # past 60. Qt's own animations are capped at 60 by Qt, so the window's fades are            #
 # # ClockAnimations, run by the same clock.                                                    #
 # ##############################################################################################
 FRAME_RATE = None
-_timers = []  # [weak reference to a QTimer] that follow the frame rate
 
 
 def frame_rate():
@@ -893,34 +892,127 @@ def frame_rate():
 
 
 def frame_interval():
-    """The timer interval for the frame rate, in milliseconds (0: as often as Qt can)."""
+    """The time between frames at the frame rate, in milliseconds (0: as often as Qt can)."""
     if FRAME_RATE == 0:
         return 0
     return max(1, int(round(1000.0 / frame_rate())))
 
 
-def follow_frame_rate(timer):
-    """A drawing timer: at the frame rate now and whenever it changes (set_frame_rate)."""
-    import weakref
-    timer.setTimerType(Qt.TimerType.PreciseTimer)
-    timer.setInterval(frame_interval())
-    _timers.append(weakref.ref(timer))
-    return timer
+# ##############################################################################################
+# # One beat for every drawing timer (FrameTimer)                                              #
+# #                                                                                            #
+# # Each moving part of the window (the space, the title, the skies, the fades, the game       #
+# # buttons) once had its own QTimer at the frame rate. Those timers did not keep time with    #
+# # each other, so the window was drawn whenever any of them fired: at 30 it drew about 55     #
+# # times a second, and the counter showed that. Now one timer (Beat) fires at the frame rate  #
+# # and wakes all the FrameTimers that run together, deepest part first, so their redraws   #
+# # make one frame (a window asked first and a part after it is drawn twice by Qt). Its       #
+# # times are kept against the clock (a 60 frame rate is 16.7 ms, not 17), so the rate holds. #
+# ##############################################################################################
+class Beat(QObject):
+    _instance = None
+
+    @classmethod
+    def get(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        super().__init__()
+        self.running = []  # [FrameTimer] started
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.timer.timeout.connect(self.fire)
+        self.next = 0.0  # the clock time the next beat is due (time.perf_counter)
+
+    def join(self, frame_timer):
+        import time
+        if frame_timer not in self.running:
+            self.running.append(frame_timer)
+        if not self.timer.isActive():
+            self.next = time.perf_counter()
+            self.schedule()
+
+    def leave(self, frame_timer):
+        if frame_timer in self.running:
+            self.running.remove(frame_timer)
+        if not self.running:
+            self.timer.stop()
+
+    def schedule(self):
+        """The next beat: one frame on from the last one due. A beat late by more than half a
+        frame (a slow drawing) is not caught up with a burst; the count starts again from now."""
+        import time
+        now_ = time.perf_counter()
+        # No limit: as fast as the drawing goes, but never under 2 ms, so a beat with nothing
+        # to draw (a still sky, a hidden page) does not spin thousands of times a second.
+        period = 0.002 if FRAME_RATE == 0 else 1.0 / frame_rate()
+        self.next += period
+        if self.next < now_ - period / 2:
+            self.next = now_
+        self.timer.start(max(0, int(round((self.next - now_) * 1000.0))))
+
+    @staticmethod
+    def depth(frame_timer):
+        """How deep in the window the timer's part lies (no part: deepest)."""
+        part, depth = frame_timer.parent(), 0
+        if part is None:
+            return 1000
+        while part is not None:
+            part, depth = part.parent(), depth + 1
+        return depth
+
+    def fire(self):
+        # The deepest parts first and the window last: a window asked to redraw before one of
+        # its parts is drawn twice by Qt (6.12, measured: 60 full paints a second at 30).
+        try:
+            order = sorted(self.running, key=self.depth, reverse=True)
+        except RuntimeError:  # one was deleted with its widget: the emits below drop it
+            order = list(self.running)
+        for frame_timer in order:
+            try:
+                frame_timer.timeout.emit()
+            except RuntimeError:  # deleted with its widget
+                self.leave(frame_timer)
+        if self.running:
+            self.schedule()
+
+
+class FrameTimer(QObject):
+    """A drawing timer at the window's frame rate: the QTimer calls the window's parts use
+    (timeout, start, stop, isActive), on the one Beat."""
+
+    timeout = Signal()
+
+    def start(self, *_):
+        Beat.get().join(self)
+
+    def stop(self):
+        Beat.get().leave(self)
+
+    def isActive(self):
+        return self in Beat.get().running
+
+    def interval(self):
+        return frame_interval()
+
+
+def frame_timer(parent):
+    """A drawing timer for parent's moving part (FrameTimer)."""
+    return FrameTimer(parent)
 
 
 def set_frame_rate(rate):
+    """Settings > Video: the beat takes the new rate at its next frame."""
     global FRAME_RATE
     FRAME_RATE = rate
-    interval = frame_interval()
-    for ref in list(_timers):
-        timer = ref()
-        if timer is None:
-            _timers.remove(ref)
-            continue
-        try:
-            timer.setInterval(interval)
-        except RuntimeError:  # deleted with its widget
-            _timers.remove(ref)
+    beat = Beat.get()
+    if beat.timer.isActive():
+        import time
+        beat.next = time.perf_counter()
+        beat.schedule()
 
 
 class GameClock:
@@ -962,7 +1054,7 @@ class ClockAnimation(QObject):
         self.duration, self.start_value, self.end_value = 250, 0.0, 1.0
         self.curve = QEasingCurve(QEasingCurve.Type.Linear)
         self.began = None
-        self.timer = follow_frame_rate(QTimer(self))
+        self.timer = frame_timer(self)
         self.timer.timeout.connect(self._step)
 
     def setDuration(self, ms):
@@ -1016,7 +1108,7 @@ class Ticker(QObject):
         super().__init__()
         self.widgets = set()
         self.clock = GameClock()
-        self.timer = follow_frame_rate(QTimer(self))
+        self.timer = frame_timer(self)
         self.timer.timeout.connect(self.tick)
 
     def wake(self, widget):
